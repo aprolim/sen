@@ -1,0 +1,1282 @@
+COMPILADO DE ARCHIVOS 
+ 
+ 
+================================= 
+app.js 
+================================= 
+ 
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const dotenv = require('dotenv');
+const swaggerUi = require('swagger-ui-express');
+const swaggerJsdoc = require('swagger-jsdoc');
+
+// Cargar variables de entorno
+dotenv.config();
+
+// Importar rutas
+const authRoutes = require('./routes/auth.routes');
+const usersRoutes = require('./routes/users.routes');
+
+// Importar configuración de base de datos
+require('./config/database');
+
+const app = express();
+
+// Configuración de Swagger
+const swaggerOptions = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'Senado de Bolivia API',
+      version: '1.0.0',
+      description: 'API para el portal del Senado de Bolivia',
+    },
+    servers: [
+      {
+        url: `http://localhost:${process.env.PORT || 3000}`,
+        description: 'Servidor de desarrollo',
+      },
+    ],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+        },
+      },
+    },
+  },
+  apis: ['./src/routes/*.js'],
+};
+
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
+
+// Middlewares
+app.use(helmet());
+app.use(cors({
+  origin: ['http://localhost:3001', 'http://localhost:3002'],
+  credentials: true,
+}));
+app.use(morgan('dev'));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Ruta para documentación Swagger
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+// Rutas de la API
+app.use('/api/auth', authRoutes);
+app.use('/api/users', usersRoutes);
+
+// Ruta de prueba
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'OK',
+    message: 'Servidor del Senado de Bolivia funcionando correctamente',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Manejo de errores 404
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Ruta no encontrada',
+  });
+});
+
+// Middleware de manejo de errores
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Error interno del servidor',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
+  });
+});
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor ejecutándose en: http://localhost:${PORT}`);
+  console.log(`📚 Documentación API: http://localhost:${PORT}/api/docs`);
+}); 
+================================= 
+config\database.js 
+================================= 
+ 
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+
+dotenv.config();
+const connectDB = async () => {
+  try {
+    const conn = await mongoose.connect(process.env.MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    
+    console.log(`✅ MongoDB conectado: ${conn.connection.host}`);
+    
+    // Crear super admin al conectar
+    await createSuperAdmin();
+    
+  } catch (error) {
+    console.error(`❌ Error al conectar a MongoDB: ${error.message}`);
+    process.exit(1);
+  }
+};
+
+const createSuperAdmin = async () => {
+  try {
+    const User = require('../models/User');
+    const bcrypt = require('bcryptjs');
+    
+    const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || 'admin@senado.bo';
+    const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD || 'Admin123!';
+    
+    const existingAdmin = await User.findOne({ 
+      email: superAdminEmail,
+      role: 'SUPER_ADMIN' 
+    });
+    
+    if (!existingAdmin) {
+      const hashedPassword = await bcrypt.hash(superAdminPassword, 12);
+      
+      await User.create({
+        email: superAdminEmail,
+        password: hashedPassword,
+        role: 'SUPER_ADMIN',
+        status: 'ACTIVE',
+        profile: {
+          firstName: 'Super',
+          lastName: 'Administrador',
+          position: 'Administrador del Sistema',
+        },
+      });
+      
+      console.log('✅ Super administrador creado exitosamente');
+      console.log(`📧 Email: ${superAdminEmail}`);
+      console.log(`🔑 Password: ${superAdminPassword}`);
+    }
+  } catch (error) {
+    console.error('❌ Error al crear super admin:', error.message);
+  }
+};
+
+module.exports = connectDB; 
+================================= 
+controllers\auth.controller.js 
+================================= 
+ 
+const authService = require('../services/auth.service');
+
+/**
+ * @swagger
+ * tags:
+ *   name: Auth
+ *   description: Autenticación de usuarios
+ */
+
+class AuthController {
+  /**
+   * @swagger
+   * /api/auth/login:
+   *   post:
+   *     summary: Iniciar sesión
+   *     tags: [Auth]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - email
+   *               - password
+   *             properties:
+   *               email:
+   *                 type: string
+   *                 format: email
+   *               password:
+   *                 type: string
+   *                 format: password
+   *     responses:
+   *       200:
+   *         description: Login exitoso
+   *       400:
+   *         description: Error en los datos
+   *       401:
+   *         description: Credenciales inválidas
+   */
+  async login(req, res) {
+    try {
+      const { email, password } = req.body;
+      
+      const result = await authService.login(email, password);
+      
+      res.json({
+        success: true,
+        message: 'Login exitoso',
+        data: result,
+      });
+    } catch (error) {
+      res.status(401).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+  
+  /**
+   * @swagger
+   * /api/auth/register:
+   *   post:
+   *     summary: Registrar nuevo usuario (ciudadano)
+   *     tags: [Auth]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - email
+   *               - password
+   *             properties:
+   *               email:
+   *                 type: string
+   *                 format: email
+   *               password:
+   *                 type: string
+   *                 format: password
+   *               firstName:
+   *                 type: string
+   *               lastName:
+   *                 type: string
+   *               ci:
+   *                 type: string
+   *               phone:
+   *                 type: string
+   *     responses:
+   *       201:
+   *         description: Usuario registrado exitosamente
+   *       400:
+   *         description: Error en los datos
+   *       409:
+   *         description: El email ya está registrado
+   */
+  async register(req, res) {
+    try {
+      const userData = req.body;
+      
+      const result = await authService.register(userData);
+      
+      res.status(201).json({
+        success: true,
+        message: 'Usuario registrado exitosamente',
+        data: result,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+  
+  /**
+   * @swagger
+   * /api/auth/me:
+   *   get:
+   *     summary: Obtener información del usuario actual
+   *     tags: [Auth]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Información del usuario
+   *       401:
+   *         description: No autenticado
+   */
+  async getCurrentUser(req, res) {
+    try {
+      const result = await authService.getCurrentUser(req.user._id);
+      
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+  
+  /**
+   * @swagger
+   * /api/auth/validate:
+   *   post:
+   *     summary: Validar token JWT
+   *     tags: [Auth]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - token
+   *             properties:
+   *               token:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Token válido o inválido
+   */
+  async validateToken(req, res) {
+    try {
+      const { token } = req.body;
+      
+      if (!token) {
+        return res.json({
+          success: false,
+          valid: false,
+          message: 'Token no proporcionado',
+        });
+      }
+      
+      // Verificar token
+      const jwt = require('jsonwebtoken');
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      
+      res.json({
+        success: true,
+        valid: true,
+        decoded,
+      });
+    } catch (error) {
+      res.json({
+        success: false,
+        valid: false,
+        message: error.message,
+      });
+    }
+  }
+}
+
+module.exports = new AuthController(); 
+================================= 
+controllers\users.controller.js 
+================================= 
+ 
+const usersService = require('../services/users.service');
+
+/**
+ * @swagger
+ * tags:
+ *   name: Users
+ *   description: Gestión de usuarios
+ */
+
+class UsersController {
+  /**
+   * @swagger
+   * /api/users:
+   *   post:
+   *     summary: Crear nuevo usuario (admin only)
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - email
+   *               - password
+   *             properties:
+   *               email:
+   *                 type: string
+   *                 format: email
+   *               password:
+   *                 type: string
+   *                 format: password
+   *               role:
+   *                 type: string
+   *                 enum: [ADMIN, EDITOR, MODERATOR, VIEWER, CITIZEN]
+   *               status:
+   *                 type: string
+   *                 enum: [ACTIVE, INACTIVE, SUSPENDED, PENDING]
+   *               profile:
+   *                 type: object
+   *     responses:
+   *       201:
+   *         description: Usuario creado exitosamente
+   *       400:
+   *         description: Error en los datos
+   *       403:
+   *         description: No autorizado
+   */
+  async createUser(req, res) {
+    try {
+      const userData = req.body;
+      const creatorRole = req.user.role;
+      
+      const user = await usersService.createUser(userData, creatorRole);
+      
+      res.status(201).json({
+        success: true,
+        message: 'Usuario creado exitosamente',
+        data: user,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+  
+  /**
+   * @swagger
+   * /api/users:
+   *   get:
+   *     summary: Obtener lista de usuarios
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 10
+   *       - in: query
+   *         name: role
+   *         schema:
+   *           type: string
+   *           enum: [SUPER_ADMIN, ADMIN, EDITOR, MODERATOR, VIEWER, CITIZEN]
+   *       - in: query
+   *         name: status
+   *         schema:
+   *           type: string
+   *           enum: [ACTIVE, INACTIVE, SUSPENDED, PENDING]
+   *       - in: query
+   *         name: search
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Lista de usuarios
+   *       401:
+   *         description: No autenticado
+   */
+  async getUsers(req, res) {
+    try {
+      const { page = 1, limit = 10, role, status, search } = req.query;
+      
+      const filters = {};
+      if (role) filters.role = role;
+      if (status) filters.status = status;
+      if (search) filters.search = search;
+      
+      const result = await usersService.getUsers(
+        parseInt(page),
+        parseInt(limit),
+        filters
+      );
+      
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+  
+  /**
+   * @swagger
+   * /api/users/{id}:
+   *   get:
+   *     summary: Obtener usuario por ID
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Usuario encontrado
+   *       404:
+   *         description: Usuario no encontrado
+   */
+  async getUserById(req, res) {
+    try {
+      const { id } = req.params;
+      
+      const user = await usersService.getUserById(id);
+      
+      res.json({
+        success: true,
+        data: user,
+      });
+    } catch (error) {
+      res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+  
+  /**
+   * @swagger
+   * /api/users/{id}:
+   *   put:
+   *     summary: Actualizar usuario
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               profile:
+   *                 type: object
+   *               role:
+   *                 type: string
+   *                 enum: [ADMIN, EDITOR, MODERATOR, VIEWER, CITIZEN]
+   *               status:
+   *                 type: string
+   *                 enum: [ACTIVE, INACTIVE, SUSPENDED, PENDING]
+   *     responses:
+   *       200:
+   *         description: Usuario actualizado
+   *       403:
+   *         description: No autorizado
+   *       404:
+   *         description: Usuario no encontrado
+   */
+  async updateUser(req, res) {
+    try {
+      const { id } = req.params;
+      const updateData = req.body;
+      const updaterRole = req.user.role;
+      
+      const user = await usersService.updateUser(id, updateData, updaterRole);
+      
+      res.json({
+        success: true,
+        message: 'Usuario actualizado exitosamente',
+        data: user,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+  
+  /**
+   * @swagger
+   * /api/users/{id}:
+   *   delete:
+   *     summary: Eliminar usuario (super admin only)
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Usuario eliminado
+   *       403:
+   *         description: No autorizado
+   *       404:
+   *         description: Usuario no encontrado
+   */
+  async deleteUser(req, res) {
+    try {
+      const { id } = req.params;
+      const deleterRole = req.user.role;
+      
+      const result = await usersService.deleteUser(id, deleterRole);
+      
+      res.json({
+        success: true,
+        message: result.message,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+}
+
+module.exports = new UsersController(); 
+================================= 
+middleware\auth.js 
+================================= 
+ 
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+
+/**
+ * Middleware para verificar token JWT
+ */
+const authenticate = async (req, res, next) => {
+  try {
+    // Obtener token del header
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Acceso denegado. No se proporcionó token.',
+      });
+    }
+    
+    // Verificar token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    // Buscar usuario
+    const user = await User.findById(decoded.userId);
+    
+    if (!user || user.status !== 'ACTIVE') {
+      return res.status(401).json({
+        success: false,
+        message: 'Usuario no encontrado o inactivo.',
+      });
+    }
+    
+    // Adjuntar usuario a la request
+    req.user = user;
+    req.token = token;
+    
+    next();
+  } catch (error) {
+    console.error('Error de autenticación:', error.message);
+    
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Token inválido.',
+      });
+    }
+    
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Token expirado.',
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Error en la autenticación.',
+    });
+  }
+};
+
+/**
+ * Middleware para verificar roles
+ */
+const authorize = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Usuario no autenticado.',
+      });
+    }
+    
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'No tiene permisos para realizar esta acción.',
+      });
+    }
+    
+    next();
+  };
+};
+
+module.exports = {
+  authenticate,
+  authorize,
+}; 
+================================= 
+middleware\validate.js 
+================================= 
+ 
+const { validationResult } = require('express-validator');
+
+/**
+ * Middleware para validar los resultados de express-validator
+ */
+const validate = (req, res, next) => {
+  const errors = validationResult(req);
+  
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      errors: errors.array().map(error => ({
+        field: error.param,
+        message: error.msg,
+      })),
+    });
+  }
+  
+  next();
+};
+
+module.exports = validate; 
+================================= 
+models\User.js 
+================================= 
+ 
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+const userSchema = new mongoose.Schema({
+  email: {
+    type: String,
+    required: [true, 'El email es requerido'],
+    unique: true,
+    lowercase: true,
+    trim: true,
+    match: [/^\S+@\S+\.\S+$/, 'Por favor ingrese un email válido'],
+  },
+  password: {
+    type: String,
+    required: [true, 'La contraseña es requerida'],
+    minlength: [8, 'La contraseña debe tener al menos 8 caracteres'],
+  },
+  role: {
+    type: String,
+    enum: ['SUPER_ADMIN', 'ADMIN', 'EDITOR', 'MODERATOR', 'VIEWER', 'CITIZEN'],
+    default: 'CITIZEN',
+  },
+  status: {
+    type: String,
+    enum: ['ACTIVE', 'INACTIVE', 'SUSPENDED', 'PENDING'],
+    default: 'PENDING',
+  },
+  profile: {
+    firstName: { type: String, trim: true },
+    lastName: { type: String, trim: true },
+    ci: { type: String, trim: true },
+    phone: { type: String, trim: true },
+    position: { type: String, trim: true },
+    department: { type: String, trim: true },
+    avatar: { type: String },
+  },
+  lastLogin: { type: Date },
+  refreshToken: { type: String },
+  passwordChangedAt: { type: Date },
+}, {
+  timestamps: true,
+  toJSON: {
+    transform: function(doc, ret) {
+      delete ret.password;
+      delete ret.refreshToken;
+      return ret;
+    },
+  },
+});
+
+// Índices
+userSchema.index({ email: 1 }, { unique: true });
+userSchema.index({ role: 1 });
+userSchema.index({ status: 1 });
+
+// Middleware para encriptar contraseña antes de guardar
+userSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) return next();
+  
+  try {
+    const salt = await bcrypt.genSalt(12);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Método para comparar contraseñas
+userSchema.methods.comparePassword = async function(candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
+};
+
+// Método para actualizar último login
+userSchema.methods.updateLastLogin = async function() {
+  this.lastLogin = new Date();
+  await this.save();
+};
+
+const User = mongoose.model('User', userSchema);
+
+module.exports = User; 
+================================= 
+routes\auth.routes.js 
+================================= 
+ 
+const express = require('express');
+const router = express.Router();
+const authController = require('../controllers/auth.controller');
+const { authenticate } = require('../middleware/auth');
+const validate = require('../middleware/validate');
+const validators = require('../utils/validators');
+
+// Ruta pública: Login
+router.post('/login', validators.login, validate, authController.login);
+
+// Ruta pública: Registrar ciudadano
+router.post('/register', validators.register, validate, authController.register);
+
+// Ruta pública: Validar token
+router.post('/validate', authController.validateToken);
+
+// Ruta protegida: Obtener usuario actual
+router.get('/me', authenticate, authController.getCurrentUser);
+
+module.exports = router; 
+================================= 
+routes\users.routes.js 
+================================= 
+ 
+const express = require('express');
+const router = express.Router();
+const usersController = require('../controllers/users.controller');
+const { authenticate, authorize } = require('../middleware/auth');
+const validate = require('../middleware/validate');
+const validators = require('../utils/validators');
+
+// Todas las rutas requieren autenticación
+router.use(authenticate);
+
+// Crear usuario (admin+ only)
+router.post(
+  '/',
+  authorize('SUPER_ADMIN', 'ADMIN'),
+  validators.register,
+  validate,
+  usersController.createUser
+);
+
+// Obtener usuarios (admin+ only)
+router.get(
+  '/',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  usersController.getUsers
+);
+
+// Obtener usuario por ID
+router.get('/:id', usersController.getUserById);
+
+// Actualizar usuario
+router.put(
+  '/:id',
+  validators.updateUser,
+  validate,
+  usersController.updateUser
+);
+
+// Eliminar usuario (super admin only)
+router.delete(
+  '/:id',
+  authorize('SUPER_ADMIN'),
+  usersController.deleteUser
+);
+
+module.exports = router; 
+================================= 
+services\auth.service.js 
+================================= 
+ 
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+
+class AuthService {
+  /**
+   * Genera token JWT
+   */
+  generateToken(userId) {
+    return jwt.sign(
+      { userId },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    );
+  }
+  
+  /**
+   * Login de usuario
+   */
+  async login(email, password) {
+    try {
+      // Buscar usuario
+      const user = await User.findOne({ email: email.toLowerCase() });
+      
+      if (!user) {
+        throw new Error('Credenciales inválidas');
+      }
+      
+      if (user.status !== 'ACTIVE') {
+        throw new Error('Usuario inactivo o suspendido');
+      }
+      
+      // Verificar contraseña
+      const isPasswordValid = await user.comparePassword(password);
+      
+      if (!isPasswordValid) {
+        throw new Error('Credenciales inválidas');
+      }
+      
+      // Generar token
+      const token = this.generateToken(user._id);
+      
+      // Actualizar último login
+      await user.updateLastLogin();
+      
+      return {
+        user: {
+          id: user._id,
+          email: user.email,
+          role: user.role,
+          profile: user.profile,
+          status: user.status,
+        },
+        token,
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+  
+  /**
+   * Registro de usuario
+   */
+  async register(userData) {
+    try {
+      // Verificar si el usuario ya existe
+      const existingUser = await User.findOne({ email: userData.email.toLowerCase() });
+      
+      if (existingUser) {
+        throw new Error('El email ya está registrado');
+      }
+      
+      // Crear usuario
+      const user = new User({
+        ...userData,
+        email: userData.email.toLowerCase(),
+        status: 'ACTIVE', // Por defecto activo
+      });
+      
+      await user.save();
+      
+      // Generar token
+      const token = this.generateToken(user._id);
+      
+      return {
+        user: {
+          id: user._id,
+          email: user.email,
+          role: user.role,
+          profile: user.profile,
+          status: user.status,
+        },
+        token,
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+  
+  /**
+   * Obtener usuario actual
+   */
+  async getCurrentUser(userId) {
+    try {
+      const user = await User.findById(userId);
+      
+      if (!user) {
+        throw new Error('Usuario no encontrado');
+      }
+      
+      return {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+        profile: user.profile,
+        status: user.status,
+        lastLogin: user.lastLogin,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+}
+
+module.exports = new AuthService(); 
+================================= 
+services\users.service.js 
+================================= 
+ 
+const User = require('../models/User');
+
+class UsersService {
+  /**
+   * Crear usuario (para administradores)
+   */
+  async createUser(userData, creatorRole) {
+    try {
+      // Verificar permisos
+      if (creatorRole === 'CITIZEN' || creatorRole === 'VIEWER') {
+        throw new Error('No tiene permisos para crear usuarios');
+      }
+      
+      // Verificar si el usuario ya existe
+      const existingUser = await User.findOne({ email: userData.email.toLowerCase() });
+      
+      if (existingUser) {
+        throw new Error('El email ya está registrado');
+      }
+      
+      // Crear usuario
+      const user = new User({
+        ...userData,
+        email: userData.email.toLowerCase(),
+      });
+      
+      await user.save();
+      
+      return user;
+    } catch (error) {
+      throw error;
+    }
+  }
+  
+  /**
+   * Obtener todos los usuarios (paginated)
+   */
+  async getUsers(page = 1, limit = 10, filters = {}) {
+    try {
+      const query = {};
+      
+      // Aplicar filtros
+      if (filters.role) query.role = filters.role;
+      if (filters.status) query.status = filters.status;
+      if (filters.search) {
+        query.$or = [
+          { email: { $regex: filters.search, $options: 'i' } },
+          { 'profile.firstName': { $regex: filters.search, $options: 'i' } },
+          { 'profile.lastName': { $regex: filters.search, $options: 'i' } },
+        ];
+      }
+      
+      const skip = (page - 1) * limit;
+      
+      const [users, total] = await Promise.all([
+        User.find(query)
+          .select('-password -refreshToken')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit),
+        User.countDocuments(query),
+      ]);
+      
+      return {
+        users,
+        total,
+        pages: Math.ceil(total / limit),
+        page,
+        limit,
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+  
+  /**
+   * Obtener usuario por ID
+   */
+  async getUserById(id) {
+    try {
+      const user = await User.findById(id).select('-password -refreshToken');
+      
+      if (!user) {
+        throw new Error('Usuario no encontrado');
+      }
+      
+      return user;
+    } catch (error) {
+      throw error;
+    }
+  }
+  
+  /**
+   * Actualizar usuario
+   */
+  async updateUser(id, updateData, updaterRole) {
+    try {
+      const user = await User.findById(id);
+      
+      if (!user) {
+        throw new Error('Usuario no encontrado');
+      }
+      
+      // Verificar permisos
+      if (updaterRole === 'CITIZEN' && user._id.toString() !== id) {
+        throw new Error('Solo puede actualizar su propio perfil');
+      }
+      
+      if (updaterRole === 'VIEWER') {
+        throw new Error('No tiene permisos para actualizar usuarios');
+      }
+      
+      // Actualizar campos permitidos
+      const allowedFields = ['profile', 'status'];
+      if (updaterRole === 'SUPER_ADMIN' || updaterRole === 'ADMIN') {
+        allowedFields.push('role');
+      }
+      
+      Object.keys(updateData).forEach(key => {
+        if (allowedFields.includes(key)) {
+          user[key] = updateData[key];
+        }
+      });
+      
+      await user.save();
+      
+      return user;
+    } catch (error) {
+      throw error;
+    }
+  }
+  
+  /**
+   * Eliminar usuario
+   */
+  async deleteUser(id, deleterRole) {
+    try {
+      if (deleterRole !== 'SUPER_ADMIN') {
+        throw new Error('Solo el super administrador puede eliminar usuarios');
+      }
+      
+      const user = await User.findByIdAndDelete(id);
+      
+      if (!user) {
+        throw new Error('Usuario no encontrado');
+      }
+      
+      return { message: 'Usuario eliminado exitosamente' };
+    } catch (error) {
+      throw error;
+    }
+  }
+}
+
+module.exports = new UsersService(); 
+================================= 
+utils\validators.js 
+================================= 
+ 
+const { body } = require('express-validator');
+
+const userValidators = {
+  register: [
+    body('email')
+      .isEmail().withMessage('Debe ser un email válido')
+      .normalizeEmail(),
+    body('password')
+      .isLength({ min: 8 }).withMessage('La contraseña debe tener al menos 8 caracteres')
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+      .withMessage('La contraseña debe contener al menos una mayúscula, una minúscula y un número'),
+    body('firstName')
+      .optional()
+      .trim()
+      .isLength({ min: 2 }).withMessage('El nombre debe tener al menos 2 caracteres'),
+    body('lastName')
+      .optional()
+      .trim()
+      .isLength({ min: 2 }).withMessage('El apellido debe tener al menos 2 caracteres'),
+    body('ci')
+      .optional()
+      .trim()
+      .isLength({ min: 5 }).withMessage('La cédula debe tener al menos 5 caracteres'),
+    body('phone')
+      .optional()
+      .trim()
+      .isMobilePhone().withMessage('Debe ser un número de teléfono válido'),
+  ],
+  
+  login: [
+    body('email')
+      .isEmail().withMessage('Debe ser un email válido')
+      .normalizeEmail(),
+    body('password')
+      .notEmpty().withMessage('La contraseña es requerida'),
+  ],
+  
+  updateUser: [
+    body('email')
+      .optional()
+      .isEmail().withMessage('Debe ser un email válido')
+      .normalizeEmail(),
+    body('password')
+      .optional()
+      .isLength({ min: 8 }).withMessage('La contraseña debe tener al menos 8 caracteres')
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+      .withMessage('La contraseña debe contener al menos una mayúscula, una minúscula y un número'),
+    body('firstName')
+      .optional()
+      .trim()
+      .isLength({ min: 2 }).withMessage('El nombre debe tener al menos 2 caracteres'),
+    body('lastName')
+      .optional()
+      .trim()
+      .isLength({ min: 2 }).withMessage('El apellido debe tener al menos 2 caracteres'),
+  ],
+};
+
+module.exports = userValidators; 
+Total archivos: 12 
