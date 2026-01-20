@@ -12,8 +12,8 @@ class UsersController {
    * @swagger
    * /api/users:
    *   post:
-   *     summary: Crear nuevo usuario (admin only)
    *     tags: [Users]
+   *     summary: Crear nuevo usuario
    *     security:
    *       - bearerAuth: []
    *     requestBody:
@@ -72,33 +72,31 @@ class UsersController {
    * @swagger
    * /api/users:
    *   get:
-   *     summary: Obtener lista de usuarios
    *     tags: [Users]
+   *     summary: Obtener lista de usuarios
    *     security:
    *       - bearerAuth: []
    *     parameters:
-   *       - in: query
-   *         name: page
+   *       - name: page
+   *         in: query
    *         schema:
    *           type: integer
    *           default: 1
-   *       - in: query
-   *         name: limit
+   *       - name: limit
+   *         in: query
    *         schema:
    *           type: integer
    *           default: 10
-   *       - in: query
-   *         name: role
+   *       - name: role
+   *         in: query
    *         schema:
    *           type: string
-   *           enum: [SUPER_ADMIN, ADMIN, EDITOR, MODERATOR, VIEWER, CITIZEN]
-   *       - in: query
-   *         name: status
+   *       - name: status
+   *         in: query
    *         schema:
    *           type: string
-   *           enum: [ACTIVE, INACTIVE, SUSPENDED, PENDING]
-   *       - in: query
-   *         name: search
+   *       - name: search
+   *         in: query
    *         schema:
    *           type: string
    *     responses:
@@ -138,13 +136,13 @@ class UsersController {
    * @swagger
    * /api/users/{id}:
    *   get:
-   *     summary: Obtener usuario por ID
    *     tags: [Users]
+   *     summary: Obtener usuario por ID
    *     security:
    *       - bearerAuth: []
    *     parameters:
-   *       - in: path
-   *         name: id
+   *       - name: id
+   *         in: path
    *         required: true
    *         schema:
    *           type: string
@@ -176,18 +174,17 @@ class UsersController {
    * @swagger
    * /api/users/{id}:
    *   put:
-   *     summary: Actualizar usuario
    *     tags: [Users]
+   *     summary: Actualizar usuario
    *     security:
    *       - bearerAuth: []
    *     parameters:
-   *       - in: path
-   *         name: id
+   *       - name: id
+   *         in: path
    *         required: true
    *         schema:
    *           type: string
    *     requestBody:
-   *       required: true
    *       content:
    *         application/json:
    *           schema:
@@ -234,13 +231,13 @@ class UsersController {
    * @swagger
    * /api/users/{id}:
    *   delete:
-   *     summary: Eliminar usuario (super admin only)
    *     tags: [Users]
+   *     summary: Eliminar usuario
    *     security:
    *       - bearerAuth: []
    *     parameters:
-   *       - in: path
-   *         name: id
+   *       - name: id
+   *         in: path
    *         required: true
    *         schema:
    *           type: string

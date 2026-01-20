@@ -12,8 +12,8 @@ class AuthController {
    * @swagger
    * /api/auth/login:
    *   post:
-   *     summary: Iniciar sesión
    *     tags: [Auth]
+   *     summary: Iniciar sesión
    *     requestBody:
    *       required: true
    *       content:
@@ -61,8 +61,8 @@ class AuthController {
    * @swagger
    * /api/auth/register:
    *   post:
-   *     summary: Registrar nuevo usuario (ciudadano)
    *     tags: [Auth]
+   *     summary: Registrar nuevo usuario
    *     requestBody:
    *       required: true
    *       content:
@@ -118,8 +118,8 @@ class AuthController {
    * @swagger
    * /api/auth/me:
    *   get:
-   *     summary: Obtener información del usuario actual
    *     tags: [Auth]
+   *     summary: Obtener información del usuario actual
    *     security:
    *       - bearerAuth: []
    *     responses:
@@ -148,8 +148,8 @@ class AuthController {
    * @swagger
    * /api/auth/validate:
    *   post:
-   *     summary: Validar token JWT
    *     tags: [Auth]
+   *     summary: Validar token JWT
    *     requestBody:
    *       required: true
    *       content:
@@ -177,7 +177,6 @@ class AuthController {
         });
       }
       
-      // Verificar token
       const jwt = require('jsonwebtoken');
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       
