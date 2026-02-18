@@ -21,7 +21,7 @@ set ARCHIVOS_PROCESADOS=0
 set "EXTENSIONES_IMAGEN=.jpg .jpeg .png .gif .bmp .tiff .tif .webp .svg .ico .raw .psd .ai .eps"
 
 :: Procesar archivos recursivamente pero excluir node_modules, .git y package-lock.json
-for /f "delims=" %%F in ('dir /s /b /a-d * ^| findstr /v /i "\\node_modules\\ \\.git\\ package-lock\.json"') do (
+for /f "delims=" %%F in ('dir /s /b /a-d * ^| findstr /v /i "\\node_modules\\ \\.git\\ \\.nuxt\\ package-lock\.json"') do (
     if not "%%F"=="%~f0" (
         if not "%%F"=="%CD%\%ARCHIVO_SALIDA%" (
             :: Obtener ruta relativa

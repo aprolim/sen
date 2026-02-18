@@ -161,7 +161,7 @@ const swaggerOptions = {
 };
 
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
-
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   docExpansion: 'none',
   swaggerOptions: {
@@ -175,6 +175,8 @@ app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 // ============================================
 const authRoutes = require('./routes/auth.routes');
 const usersRoutes = require('./routes/users.routes');
+const contentRoutes = require('./routes/content.routes');
+const legisladoresRoutes = require('./routes/legisladores.routes');
 
 // Aplicar rate limiting específico a login
 app.use('/api/auth/login', authLimiter);
@@ -183,6 +185,8 @@ app.use('/api/auth/register', authLimiter);
 // Rutas principales
 app.use('/api/auth', authRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/content', contentRoutes);
+app.use('/api/legisladores', legisladoresRoutes);
 
 // ============================================
 // 4. RUTAS DEL SISTEMA
