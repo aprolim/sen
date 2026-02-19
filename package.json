@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "seed:tabs": "node src/scripts/seedTabs.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

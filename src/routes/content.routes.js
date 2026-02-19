@@ -5,13 +5,13 @@ const { authenticate, authorize } = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
 
 // Rutas públicas
-router.get('/', contentController.getContents);
 router.get('/types', contentController.getContentTypes);
 router.get('/categories', contentController.getCategories);
 router.get('/search', contentController.searchContent);
 router.get('/slug/:slug', contentController.getContentBySlug);
 router.get('/:id', contentController.getContentById);
 router.get('/:id/related', contentController.getRelatedContent);
+router.get('/', contentController.getContents);
 
 // Rutas protegidas (requieren autenticación)
 router.use(authenticate);

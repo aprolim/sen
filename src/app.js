@@ -177,6 +177,7 @@ const authRoutes = require('./routes/auth.routes');
 const usersRoutes = require('./routes/users.routes');
 const contentRoutes = require('./routes/content.routes');
 const legisladoresRoutes = require('./routes/legisladores.routes');
+const tabsRoutes = require('./routes/tabs.routes');
 
 // Aplicar rate limiting específico a login
 app.use('/api/auth/login', authLimiter);
@@ -187,6 +188,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/legisladores', legisladoresRoutes);
+app.use('/api/tabs', tabsRoutes);
 
 // ============================================
 // 4. RUTAS DEL SISTEMA
