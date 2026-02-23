@@ -1,11 +1,14 @@
-// src/scripts/seedTabs.js
+// ============================================
+// src/scripts/seedTabs.js (COMPLETAMENTE NUEVO)
+// ============================================
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
+const TabCategory = require('../models/TabCategory');
 const TabLink = require('../models/TabLink');
 
 dotenv.config();
 
-// SVG ORIGINALES COMPLETOS
+// SVGs ORIGINALES (los mismos que tenías)
 const SVG_ICONS = {
   legislacion: {
     tratamiento: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 31.2879 31.2879"><title>Recurso 1</title><g id="e1d8294c-62c4-4fcd-aaa0-6e3342ac2c84" data-name="Capa 2"><g id="e6bf4da3-0cda-4c51-985a-c9690b2f7bfe" data-name="Capa 1"><path d="M22.2963,10.466a.4572.4572,0,0,0-.1474-.3148q-2.3246-1.8765-4.6647-3.7339a.4979.4979,0,0,0-.2859-.1044Q14.0141,6.3042,10.83,6.31a.8063.8063,0,0,0-.7935.5627,1.4058,1.4058,0,0,0-.0485.4214q-.0035,7.2065-.0018,14.413c0,.0682-.0005.1366.0025.2048a.8205.8205,0,0,0,.8551.839c.49.0057.9807.0026,1.4711.0006.2238-.0009.3712-.1277.3659-.3067-.0052-.1748-.1448-.2864-.3639-.2868-.4407-.0008-.8814,0-1.3221,0-.3635,0-.412-.0479-.412-.4032q0-2.6341.0005-5.2683,0-4.6,0-9.199c0-.3242.0574-.3823.3759-.3823q2.9049-.0006,5.81,0c.0545,0,.1088.0046.1876.0081V7.14q0,1.5735,0,3.147c0,.3356.083.42.4139.42q2.0484,0,4.0968,0h.2274c.0039.078.009.1325.009.187q.0008,5.4559,0,10.9121c0,.29-.0586.3488-.3474.35-.4469.0018-.8938-.0015-1.3406.0052a.2936.2936,0,1,0-.0081.5872c.5088.0053,1.0185.0157,1.5263-.0072a.7938.7938,0,0,0,.7668-.8235Q22.3035,16.192,22.2963,10.466Zm-4.7331-.3678V7.2413l3.5731,2.8569Z" style="fill:#e03735"/><path d="M18.9733,17.668a.4665.4665,0,0,0-.1419-.2493q-.8479-.6963-1.7119-1.3727a.4937.4937,0,0,0-.2893-.09c-.7075.0066-1.4149.0195-2.1218.0449a.5805.5805,0,0,0-.3322.1278q-.7991.6827-1.576,1.3911a.6465.6465,0,0,0-.1831.3426c-.11.6226-.193,1.25-.3013,1.8728a.8811.8811,0,0,0,.1358.6817c.3227.4924.6214,1.0006.9193,1.5085a.6854.6854,0,0,1,.0877.33q.0085,2.0854.0023,4.171a.3117.3117,0,0,0,.19.3288.3025.3025,0,0,0,.3513-.097q.291-.2882.5831-.5752l1.38-1.3608a1.8962,1.8962,0,0,0,.1461.1888q.8718.8658,1.7474,1.7276c.17.1678.3323.1986.4508.0582a.5292.5292,0,0,0,.1076-.317c.0066-1.4834.003-2.9669.0068-4.45a.58.58,0,0,1,.0663-.2616c.2778-.5191.5695-1.0309.841-1.5532a.6156.6156,0,0,0,.0547-.3681C19.2591,19.0514,19.1185,18.3591,18.9733,17.668Zm-1.1592,8.0408-.07.0583c-.4623-.4833-.9217-.9695-1.3878-1.449-.3865-.3974-.4319-.4019-.8163-.014-.475.4793-.9361.9725-1.4032,1.46l-.0627-.0462V22.4069a10.8929,10.8929,0,0,1,1.1075.3809,1.5469,1.5469,0,0,0,1.4473-.0276c.3721-.1889.778-.3111,1.1853-.4693Zm.9277-5.7552q-.4271.7936-.8681,1.5795a.4007.4007,0,0,1-.1874.16q-.8262.3339-1.66.6495a.3992.3992,0,0,1-.2462.0065c-.559-.1817-1.1164-.3688-1.67-.566a.49.49,0,0,1-.2317-.1878c-.3011-.4765-.5863-.9631-.8867-1.44a.5229.5229,0,0,1-.0737-.3862c.088-.5568.168-1.1149.2609-1.6709a.43.43,0,0,1,.1249-.2335c.4371-.3936.8789-.7826,1.3278-1.1626a.5275.5275,0,0,1,.2951-.1129c.29-.0149.5824-.0053.8738-.0053v-.03c.248,0,.4973.0158.7435-.0051a.606.606,0,0,1,.4667.1627q.6159.5084,1.2442,1.0018a.4627.4627,0,0,1,.1829.3027c.1073.5778.233,1.1523.3442,1.7295A.3437.3437,0,0,1,18.7418,19.9536Z" style="fill:#e03735"/><path d="M12.3532,14.8707q1.8708.0008,3.7415.0005.4746,0,.9493,0,1.4147,0,2.8293,0c.21,0,.3388-.1054.35-.2782.0127-.1971-.1322-.3165-.3889-.3165q-3.7414-.0007-7.4829,0c-.2369,0-.3717.1055-.3766.2909C11.97,14.7632,12.1017,14.8706,12.3532,14.8707Z" style="fill:#e03735"/><path d="M12.243,12.7137a1.48,1.48,0,0,0,.1673.0026q1.8426,0,3.6851,0,.8653,0,1.7308,0c.6948,0,1.39.0017,2.0844-.0017a.2856.2856,0,0,0,.3116-.2954.2968.2968,0,0,0-.2955-.2973c-.0307-.0027-.0619-.0009-.0929-.0009q-3.7224,0-7.4445.0008a.6988.6988,0,0,0-.1846.0122.2941.2941,0,0,0,.0383.5793Z" style="fill:#e03735"/><path d="M15.84,17.2183a2.1744,2.1744,0,1,0,2.1684,2.1832A2.1779,2.1779,0,0,0,15.84,17.2183ZM15.8321,20.97a1.5777,1.5777,0,1,1,1.58-1.5534A1.5867,1.5867,0,0,1,15.8321,20.97Z" style="fill:#e03735"/><circle cx="15.644" cy="15.644" r="14.144" style="fill:none;stroke:#e03735;stroke-miterlimit:10;stroke-width:3px"/></g></g></svg>`,
@@ -26,11 +29,42 @@ const SVG_ICONS = {
   }
 };
 
-// Datos por defecto completos
-const DEFAULT_LINKS_DATA = [
+// CATEGORÍAS POR DEFECTO
+const DEFAULT_CATEGORIES = [
+  {
+    categoryId: 'legislacion',
+    name: 'Legislación',
+    description: 'Acceda a toda la información relacionada con los proyectos de ley y legislación',
+    order: 10,
+    color: '#e03735',
+    icon: SVG_ICONS.legislacion.tratamiento,
+    isActive: true
+  },
+  {
+    categoryId: 'fiscalizacion',
+    name: 'Fiscalización',
+    description: 'Sistema de control y seguimiento de actividades institucionales',
+    order: 20,
+    color: '#e03735',
+    icon: SVG_ICONS.fiscalizacion.escrito,
+    isActive: true
+  },
+  {
+    categoryId: 'gestion',
+    name: 'Gestión',
+    description: 'Documentación y resoluciones de gestión institucional',
+    order: 30,
+    color: '#e03735',
+    icon: SVG_ICONS.gestion.resoluciones,
+    isActive: true
+  }
+];
+
+// LINKS POR DEFECTO (usando categoryId en lugar de tabId)
+const DEFAULT_LINKS = [
   // ===== LEGISLACIÓN =====
   {
-    tabId: 'legislacion',
+    categoryId: 'legislacion',
     areaTitulo: 'Área de Legislación',
     areaDescripcion: 'Acceda a toda la información relacionada con los proyectos de ley y legislación',
     linkId: 'leyes-tratamiento',
@@ -38,10 +72,11 @@ const DEFAULT_LINKS_DATA = [
     descripcion: 'Proyectos actualmente en proceso legislativo',
     icono: SVG_ICONS.legislacion.tratamiento,
     path: '/legislacion/proyectos-en-tratamiento',
-    orden: 10
+    orden: 10,
+    isActive: true
   },
   {
-    tabId: 'legislacion',
+    categoryId: 'legislacion',
     areaTitulo: 'Área de Legislación',
     areaDescripcion: 'Acceda a toda la información relacionada con los proyectos de ley y legislación',
     linkId: 'leyes-aprobados',
@@ -49,10 +84,11 @@ const DEFAULT_LINKS_DATA = [
     descripcion: 'Proyectos que han sido aprobados por la cámara',
     icono: SVG_ICONS.legislacion.aprobados,
     path: '/legislacion/proyectos-aprobados',
-    orden: 20
+    orden: 20,
+    isActive: true
   },
   {
-    tabId: 'legislacion',
+    categoryId: 'legislacion',
     areaTitulo: 'Área de Legislación',
     areaDescripcion: 'Acceda a toda la información relacionada con los proyectos de ley y legislación',
     linkId: 'leyes-sancionados',
@@ -60,10 +96,11 @@ const DEFAULT_LINKS_DATA = [
     descripcion: 'Proyectos que han recibido sanción oficial',
     icono: SVG_ICONS.legislacion.sancionados,
     path: '/legislacion/proyectos-sancionados',
-    orden: 30
+    orden: 30,
+    isActive: true
   },
   {
-    tabId: 'legislacion',
+    categoryId: 'legislacion',
     areaTitulo: 'Área de Legislación',
     areaDescripcion: 'Acceda a toda la información relacionada con los proyectos de ley y legislación',
     linkId: 'leyes-modificaciones',
@@ -71,10 +108,11 @@ const DEFAULT_LINKS_DATA = [
     descripcion: 'Proyectos que han sido modificados durante el proceso',
     icono: SVG_ICONS.legislacion.modificaciones,
     path: '/legislacion/proyectos-modificaciones',
-    orden: 40
+    orden: 40,
+    isActive: true
   },
   {
-    tabId: 'legislacion',
+    categoryId: 'legislacion',
     areaTitulo: 'Área de Legislación',
     areaDescripcion: 'Acceda a toda la información relacionada con los proyectos de ley y legislación',
     linkId: 'leyes-promulgadas',
@@ -82,10 +120,11 @@ const DEFAULT_LINKS_DATA = [
     descripcion: 'Leyes que han sido promulgadas oficialmente',
     icono: SVG_ICONS.legislacion.promulgadas,
     path: '/legislacion/leyes-promulgadas',
-    orden: 50
+    orden: 50,
+    isActive: true
   },
   {
-    tabId: 'legislacion',
+    categoryId: 'legislacion',
     areaTitulo: 'Área de Legislación',
     areaDescripcion: 'Acceda a toda la información relacionada con los proyectos de ley y legislación',
     linkId: 'leyes-rechazados',
@@ -93,12 +132,13 @@ const DEFAULT_LINKS_DATA = [
     descripcion: 'Proyectos que no han superado el proceso legislativo',
     icono: SVG_ICONS.legislacion.rechazados,
     path: '/legislacion/proyectos-rechazados',
-    orden: 60
+    orden: 60,
+    isActive: true
   },
 
   // ===== FISCALIZACIÓN =====
   {
-    tabId: 'fiscalizacion',
+    categoryId: 'fiscalizacion',
     areaTitulo: 'Área de Fiscalización',
     areaDescripcion: 'Sistema de control y seguimiento de actividades institucionales',
     linkId: 'informe-escrito',
@@ -106,10 +146,11 @@ const DEFAULT_LINKS_DATA = [
     descripcion: 'Solicitudes formales de información por escrito',
     icono: SVG_ICONS.fiscalizacion.escrito,
     path: '/fiscalizacion/informe-escrito',
-    orden: 10
+    orden: 10,
+    isActive: true
   },
   {
-    tabId: 'fiscalizacion',
+    categoryId: 'fiscalizacion',
     areaTitulo: 'Área de Fiscalización',
     areaDescripcion: 'Sistema de control y seguimiento de actividades institucionales',
     linkId: 'informe-oral',
@@ -117,12 +158,13 @@ const DEFAULT_LINKS_DATA = [
     descripcion: 'Solicitudes de información mediante presentaciones orales',
     icono: SVG_ICONS.fiscalizacion.oral,
     path: '/fiscalizacion/informe-oral',
-    orden: 20
+    orden: 20,
+    isActive: true
   },
 
   // ===== GESTIÓN =====
   {
-    tabId: 'gestion',
+    categoryId: 'gestion',
     areaTitulo: 'Área de Gestión',
     areaDescripcion: 'Documentación y resoluciones de gestión institucional',
     linkId: 'resoluciones-camarales',
@@ -130,10 +172,11 @@ const DEFAULT_LINKS_DATA = [
     descripcion: 'Documentos oficiales de resolución institucional',
     icono: SVG_ICONS.gestion.resoluciones,
     path: '/gestion/resoluciones-camarales',
-    orden: 10
+    orden: 10,
+    isActive: true
   },
   {
-    tabId: 'gestion',
+    categoryId: 'gestion',
     areaTitulo: 'Área de Gestión',
     areaDescripcion: 'Documentación y resoluciones de gestión institucional',
     linkId: 'declaraciones-camarales',
@@ -141,10 +184,11 @@ const DEFAULT_LINKS_DATA = [
     descripcion: 'Declaraciones oficiales de la cámara',
     icono: SVG_ICONS.gestion.declaraciones,
     path: '/gestion/declaraciones-camarales',
-    orden: 20
+    orden: 20,
+    isActive: true
   },
   {
-    tabId: 'gestion',
+    categoryId: 'gestion',
     areaTitulo: 'Área de Gestión',
     areaDescripcion: 'Documentación y resoluciones de gestión institucional',
     linkId: 'minutas-comunicacion',
@@ -152,7 +196,8 @@ const DEFAULT_LINKS_DATA = [
     descripcion: 'Registros de comunicación institucional',
     icono: SVG_ICONS.gestion.minutas,
     path: '/gestion/minutas-comunicacion',
-    orden: 30
+    orden: 30,
+    isActive: true
   }
 ];
 
@@ -162,17 +207,23 @@ const seedTabs = async () => {
     await mongoose.connect(process.env.MONGODB_URI);
     console.log('✅ Conectado a MongoDB');
 
-    // Limpiar la colección antes de insertar
+    // Limpiar colecciones
+    await TabCategory.deleteMany({});
     await TabLink.deleteMany({});
-    console.log('🗑️ Colección TabLink limpiada');
+    console.log('🗑️ Colecciones limpiadas');
 
-    // Insertar los nuevos datos
-    await TabLink.insertMany(DEFAULT_LINKS_DATA);
-    console.log(`✅ ${DEFAULT_LINKS_DATA.length} links insertados correctamente`);
+    // Insertar categorías
+    await TabCategory.insertMany(DEFAULT_CATEGORIES);
+    console.log(`✅ ${DEFAULT_CATEGORIES.length} categorías insertadas`);
 
-    // Verificar la inserción
-    const count = await TabLink.countDocuments();
-    console.log(`📊 Total de links en BD: ${count}`);
+    // Insertar links
+    await TabLink.insertMany(DEFAULT_LINKS);
+    console.log(`✅ ${DEFAULT_LINKS.length} links insertados`);
+
+    // Verificar
+    const categoriesCount = await TabCategory.countDocuments();
+    const linksCount = await TabLink.countDocuments();
+    console.log(`📊 Total: ${categoriesCount} categorías, ${linksCount} links`);
 
     await mongoose.disconnect();
     console.log('👋 Desconectado de MongoDB');

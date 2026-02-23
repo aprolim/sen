@@ -1,0 +1,6093 @@
+COMPILADO DE ARCHIVOS 
+ 
+ 
+================================= 
+.env 
+================================= 
+ 
+# ============ SEGURIDAD ============
+NODE_ENV=development
+
+# ============ SERVIDOR ============
+PORT=3000
+HOST=0.0.0.0
+
+# ============ BASE DE DATOS ============
+MONGODB_URI=mongodb://localhost:27017/senado_bolivia?authSource=admin
+
+# ============ JWT ============
+# IMPORTANTE: Este secreto debe ser el mismo para todos los tokens
+JWT_SECRET=mi_super_secreto_para_senado_bolivia_2026_con_64_chars_xyz123456789
+JWT_EXPIRES_IN=7d
+JWT_REFRESH_SECRET=otro_super_secreto_para_refresh_tokens_2026_abc987654321
+JWT_REFRESH_EXPIRES_IN=30d
+
+# ============ ADMIN ============
+SUPER_ADMIN_EMAIL=admin@senado.bo
+SUPER_ADMIN_PASSWORD=Admin123!
+
+# ============ RATE LIMITING ============
+RATE_LIMIT_WINDOW=15
+RATE_LIMIT_MAX=100
+AUTH_LIMIT_WINDOW=5
+AUTH_LIMIT_MAX=5
+
+# ============ SEGURIDAD ADICIONAL ============
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001,http://localhost:3002
+ENABLE_SWAGGER=true
+LOG_LEVEL=debug 
+================================= 
+.gitignore 
+================================= 
+ 
+node_modules/
+.env
+uploads/
+*.log
+.DS_Store 
+================================= 
+package.json 
+================================= 
+ 
+{
+  "name": "senado-backend",
+  "version": "1.0.0",
+  "description": "API Backend para el Portal del Senado de Bolivia",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "seed:tabs": "node src/scripts/seedTabs.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "compression": "^1.8.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.0",
+    "express": "^4.18.0",
+    "express-mongo-sanitize": "^2.2.0",
+    "express-rate-limit": "^8.2.1",
+    "express-validator": "^7.0.0",
+    "helmet": "^7.0.0",
+    "hpp": "^0.2.3",
+    "jsonwebtoken": "^9.0.0",
+    "mongoose": "^7.0.0",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "sharp": "^0.34.5",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.0",
+    "xss-clean": "^0.1.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
+}
+ 
+================================= 
+.vscode\settings.json 
+================================= 
+ 
+{
+    "workbench.editor.splitInGroupLayout": "vertical",
+    "workbench.editor.showTabs": "multiple"
+} 
+================================= 
+src\app.js 
+================================= 
+ 
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const dotenv = require('dotenv');
+const swaggerUi = require('swagger-ui-express');
+const swaggerJsdoc = require('swagger-jsdoc');
+const path = require('path');
+const rateLimit = require('express-rate-limit');
+const mongoSanitize = require('express-mongo-sanitize');
+const xss = require('xss-clean');
+const hpp = require('hpp');
+
+// Cargar variables de entorno
+dotenv.config();
+
+const app = express();
+
+// ============================================
+// 1. SEGURIDAD: CONFIGURACIÓN COMPLETA
+// ============================================
+
+// A. HELMET - Headers de seguridad
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      fontSrc: ["'self'"],
+      connectSrc: ["'self'"],
+      frameSrc: ["'none'"],
+      objectSrc: ["'none'"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
+}));
+
+// B. CORS - Control de orígenes
+const corsOptions = {
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:3002',
+    ];
+    
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Origen no permitido por CORS'));
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+};
+
+app.use(cors(corsOptions));
+
+// C. RATE LIMITING - Protección DDoS/Brute Force
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 100, // 100 peticiones por IP
+  message: {
+    success: false,
+    message: 'Demasiadas peticiones desde esta IP'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const authLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutos
+  max: 5, // Solo 5 intentos de login
+  message: {
+    success: false,
+    message: 'Demasiados intentos de login. Intenta más tarde.'
+  },
+  skipSuccessfulRequests: true
+});
+
+app.use(generalLimiter);
+
+// D. PROTECCIÓN CONTRA INYECCIONES
+app.use(mongoSanitize()); // Previene NoSQL injection
+app.use(xss()); // Previene XSS attacks
+app.use(hpp()); // Previene HTTP Parameter Pollution
+
+// E. MIDDLEWARES BÁSICOS CON SEGURIDAD
+app.use(morgan('combined', {
+  skip: (req, res) => req.path === '/api/health'
+}));
+
+// Limitar tamaño de requests
+app.use(express.json({
+  limit: '10kb', // Máximo 10kb por request
+  verify: (req, res, buf) => {
+    try {
+      JSON.parse(buf);
+    } catch (e) {
+      throw new Error('JSON inválido');
+    }
+  }
+}));
+
+app.use(express.urlencoded({ 
+  extended: true, 
+  limit: '10kb' 
+}));
+
+// F. HEADERS ADICIONALES
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  
+  // No cache para endpoints sensibles
+  if (req.path.includes('/api/auth') || req.path.includes('/api/users')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  
+  next();
+});
+
+// ============================================
+// 2. SWAGGER (SIN BUSCADOR)
+// ============================================
+console.log('\n🔧 Configurando Swagger...');
+
+const swaggerOptions = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'Senado de Bolivia API',
+      version: '1.0.0',
+      description: 'API Segura para el portal del Senado de Bolivia',
+    },
+    servers: [{ url: `http://localhost:${process.env.PORT || 3000}` }],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+        },
+      },
+    },
+  },
+  apis: [path.join(__dirname, 'controllers/*.js')],
+};
+
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  docExpansion: 'none',
+  swaggerOptions: {
+    validatorUrl: null,
+    displayRequestDuration: true,
+  },
+}));
+
+// ============================================
+// 3. IMPORTAR RUTAS CON SEGURIDAD
+// ============================================
+const authRoutes = require('./routes/auth.routes');
+const usersRoutes = require('./routes/users.routes');
+const contentRoutes = require('./routes/content.routes');
+const legisladoresRoutes = require('./routes/legisladores.routes');
+const tabsRoutes = require('./routes/tabs.routes');
+
+// Aplicar rate limiting específico a login
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+
+// Rutas principales
+app.use('/api/auth', authRoutes);
+app.use('/api/users', usersRoutes);
+app.use('/api/content', contentRoutes);
+app.use('/api/legisladores', legisladoresRoutes);
+app.use('/api/tabs', tabsRoutes);
+
+// ============================================
+// 4. RUTAS DEL SISTEMA
+// ============================================
+
+// Health check seguro (información limitada)
+app.get('/api/health', (req, res) => {
+  res.json({
+    success: true,
+    status: 'operational',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0',
+  });
+});
+
+// Información básica (sin detalles internos)
+app.get('/api', (req, res) => {
+  res.json({
+    success: true,
+    name: 'Senado de Bolivia API',
+    version: '1.0.0',
+    documentation: '/api/docs',
+    requires_auth: true,
+  });
+});
+
+// ============================================
+// 5. AUDITORÍA Y LOGGING DE SEGURIDAD
+// ============================================
+
+// Middleware de auditoría
+app.use((req, res, next) => {
+  const start = Date.now();
+  
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const logData = {
+      timestamp: new Date().toISOString(),
+      method: req.method,
+      path: req.path,
+      ip: req.ip,
+      statusCode: res.statusCode,
+      duration: `${duration}ms`,
+      userAgent: req.get('user-agent'),
+    };
+    
+    // Log detallado para endpoints sensibles o errores
+    if (req.path.includes('/api/auth') || res.statusCode >= 400) {
+      console.log('🔐 AUDIT:', logData);
+    }
+  });
+  
+  next();
+});
+
+// ============================================
+// 6. MANEJO DE ERRORES SEGURO
+// ============================================
+
+// 404 - No exponer estructura interna
+app.use('*', (req, res) => {
+  console.warn(`⚠️  404: ${req.method} ${req.originalUrl} from ${req.ip}`);
+  
+  res.status(404).json({
+    success: false,
+    message: 'Recurso no encontrado',
+  });
+});
+
+// Error handler - No exponer detalles en producción
+app.use((err, req, res, next) => {
+  console.error('🔥 ERROR:', {
+    message: err.message,
+    path: req.path,
+    method: req.method,
+    ip: req.ip,
+    timestamp: new Date().toISOString(),
+  });
+  
+  // Clasificar errores
+  let statusCode = 500;
+  let message = 'Error interno del servidor';
+  
+  if (err.name === 'ValidationError') statusCode = 400;
+  else if (err.name === 'JsonWebTokenError') statusCode = 401;
+  else if (err.name === 'TokenExpiredError') statusCode = 401;
+  else if (err.message.includes('CORS')) statusCode = 403;
+  else if (err.message.includes('rate limit')) statusCode = 429;
+  
+  res.status(statusCode).json({
+    success: false,
+    message: process.env.NODE_ENV === 'development' ? err.message : message,
+    code: err.code || 'SERVER_ERROR',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// ============================================
+// 7. INICIALIZACIÓN SEGURA
+// ============================================
+const PORT = process.env.PORT || 3000;
+
+const startServer = async () => {
+  try {
+    // Validar variables críticas
+    const requiredVars = ['JWT_SECRET', 'MONGODB_URI'];
+    requiredVars.forEach(varName => {
+      if (!process.env[varName]) {
+        throw new Error(`Variable ${varName} no definida en .env`);
+      }
+    });
+    
+    // Validar JWT_SECRET seguro
+    if (process.env.JWT_SECRET.length < 32) {
+      throw new Error('JWT_SECRET debe tener al menos 32 caracteres');
+    }
+    
+    // Conectar DB
+    const connectDB = require('./config/database');
+    await connectDB();
+    
+    // Iniciar servidor
+    app.listen(PORT, () => {
+      console.log('\n' + '═'.repeat(60));
+      console.log('✅ SERVIDOR SEGURO INICIADO');
+      console.log('═'.repeat(60));
+      console.log(`🚀 URL:          http://localhost:${PORT}`);
+      console.log(`📚 Documentación: http://localhost:${PORT}/api/docs`);
+      console.log(`🔍 Health Check:  http://localhost:${PORT}/api/health`);
+      console.log('═'.repeat(60));
+      console.log('\n🛡️  MEDIDAS DE SEGURIDAD ACTIVAS:');
+      console.log('   • Rate Limiting (100 req/15min)');
+      console.log('   • Login Limiting (5 intentos/5min)');
+      console.log('   • Helmet.js (Headers seguridad)');
+      console.log('   • CORS restringido');
+      console.log('   • Sanitización MongoDB');
+      console.log('   • Protección XSS');
+      console.log('   • Protección HPP');
+      console.log('   • Auditoría de logs');
+      console.log('   • Validación JWT secreto');
+      console.log('═'.repeat(60));
+    });
+    
+  } catch (error) {
+    console.error('\n❌ ERROR CRÍTICO:', error.message);
+    process.exit(1);
+  }
+};
+
+startServer(); 
+================================= 
+src\check-admin.js 
+================================= 
+ 
+// reset-admin-simple.js
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+// Configurar directamente (sin dotenv)
+const MONGODB_URI = 'mongodb://localhost:27017/senado_bolivia';
+
+async function main() {
+  console.log('🚀 Conectando a:', MONGODB_URI);
+  
+  try {
+    await mongoose.connect(MONGODB_URI);
+    console.log('✅ MongoDB conectado');
+    
+    const User = require('./models/User');
+    
+    // 1. Eliminar admin existente
+    const deleted = await User.deleteMany({ email: 'admin@senado.bo' });
+    console.log(`🗑️  Eliminados ${deleted.deletedCount} usuarios admin`);
+    
+    // 2. Crear nuevo admin con password en texto plano
+    const adminData = {
+      email: 'admin@senado.bo',
+      password: 'Admin123!', // ✅ Pasar en texto plano
+      role: 'SUPER_ADMIN',
+      status: 'ACTIVE',
+      profile: {
+        firstName: 'Super',
+        lastName: 'Administrador',
+        position: 'Administrador del Sistema',
+      },
+    };
+    
+    console.log('\n📝 Creando admin con estos datos:');
+    console.log('   Email:', adminData.email);
+    console.log('   Password:', adminData.password);
+    console.log('   Rol:', adminData.role);
+    
+    // Usar User.create() - activará el hook pre-save
+    const admin = await User.create(adminData);
+    
+    console.log('\n✅ ADMIN CREADO:');
+    console.log('   ID:', admin._id);
+    console.log('   Email:', admin.email);
+    console.log('   Hash generado:', admin.password.substring(0, 30) + '...');
+    
+    // 3. Verificar inmediatamente
+    const adminFromDB = await User.findOne({ email: 'admin@senado.bo' });
+    console.log('\n🔍 VERIFICACIÓN:');
+    console.log('   Usuario encontrado:', !!adminFromDB);
+    
+    if (adminFromDB) {
+      const isValid = await adminFromDB.comparePassword('Admin123!');
+      console.log('   Login válido con "Admin123!":', isValid ? '✅ SÍ' : '❌ NO');
+      
+      // También probar otras variantes
+      console.log('\n🔐 Probando diferentes passwords:');
+      console.log('   "admin123!":', await adminFromDB.comparePassword('admin123!'));
+      console.log('   "Admin123":', await adminFromDB.comparePassword('Admin123'));
+      console.log('   "Admin123! ":', await adminFromDB.comparePassword('Admin123! '));
+      console.log('   " Admin123!":', await adminFromDB.comparePassword(' Admin123!'));
+    }
+    
+    // 4. Crear usuario de prueba adicional
+    await User.create({
+      email: 'test@senado.bo',
+      password: 'Test123!',
+      role: 'CITIZEN',
+      status: 'ACTIVE',
+      profile: {
+        firstName: 'Test',
+        lastName: 'Usuario',
+      },
+    });
+    
+    console.log('\n👤 Usuario de prueba creado: test@senado.bo / Test123!');
+    
+    // 5. Mostrar todos
+    const allUsers = await User.find({});
+    console.log('\n👥 TOTAL USUARIOS:', allUsers.length);
+    allUsers.forEach(u => {
+      console.log(`   - ${u.email} (${u.role})`);
+    });
+    
+    await mongoose.disconnect();
+    console.log('\n🎉 Listo! Prueba en Postman:');
+    console.log('   POST http://localhost:3000/api/auth/login');
+    console.log('   Body: {"email":"admin@senado.bo","password":"Admin123!"}');
+    
+  } catch (error) {
+    console.error('❌ Error:', error.message);
+    
+    if (error.message.includes('connect ECONNREFUSED')) {
+      console.log('\n⚠️  MongoDB no está corriendo.');
+      console.log('   Inicia MongoDB primero:');
+      console.log('   Windows: net start MongoDB');
+      console.log('   macOS: brew services start mongodb-community');
+      console.log('   Linux: sudo systemctl start mongod');
+      console.log('   O ejecuta: mongod');
+    }
+    
+    process.exit(1);
+  }
+}
+
+main(); 
+================================= 
+src\config\database.js 
+================================= 
+ 
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+
+dotenv.config();
+
+const connectDB = async () => {
+  try {
+    console.log('🔍 Conectando a MongoDB...');
+    
+    const conn = await mongoose.connect(process.env.MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    
+    console.log(`✅ MongoDB conectado: ${conn.connection.host}`);
+    console.log(`📊 Base de datos: ${conn.connection.name}`);
+    
+    // Crear/verificar super admin al conectar
+    await createSuperAdmin();
+    
+    return conn;
+  } catch (error) {
+    console.error(`❌ Error al conectar a MongoDB: ${error.message}`);
+    
+    if (error.message.includes('ECONNREFUSED')) {
+      console.log('\n💡 MongoDB no está corriendo. Ejecuta:');
+      console.log('   Windows: net start MongoDB');
+      console.log('   macOS: brew services start mongodb-community');
+      console.log('   Linux: sudo systemctl start mongod');
+      console.log('   O ejecuta: mongod');
+    }
+    
+    process.exit(1);
+  }
+};
+
+const createSuperAdmin = async () => {
+  try {
+    const User = require('../models/User');
+    
+    const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || 'admin@senado.bo';
+    const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD || 'Admin123!';
+    
+    console.log('\n👤 Verificando super administrador...');
+    console.log(`📧 Email: ${superAdminEmail}`);
+    
+    const existingAdmin = await User.findOne({ 
+      email: superAdminEmail.toLowerCase() 
+    });
+    
+    if (!existingAdmin) {
+      console.log('➕ Creando nuevo super administrador...');
+      
+      // ✅ PASSWORD EN TEXTO PLANO - Mongoose lo hasheará automáticamente
+      const admin = await User.create({
+        email: superAdminEmail.toLowerCase(),
+        password: superAdminPassword, // ✅ TEXTO PLANO
+        role: 'SUPER_ADMIN',
+        status: 'ACTIVE',
+        profile: {
+          firstName: 'Super',
+          lastName: 'Administrador',
+          position: 'Administrador del Sistema',
+        },
+      });
+      
+      console.log('✅ Super administrador creado exitosamente');
+      console.log(`🔑 Password inicial: ${superAdminPassword}`);
+      console.log('⚠️  Cambia esta contraseña después del primer login');
+      
+      // Verificación inmediata
+      const isValid = await admin.comparePassword(superAdminPassword);
+      console.log(`🔐 Verificación interna: ${isValid ? '✅ FUNCIONA' : '❌ NO FUNCIONA'}`);
+      
+    } else {
+      console.log('✅ Super administrador ya existe en el sistema');
+      console.log(`📅 Creado el: ${existingAdmin.createdAt}`);
+      
+      // Verificar si el password funciona
+      const isValid = await existingAdmin.comparePassword(superAdminPassword);
+      console.log(`🔐 ¿Password "${superAdminPassword}" funciona?: ${isValid ? '✅ SÍ' : '❌ NO'}`);
+      
+      // Si no funciona, corregirlo
+      if (!isValid) {
+        console.log('🔄 Corrigiendo password...');
+        existingAdmin.password = superAdminPassword; // ✅ Texto plano
+        await existingAdmin.save();
+        console.log('✅ Password corregido');
+      }
+    }
+    
+    // Mostrar estadísticas
+    const userCount = await User.countDocuments();
+    console.log(`📈 Total de usuarios en sistema: ${userCount}`);
+    
+  } catch (error) {
+    console.error('❌ Error en createSuperAdmin:', error.message);
+    // No salir del proceso, solo loguear el error
+  }
+};
+
+module.exports = connectDB; 
+================================= 
+src\controllers\auth.controller.js 
+================================= 
+ 
+const authService = require('../services/auth.service');
+
+/**
+ * @swagger
+ * tags:
+ *   name: Auth
+ *   description: Autenticación de usuarios
+ */
+
+class AuthController {
+  /**
+   * @swagger
+   * /api/auth/login:
+   *   post:
+   *     tags: [Auth]
+   *     summary: Iniciar sesión
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - email
+   *               - password
+   *             properties:
+   *               email:
+   *                 type: string
+   *                 format: email
+   *               password:
+   *                 type: string
+   *                 format: password
+   *     responses:
+   *       200:
+   *         description: Login exitoso
+   *       400:
+   *         description: Error en los datos
+   *       401:
+   *         description: Credenciales inválidas
+   */
+  async login(req, res) {
+    try {
+      const { email, password } = req.body;
+      
+      const result = await authService.login(email, password);
+      
+      res.json({
+        success: true,
+        message: 'Login exitoso',
+        data: result,
+      });
+    } catch (error) {
+      res.status(401).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+  
+  /**
+   * @swagger
+   * /api/auth/register:
+   *   post:
+   *     tags: [Auth]
+   *     summary: Registrar nuevo usuario
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - email
+   *               - password
+   *             properties:
+   *               email:
+   *                 type: string
+   *                 format: email
+   *               password:
+   *                 type: string
+   *                 format: password
+   *               firstName:
+   *                 type: string
+   *               lastName:
+   *                 type: string
+   *               ci:
+   *                 type: string
+   *               phone:
+   *                 type: string
+   *     responses:
+   *       201:
+   *         description: Usuario registrado exitosamente
+   *       400:
+   *         description: Error en los datos
+   *       409:
+   *         description: El email ya está registrado
+   */
+  async register(req, res) {
+    try {
+      const userData = req.body;
+      
+      const result = await authService.register(userData);
+      
+      res.status(201).json({
+        success: true,
+        message: 'Usuario registrado exitosamente',
+        data: result,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+  
+  /**
+   * @swagger
+   * /api/auth/me:
+   *   get:
+   *     tags: [Auth]
+   *     summary: Obtener información del usuario actual
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Información del usuario
+   *       401:
+   *         description: No autenticado
+   */
+  async getCurrentUser(req, res) {
+    try {
+      const result = await authService.getCurrentUser(req.user._id);
+      
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+  
+  /**
+   * @swagger
+   * /api/auth/validate:
+   *   post:
+   *     tags: [Auth]
+   *     summary: Validar token JWT
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - token
+   *             properties:
+   *               token:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Token válido o inválido
+   */
+  async validateToken(req, res) {
+    try {
+      const { token } = req.body;
+      
+      if (!token) {
+        return res.json({
+          success: false,
+          valid: false,
+          message: 'Token no proporcionado',
+        });
+      }
+      
+      const jwt = require('jsonwebtoken');
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      
+      res.json({
+        success: true,
+        valid: true,
+        decoded,
+      });
+    } catch (error) {
+      res.json({
+        success: false,
+        valid: false,
+        message: error.message,
+      });
+    }
+  }
+}
+
+module.exports = new AuthController(); 
+================================= 
+src\controllers\content.controller.js 
+================================= 
+ 
+const contentService = require('../services/content.service');
+const { processImage, generateThumbnails } = require('../middleware/upload');
+const path = require('path');
+const fs = require('fs');
+
+/**
+ * @swagger
+ * tags:
+ *   name: Content
+ *   description: Gestión de contenido (páginas, noticias, artículos)
+ */
+
+class ContentController {
+  /**
+   * @swagger
+   * /api/content:
+   *   post:
+   *     summary: Crear nuevo contenido
+   *     tags: [Content]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - title
+   *               - type
+   *             properties:
+   *               title:
+   *                 type: string
+   *               slug:
+   *                 type: string
+   *               content:
+   *                 type: string
+   *               type:
+   *                 type: string
+   *                 enum: [page, news, article, announcement]
+   *               category:
+   *                 type: string
+   *               status:
+   *                 type: string
+   *                 enum: [draft, published, archived, scheduled]
+   *               featuredImage:
+   *                 type: object
+   *               tags:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *     responses:
+   *       201:
+   *         description: Contenido creado exitosamente
+   *       400:
+   *         description: Error en los datos
+   */
+  async createContent(req, res) {
+    try {
+      const content = await contentService.createContent(req.body, req.user._id);
+      
+      res.status(201).json({
+        success: true,
+        message: 'Contenido creado exitosamente',
+        data: content,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/content:
+   *   get:
+   *     summary: Obtener lista de contenido
+   *     tags: [Content]
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 10
+   *       - in: query
+   *         name: type
+   *         schema:
+   *           type: string
+   *           enum: [page, news, article, announcement]
+   *       - in: query
+   *         name: category
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: status
+   *         schema:
+   *           type: string
+   *           enum: [draft, published, archived, scheduled]
+   *       - in: query
+   *         name: search
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: includeDrafts
+   *         schema:
+   *           type: boolean
+   *           default: false
+   *     responses:
+   *       200:
+   *         description: Lista de contenido obtenida
+   */
+  async getContents(req, res) {
+    try {
+      const { 
+        page = 1, 
+        limit = 10, 
+        type, 
+        category, 
+        status, 
+        search,
+        includeDrafts,
+        language,
+        fromDate,
+        toDate,
+        tags
+      } = req.query;
+
+      const filters = {};
+      if (type) filters.type = type;
+      if (category) filters.category = category;
+      if (status) filters.status = status;
+      if (search) filters.search = search;
+      if (language) filters.language = language;
+      if (fromDate) filters.fromDate = fromDate;
+      if (toDate) filters.toDate = toDate;
+      if (includeDrafts) filters.includeDrafts = includeDrafts === 'true';
+      if (tags) filters.tags = tags.split(',');
+
+      const result = await contentService.getContents(
+        parseInt(page),
+        parseInt(limit),
+        filters
+      );
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/content/{id}:
+   *   get:
+   *     summary: Obtener contenido por ID
+   *     tags: [Content]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Contenido encontrado
+   *       404:
+   *         description: Contenido no encontrado
+   */
+  async getContentById(req, res) {
+    try {
+      const { id } = req.params;
+      const content = await contentService.getContentById(id);
+
+      res.json({
+        success: true,
+        data: content,
+      });
+    } catch (error) {
+      res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/content/slug/{slug}:
+   *   get:
+   *     summary: Obtener contenido por slug
+   *     tags: [Content]
+   *     parameters:
+   *       - in: path
+   *         name: slug
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Contenido encontrado
+   *       404:
+   *         description: Contenido no encontrado
+   */
+  async getContentBySlug(req, res) {
+    try {
+      const { slug } = req.params;
+      const content = await contentService.getContentBySlug(slug);
+
+      res.json({
+        success: true,
+        data: content,
+      });
+    } catch (error) {
+      res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/content/{id}:
+   *   put:
+   *     summary: Actualizar contenido
+   *     tags: [Content]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               title:
+   *                 type: string
+   *               content:
+   *                 type: string
+   *               category:
+   *                 type: string
+   *               status:
+   *                 type: string
+   *               tags:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *     responses:
+   *       200:
+   *         description: Contenido actualizado
+   *       404:
+   *         description: Contenido no encontrado
+   */
+  async updateContent(req, res) {
+    try {
+      const { id } = req.params;
+      const content = await contentService.updateContent(id, req.body, req.user._id);
+
+      res.json({
+        success: true,
+        message: 'Contenido actualizado exitosamente',
+        data: content,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/content/{id}:
+   *   delete:
+   *     summary: Eliminar contenido
+   *     tags: [Content]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Contenido eliminado
+   *       404:
+   *         description: Contenido no encontrado
+   */
+  async deleteContent(req, res) {
+    try {
+      const { id } = req.params;
+      const result = await contentService.deleteContent(id);
+
+      res.json({
+        success: true,
+        message: result.message,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/content/{id}/status:
+   *   patch:
+   *     summary: Cambiar estado del contenido
+   *     tags: [Content]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - status
+   *             properties:
+   *               status:
+   *                 type: string
+   *                 enum: [draft, published, archived, scheduled]
+   *     responses:
+   *       200:
+   *         description: Estado actualizado
+   */
+  async changeStatus(req, res) {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      
+      const content = await contentService.changeContentStatus(id, status, req.user._id);
+
+      res.json({
+        success: true,
+        message: `Estado cambiado a ${status}`,
+        data: content,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/content/stats:
+   *   get:
+   *     summary: Obtener estadísticas de contenido
+   *     tags: [Content]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Estadísticas obtenidas
+   */
+  async getStats(req, res) {
+    try {
+      const stats = await contentService.getContentStats();
+
+      res.json({
+        success: true,
+        data: stats,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/content/search:
+   *   get:
+   *     summary: Buscar contenido
+   *     tags: [Content]
+   *     parameters:
+   *       - in: query
+   *         name: q
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 20
+   *     responses:
+   *       200:
+   *         description: Resultados de búsqueda
+   */
+  async searchContent(req, res) {
+    try {
+      const { q, limit = 20 } = req.query;
+      
+      if (!q) {
+        return res.status(400).json({
+          success: false,
+          message: 'Término de búsqueda requerido',
+        });
+      }
+
+      const results = await contentService.searchContent(q, parseInt(limit));
+
+      res.json({
+        success: true,
+        data: results,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/content/{id}/related:
+   *   get:
+   *     summary: Obtener contenido relacionado
+   *     tags: [Content]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 5
+   *     responses:
+   *       200:
+   *         description: Contenido relacionado
+   */
+  async getRelatedContent(req, res) {
+    try {
+      const { id } = req.params;
+      const { limit = 5 } = req.query;
+
+      const related = await contentService.getRelatedContent(id, parseInt(limit));
+
+      res.json({
+        success: true,
+        data: related,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/content/upload/image:
+   *   post:
+   *     summary: Subir imagen para contenido
+   *     tags: [Content]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         multipart/form-data:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               image:
+   *                 type: string
+   *                 format: binary
+   *               alt:
+   *                 type: string
+   *               caption:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Imagen subida exitosamente
+   */
+  async uploadImage(req, res) {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se subió ninguna imagen',
+        });
+      }
+
+      // Procesar imagen
+      const imagePath = path.join(req.file.destination, req.file.filename);
+      const processedFilename = await processImage(imagePath, {
+        width: 1200,
+        quality: 80,
+        format: 'webp',
+      });
+
+      // Generar thumbnails
+      const thumbnails = await generateThumbnails(
+        path.join(req.file.destination, processedFilename)
+      );
+
+      const imageUrl = `/uploads/images/${processedFilename}`;
+
+      res.json({
+        success: true,
+        message: 'Imagen subida exitosamente',
+        data: {
+          url: imageUrl,
+          filename: processedFilename,
+          originalName: req.file.originalname,
+          size: req.file.size,
+          mimetype: req.file.mimetype,
+          thumbnails,
+          alt: req.body.alt || '',
+          caption: req.body.caption || '',
+        },
+      });
+    } catch (error) {
+      console.error('Error subiendo imagen:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al subir la imagen',
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/content/upload/document:
+   *   post:
+   *     summary: Subir documento
+   *     tags: [Content]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         multipart/form-data:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               document:
+   *                 type: string
+   *                 format: binary
+   *     responses:
+   *       200:
+   *         description: Documento subido exitosamente
+   */
+  async uploadDocument(req, res) {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se subió ningún documento',
+        });
+      }
+
+      const documentUrl = `/uploads/documents/${req.file.filename}`;
+
+      res.json({
+        success: true,
+        message: 'Documento subido exitosamente',
+        data: {
+          url: documentUrl,
+          filename: req.file.filename,
+          originalName: req.file.originalname,
+          size: req.file.size,
+          mimetype: req.file.mimetype,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Error al subir el documento',
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/content/types:
+   *   get:
+   *     summary: Obtener tipos de contenido disponibles
+   *     tags: [Content]
+   *     responses:
+   *       200:
+   *         description: Tipos de contenido
+   */
+  async getContentTypes(req, res) {
+    try {
+      const types = [
+        { value: 'page', label: 'Página', description: 'Páginas estáticas como institucional, historia, etc.' },
+        { value: 'news', label: 'Noticia', description: 'Noticias y anuncios de actualidad' },
+        { value: 'article', label: 'Artículo', description: 'Artículos de opinión o análisis' },
+        { value: 'announcement', label: 'Anuncio', description: 'Comunicados oficiales' },
+      ];
+
+      res.json({
+        success: true,
+        data: types,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/content/categories:
+   *   get:
+   *     summary: Obtener categorías disponibles
+   *     tags: [Content]
+   *     responses:
+   *       200:
+   *         description: Categorías de contenido
+   */
+  async getCategories(req, res) {
+    try {
+      const categories = [
+        { value: 'institucional', label: 'Institucional', color: 'blue' },
+        { value: 'historia', label: 'Historia', color: 'green' },
+        { value: 'directiva', label: 'Directiva', color: 'purple' },
+        { value: 'noticias', label: 'Noticias', color: 'orange' },
+        { value: 'eventos', label: 'Eventos', color: 'red' },
+        { value: 'transparencia', label: 'Transparencia', color: 'teal' },
+        { value: 'participacion', label: 'Participación', color: 'cyan' },
+        { value: 'legislacion', label: 'Legislación', color: 'indigo' },
+      ];
+
+      res.json({
+        success: true,
+        data: categories,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+}
+
+module.exports = new ContentController(); 
+================================= 
+src\controllers\legisladores.controller.js 
+================================= 
+ 
+const legisladoresService = require('../services/legisladores.service');
+const { processImage } = require('../middleware/upload');
+const path = require('path');
+
+/**
+ * @swagger
+ * tags:
+ *   name: Legisladores
+ *   description: Gestión de legisladores y representantes
+ */
+
+class LegisladoresController {
+  /**
+   * @swagger
+   * /api/legisladores:
+   *   post:
+   *     summary: Crear nuevo legislador
+   *     tags: [Legisladores]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - nombres
+   *               - apellidos
+   *               - ci
+   *               - partidoPolitico
+   *             properties:
+   *               nombres:
+   *                 type: string
+   *               apellidos:
+   *                 type: string
+   *               ci:
+   *                 type: string
+   *               partidoPolitico:
+   *                 type: string
+   *               cargoActual:
+   *                 type: string
+   *               distrito:
+   *                 type: object
+   *               comisiones:
+   *                 type: array
+   *                 items:
+   *                   type: object
+   *     responses:
+   *       201:
+   *         description: Legislador creado exitosamente
+   *       400:
+   *         description: Error en los datos
+   */
+  async createLegislador(req, res) {
+    try {
+      const legislador = await legisladoresService.createLegislador(req.body, req.user._id);
+      
+      res.status(201).json({
+        success: true,
+        message: 'Legislador creado exitosamente',
+        data: legislador,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/legisladores:
+   *   get:
+   *     summary: Obtener lista de legisladores
+   *     tags: [Legisladores]
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 10
+   *       - in: query
+   *         name: partidoPolitico
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: bancada
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: cargoActual
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: departamento
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: comision
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: search
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Lista de legisladores obtenida
+   */
+  async getLegisladores(req, res) {
+    try {
+      const { 
+        page = 1, 
+        limit = 10, 
+        partidoPolitico, 
+        bancada, 
+        cargoActual, 
+        departamento,
+        comision,
+        search,
+        estado
+      } = req.query;
+
+      const filters = {};
+      if (partidoPolitico) filters.partidoPolitico = partidoPolitico;
+      if (bancada) filters.bancada = bancada;
+      if (cargoActual) filters.cargoActual = cargoActual;
+      if (departamento) filters.departamento = departamento;
+      if (comision) filters.comision = comision;
+      if (search) filters.search = search;
+      if (estado) filters.estado = estado;
+
+      const result = await legisladoresService.getLegisladores(
+        parseInt(page),
+        parseInt(limit),
+        filters
+      );
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/legisladores/{id}:
+   *   get:
+   *     summary: Obtener legislador por ID
+   *     tags: [Legisladores]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Legislador encontrado
+   *       404:
+   *         description: Legislador no encontrado
+   */
+  async getLegisladorById(req, res) {
+    try {
+      const { id } = req.params;
+      const legislador = await legisladoresService.getLegisladorById(id);
+
+      res.json({
+        success: true,
+        data: legislador,
+      });
+    } catch (error) {
+      res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/legisladores/ci/{ci}:
+   *   get:
+   *     summary: Obtener legislador por CI
+   *     tags: [Legisladores]
+   *     parameters:
+   *       - in: path
+   *         name: ci
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Legislador encontrado
+   *       404:
+   *         description: Legislador no encontrado
+   */
+  async getLegisladorByCI(req, res) {
+    try {
+      const { ci } = req.params;
+      const legislador = await legisladoresService.getLegisladorByCI(ci);
+
+      res.json({
+        success: true,
+        data: legislador,
+      });
+    } catch (error) {
+      res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/legisladores/{id}:
+   *   put:
+   *     summary: Actualizar legislador
+   *     tags: [Legisladores]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               nombres:
+   *                 type: string
+   *               apellidos:
+   *                 type: string
+   *               partidoPolitico:
+   *                 type: string
+   *               cargoActual:
+   *                 type: string
+   *               comisiones:
+   *                 type: array
+   *                 items:
+   *                   type: object
+   *               contacto:
+   *                 type: object
+   *     responses:
+   *       200:
+   *         description: Legislador actualizado
+   *       404:
+   *         description: Legislador no encontrado
+   */
+  async updateLegislador(req, res) {
+    try {
+      const { id } = req.params;
+      const legislador = await legisladoresService.updateLegislador(
+        id, 
+        req.body, 
+        req.user._id
+      );
+
+      res.json({
+        success: true,
+        message: 'Legislador actualizado exitosamente',
+        data: legislador,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/legisladores/{id}:
+   *   delete:
+   *     summary: Eliminar legislador
+   *     tags: [Legisladores]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Legislador eliminado
+   *       404:
+   *         description: Legislador no encontrado
+   */
+  async deleteLegislador(req, res) {
+    try {
+      const { id } = req.params;
+      const result = await legisladoresService.deleteLegislador(id);
+
+      res.json({
+        success: true,
+        message: result.message,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/legisladores/stats:
+   *   get:
+   *     summary: Obtener estadísticas de legisladores
+   *     tags: [Legisladores]
+   *     responses:
+   *       200:
+   *         description: Estadísticas obtenidas
+   */
+  async getStats(req, res) {
+    try {
+      const stats = await legisladoresService.getLegisladoresStats();
+
+      res.json({
+        success: true,
+        data: stats,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/legisladores/distribution/party:
+   *   get:
+   *     summary: Obtener distribución por partido político
+   *     tags: [Legisladores]
+   *     responses:
+   *       200:
+   *         description: Distribución por partido
+   */
+  async getDistributionByParty(req, res) {
+    try {
+      const distribution = await legisladoresService.getDistributionByParty();
+
+      res.json({
+        success: true,
+        data: distribution,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/legisladores/distribution/department:
+   *   get:
+   *     summary: Obtener legisladores por departamento
+   *     tags: [Legisladores]
+   *     responses:
+   *       200:
+   *         description: Legisladores por departamento
+   */
+  async getByDepartamento(req, res) {
+    try {
+      const byDepartamento = await legisladoresService.getByDepartamento();
+
+      res.json({
+        success: true,
+        data: byDepartamento,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/legisladores/search:
+   *   get:
+   *     summary: Buscar legisladores
+   *     tags: [Legisladores]
+   *     parameters:
+   *       - in: query
+   *         name: q
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 20
+   *     responses:
+   *       200:
+   *         description: Resultados de búsqueda
+   */
+  async searchLegisladores(req, res) {
+    try {
+      const { q, limit = 20 } = req.query;
+      
+      if (!q) {
+        return res.status(400).json({
+          success: false,
+          message: 'Término de búsqueda requerido',
+        });
+      }
+
+      const results = await legisladoresService.searchLegisladores(q, parseInt(limit));
+
+      res.json({
+        success: true,
+        data: results,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/legisladores/comisiones:
+   *   get:
+   *     summary: Obtener comisiones activas
+   *     tags: [Legisladores]
+   *     responses:
+   *       200:
+   *         description: Comisiones activas
+   */
+  async getComisionesActivas(req, res) {
+    try {
+      const comisiones = await legisladoresService.getComisionesActivas();
+
+      res.json({
+        success: true,
+        data: comisiones,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/legisladores/upload/foto:
+   *   post:
+   *     summary: Subir foto de perfil para legislador
+   *     tags: [Legisladores]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         multipart/form-data:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               foto:
+   *                 type: string
+   *                 format: binary
+   *               legisladorId:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Foto subida exitosamente
+   */
+  async uploadFotoPerfil(req, res) {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se subió ninguna imagen',
+        });
+      }
+
+      // Procesar imagen
+      const imagePath = path.join(req.file.destination, req.file.filename);
+      const processedFilename = await processImage(imagePath, {
+        width: 400,
+        height: 400,
+        quality: 90,
+        format: 'webp',
+      });
+
+      const imageUrl = `/uploads/legisladores/${processedFilename}`;
+
+      // Si se proporcionó ID del legislador, actualizar su foto
+      if (req.body.legisladorId) {
+        const legislador = await legisladoresService.getLegisladorById(req.body.legisladorId);
+        legislador.fotoPerfil = {
+          url: imageUrl,
+          alt: `${legislador.nombreCompleto} - Foto de perfil`,
+        };
+        await legislador.save();
+      }
+
+      res.json({
+        success: true,
+        message: 'Foto subida exitosamente',
+        data: {
+          url: imageUrl,
+          filename: processedFilename,
+          originalName: req.file.originalname,
+          size: req.file.size,
+          mimetype: req.file.mimetype,
+        },
+      });
+    } catch (error) {
+      console.error('Error subiendo foto:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al subir la foto',
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/legisladores/cargos:
+   *   get:
+   *     summary: Obtener cargos disponibles
+   *     tags: [Legisladores]
+   *     responses:
+   *       200:
+   *         description: Cargos disponibles
+   */
+  async getCargosDisponibles(req, res) {
+    try {
+      const cargos = [
+        { value: 'Presidente', label: 'Presidente' },
+        { value: 'Vicepresidente', label: 'Vicepresidente' },
+        { value: 'Senador', label: 'Senador' },
+        { value: 'Senadora', label: 'Senadora' },
+        { value: 'Secretario', label: 'Secretario' },
+        { value: 'Pro-Secretario', label: 'Pro-Secretario' },
+      ];
+
+      res.json({
+        success: true,
+        data: cargos,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/legisladores/estados:
+   *   get:
+   *     summary: Obtener estados disponibles
+   *     tags: [Legisladores]
+   *     responses:
+   *       200:
+   *         description: Estados disponibles
+   */
+  async getEstadosDisponibles(req, res) {
+    try {
+      const estados = [
+        { value: 'activo', label: 'Activo', color: 'green' },
+        { value: 'inactivo', label: 'Inactivo', color: 'gray' },
+        { value: 'suspendido', label: 'Suspendido', color: 'red' },
+        { value: 'licencia', label: 'En licencia', color: 'yellow' },
+      ];
+
+      res.json({
+        success: true,
+        data: estados,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+}
+
+module.exports = new LegisladoresController(); 
+================================= 
+src\controllers\tabs.controller.js 
+================================= 
+ 
+// ============================================
+// src/controllers/tabs.controller.js (COMPLETO)
+// ============================================
+const TabLink = require('../models/TabLink');
+const TabCategory = require('../models/TabCategory');
+
+/**
+ * @swagger
+ * tags:
+ *   name: Tabs
+ *   description: Contenido dinámico para las pestañas del frontend
+ */
+
+class TabsController {
+  /**
+   * @swagger
+   * /api/tabs:
+   *   get:
+   *     summary: Obtener datos completos para las pestañas
+   *     tags: [Tabs]
+   *     responses:
+   *       200:
+   *         description: Datos de pestañas obtenidos exitosamente
+   */
+  async getTabsData(req, res) {
+    try {
+      // Obtener TODAS las categorías activas
+      const categories = await TabCategory.find({ isActive: true })
+        .sort({ order: 1 })
+        .lean();
+
+      // Obtener TODOS los links activos
+      const activeLinks = await TabLink.find({ isActive: true })
+        .sort({ categoryId: 1, orden: 1 })
+        .lean();
+
+      // Si no hay categorías, devolver estructura vacía
+      if (!categories || categories.length === 0) {
+        console.warn('⚠️ No se encontraron categorías en la base de datos. Ejecuta el script de seed.');
+        return res.json({
+          success: true,
+          data: {
+            tabs: [],
+            areas: {},
+            links: {},
+            message: 'No hay categorías configuradas. Contacte al administrador.'
+          }
+        });
+      }
+
+      // Construir la respuesta dinámica basada en las categorías
+      const tabs = categories.map(cat => ({
+        id: cat.categoryId,
+        label: cat.name,
+        icono: cat.icon,
+        color: cat.color
+      }));
+
+      const areas = {};
+      const links = {};
+
+      // Inicializar áreas y links para cada categoría
+      categories.forEach(cat => {
+        areas[cat.categoryId] = {
+          titulo: cat.name,
+          descripcion: cat.description,
+          color: cat.color
+        };
+        
+        links[cat.categoryId] = [];
+      });
+
+      // Poblar los links en sus categorías correspondientes
+      activeLinks.forEach(item => {
+        const categoryId = item.categoryId;
+        
+        // Solo agregar si la categoría existe
+        if (links[categoryId]) {
+          links[categoryId].push({
+            id: item.linkId,
+            titulo: item.titulo,
+            descripcion: item.descripcion,
+            icono: item.icono,
+            path: item.path
+          });
+        }
+      });
+
+      res.json({
+        success: true,
+        data: { 
+          tabs, 
+          areas, 
+          links 
+        }
+      });
+
+    } catch (error) {
+      console.error('🔥 Error en getTabsData:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor al obtener datos de pestañas',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/tabs/{tabId}:
+   *   get:
+   *     summary: Obtener links de una pestaña específica
+   *     tags: [Tabs]
+   *     parameters:
+   *       - in: path
+   *         name: tabId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Links de la pestaña obtenidos
+   */
+  async getTabLinks(req, res) {
+    try {
+      const { tabId } = req.params;
+      
+      // Verificar que la categoría existe
+      const category = await TabCategory.findOne({ categoryId: tabId, isActive: true });
+      
+      if (!category) {
+        return res.status(404).json({
+          success: false,
+          message: 'Pestaña no encontrada'
+        });
+      }
+
+      // Obtener links de la categoría específica
+      const links = await TabLink.find({ 
+        categoryId: tabId, 
+        isActive: true 
+      })
+      .sort({ orden: 1 })
+      .lean();
+
+      res.json({
+        success: true,
+        data: {
+          category: {
+            id: category.categoryId,
+            name: category.name,
+            description: category.description,
+            color: category.color
+          },
+          links
+        }
+      });
+
+    } catch (error) {
+      console.error('🔥 Error en getTabLinks:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor'
+      });
+    }
+  }
+
+  // ===== NUEVAS FUNCIONES PARA CATEGORÍAS (CMS) =====
+
+  /**
+   * @swagger
+   * /api/tabs/categories:
+   *   get:
+   *     summary: Obtener todas las categorías
+   *     tags: [Tabs]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Lista de categorías
+   */
+  async getCategories(req, res) {
+    try {
+      const { includeInactive = false } = req.query;
+      
+      const query = {};
+      if (!includeInactive) query.isActive = true;
+
+      const categories = await TabCategory.find(query)
+        .sort({ order: 1 })
+        .populate('createdBy', 'email profile')
+        .populate('lastUpdatedBy', 'email profile')
+        .lean();
+
+      // Para cada categoría, contar cuántos links tiene
+      const categoriesWithCount = await Promise.all(
+        categories.map(async (cat) => {
+          const linksCount = await TabLink.countDocuments({ 
+            categoryId: cat.categoryId,
+            isActive: true 
+          });
+          return { ...cat, linksCount };
+        })
+      );
+
+      res.json({
+        success: true,
+        data: categoriesWithCount
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/tabs/categories:
+   *   post:
+   *     summary: Crear nueva categoría
+   *     tags: [Tabs]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - categoryId
+   *               - name
+   *             properties:
+   *               categoryId:
+   *                 type: string
+   *               name:
+   *                 type: string
+   *               description:
+   *                 type: string
+   *               order:
+   *                 type: number
+   *               color:
+   *                 type: string
+   *               icon:
+   *                 type: string
+   *     responses:
+   *       201:
+   *         description: Categoría creada
+   */
+  async createCategory(req, res) {
+    try {
+      const { categoryId, name, description, order, color, icon } = req.body;
+
+      // Validar categoryId (solo letras, números y guiones)
+      const idRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+      if (!idRegex.test(categoryId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID inválido. Use solo letras minúsculas, números y guiones'
+        });
+      }
+
+      // Verificar si ya existe
+      const existing = await TabCategory.findOne({ categoryId });
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          message: 'Ya existe una categoría con ese ID'
+        });
+      }
+
+      const category = new TabCategory({
+        categoryId,
+        name,
+        description,
+        order: order || 0,
+        color: color || '#e03735',
+        icon,
+        createdBy: req.user._id,
+        lastUpdatedBy: req.user._id
+      });
+
+      await category.save();
+
+      res.status(201).json({
+        success: true,
+        message: 'Categoría creada exitosamente',
+        data: category
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/tabs/categories/{categoryId}:
+   *   put:
+   *     summary: Actualizar categoría
+   *     tags: [Tabs]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: categoryId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               name:
+   *                 type: string
+   *               description:
+   *                 type: string
+   *               order:
+   *                 type: number
+   *               color:
+   *                 type: string
+   *               icon:
+   *                 type: string
+   *               isActive:
+   *                 type: boolean
+   *     responses:
+   *       200:
+   *         description: Categoría actualizada
+   */
+  async updateCategory(req, res) {
+    try {
+      console.log('\n🔵 UPDATE CATEGORY - INICIANDO');
+      console.log('📌 req.user desde middleware:', req.user ? req.user.email : 'UNDEFINED');
+      console.log('📌 Params:', req.params);
+      console.log('📌 Body:', req.body);
+      
+      const { categoryId } = req.params;
+      const updates = req.body;
+
+      // Verificar que req.user existe (debería venir del middleware)
+      if (!req.user) {
+        console.log('❌ Error: req.user no está definido');
+        return res.status(401).json({
+          success: false,
+          message: 'No autenticado'
+        });
+      }
+
+      const category = await TabCategory.findOne({ categoryId });
+      
+      if (!category) {
+        console.log('❌ Categoría no encontrada:', categoryId);
+        return res.status(404).json({
+          success: false,
+          message: 'Categoría no encontrada'
+        });
+      }
+
+      // Campos permitidos para actualizar
+      const allowedUpdates = ['name', 'description', 'order', 'color', 'icon', 'isActive'];
+      
+      allowedUpdates.forEach(field => {
+        if (updates[field] !== undefined) {
+          category[field] = updates[field];
+          console.log(`   ✅ ${field} actualizado`);
+        }
+      });
+
+      category.lastUpdatedBy = req.user._id;
+      await category.save();
+
+      console.log('✅ Categoría actualizada exitosamente por:', req.user.email);
+
+      res.json({
+        success: true,
+        message: 'Categoría actualizada exitosamente',
+        data: category
+      });
+    } catch (error) {
+      console.error('🔥 Error en updateCategory:', error);
+      res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/tabs/categories/{categoryId}:
+   *   delete:
+   *     summary: Eliminar categoría (soft delete)
+   *     tags: [Tabs]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: categoryId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Categoría eliminada
+   */
+  async deleteCategory(req, res) {
+    try {
+      const { categoryId } = req.params;
+
+      // Verificar si hay links activos usando esta categoría
+      const activeLinksCount = await TabLink.countDocuments({ 
+        categoryId, 
+        isActive: true 
+      });
+      
+      if (activeLinksCount > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `No se puede eliminar: ${activeLinksCount} links activos usan esta categoría. Desactive los links primero.`
+        });
+      }
+
+      // Verificar si hay links inactivos
+      const totalLinksCount = await TabLink.countDocuments({ categoryId });
+      
+      if (totalLinksCount > 0) {
+        // Soft delete: marcar como inactiva pero mantener links inactivos
+        const category = await TabCategory.findOne({ categoryId });
+        category.isActive = false;
+        category.lastUpdatedBy = req.user._id;
+        await category.save();
+
+        return res.json({
+          success: true,
+          message: 'Categoría desactivada. Los links asociados permanecen inactivos.'
+        });
+      }
+
+      // Si no hay links, eliminar físicamente
+      const category = await TabCategory.findOneAndDelete({ categoryId });
+      
+      res.json({
+        success: true,
+        message: 'Categoría eliminada permanentemente'
+      });
+
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  // ===== NUEVAS FUNCIONES PARA LINKS (CMS) =====
+
+  /**
+   * @swagger
+   * /api/tabs/links:
+   *   post:
+   *     summary: Crear nuevo link
+   *     tags: [Tabs]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - categoryId
+   *               - linkId
+   *               - titulo
+   *               - descripcion
+   *               - icono
+   *               - path
+   *             properties:
+   *               categoryId:
+   *                 type: string
+   *               linkId:
+   *                 type: string
+   *               titulo:
+   *                 type: string
+   *               descripcion:
+   *                 type: string
+   *               icono:
+   *                 type: string
+   *               path:
+   *                 type: string
+   *               orden:
+   *                 type: number
+   *     responses:
+   *       201:
+   *         description: Link creado
+   */
+  async createLink(req, res) {
+    try {
+      const { categoryId, linkId, titulo, descripcion, icono, path, orden } = req.body;
+
+      // Verificar que la categoría existe y está activa
+      const category = await TabCategory.findOne({ categoryId, isActive: true });
+      if (!category) {
+        return res.status(400).json({
+          success: false,
+          message: 'La categoría especificada no existe o no está activa'
+        });
+      }
+
+      // Verificar que no exista el linkId
+      const existing = await TabLink.findOne({ linkId });
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          message: 'Ya existe un link con ese ID'
+        });
+      }
+
+      const newLink = new TabLink({
+        categoryId,
+        areaTitulo: category.name,
+        areaDescripcion: category.description,
+        linkId,
+        titulo,
+        descripcion,
+        icono,
+        path,
+        orden: orden || 0,
+        createdBy: req.user._id,
+        lastUpdatedBy: req.user._id,
+        isActive: true
+      });
+
+      await newLink.save();
+
+      res.status(201).json({
+        success: true,
+        message: 'Link creado exitosamente',
+        data: newLink
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/tabs/links/{linkId}:
+   *   put:
+   *     summary: Actualizar link
+   *     tags: [Tabs]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: linkId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               titulo:
+   *                 type: string
+   *               descripcion:
+   *                 type: string
+   *               icono:
+   *                 type: string
+   *               path:
+   *                 type: string
+   *               orden:
+   *                 type: number
+   *               isActive:
+   *                 type: boolean
+   *     responses:
+   *       200:
+   *         description: Link actualizado
+   */
+  async updateLink(req, res) {
+    try {
+      const { linkId } = req.params;
+      const updates = req.body;
+
+      const link = await TabLink.findOne({ linkId });
+      if (!link) {
+        return res.status(404).json({
+          success: false,
+          message: 'Link no encontrado'
+        });
+      }
+
+      // Actualizar campos permitidos
+      const allowedUpdates = ['titulo', 'descripcion', 'icono', 'path', 'orden', 'isActive'];
+      allowedUpdates.forEach(field => {
+        if (updates[field] !== undefined) {
+          link[field] = updates[field];
+        }
+      });
+
+      link.lastUpdatedBy = req.user._id;
+      await link.save();
+
+      res.json({
+        success: true,
+        message: 'Link actualizado exitosamente',
+        data: link
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/tabs/links/{linkId}:
+   *   delete:
+   *     summary: Eliminar link (soft delete)
+   *     tags: [Tabs]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: linkId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Link eliminado
+   */
+  async deleteLink(req, res) {
+    try {
+      const { linkId } = req.params;
+      
+      const link = await TabLink.findOne({ linkId });
+      if (!link) {
+        return res.status(404).json({
+          success: false,
+          message: 'Link no encontrado'
+        });
+      }
+
+      // Soft delete
+      link.isActive = false;
+      link.lastUpdatedBy = req.user._id;
+      await link.save();
+
+      res.json({
+        success: true,
+        message: 'Link desactivado exitosamente'
+      });
+
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/tabs/links:
+   *   get:
+   *     summary: Obtener todos los links (para administración)
+   *     tags: [Tabs]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 20
+   *       - in: query
+   *         name: categoryId
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: includeInactive
+   *         schema:
+   *           type: boolean
+   *           default: false
+   *     responses:
+   *       200:
+   *         description: Lista de links
+   */
+  async getAllLinks(req, res) {
+    try {
+      const { page = 1, limit = 20, categoryId, includeInactive = false } = req.query;
+      
+      const query = {};
+      if (categoryId) query.categoryId = categoryId;
+      if (!includeInactive) query.isActive = true;
+
+      const skip = (page - 1) * limit;
+      
+      const [links, total] = await Promise.all([
+        TabLink.find(query)
+          .sort({ categoryId: 1, orden: 1 })
+          .skip(skip)
+          .limit(parseInt(limit))
+          .populate('createdBy', 'email profile')
+          .populate('lastUpdatedBy', 'email profile')
+          .lean(),
+        TabLink.countDocuments(query)
+      ]);
+
+      // Agregar información de la categoría a cada link
+      const linksWithCategory = await Promise.all(
+        links.map(async (link) => {
+          const category = await TabCategory.findOne({ 
+            categoryId: link.categoryId 
+          }).lean();
+          return {
+            ...link,
+            categoryName: category?.name,
+            categoryColor: category?.color
+          };
+        })
+      );
+
+      res.json({
+        success: true,
+        data: {
+          links: linksWithCategory,
+          pagination: {
+            total,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            pages: Math.ceil(total / limit)
+          }
+        }
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/tabs/links/{linkId}:
+   *   get:
+   *     summary: Obtener un link específico
+   *     tags: [Tabs]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: linkId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Link encontrado
+   */
+  async getLinkById(req, res) {
+    try {
+      const { linkId } = req.params;
+      
+      const link = await TabLink.findOne({ linkId })
+        .populate('createdBy', 'email profile')
+        .populate('lastUpdatedBy', 'email profile')
+        .lean();
+
+      if (!link) {
+        return res.status(404).json({
+          success: false,
+          message: 'Link no encontrado'
+        });
+      }
+
+      // Agregar información de la categoría
+      const category = await TabCategory.findOne({ 
+        categoryId: link.categoryId 
+      }).lean();
+
+      res.json({
+        success: true,
+        data: {
+          ...link,
+          categoryName: category?.name,
+          categoryColor: category?.color
+        }
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/tabs/links/reorder:
+   *   post:
+   *     summary: Reordenar links de una categoría
+   *     tags: [Tabs]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - categoryId
+   *               - order
+   *             properties:
+   *               categoryId:
+   *                 type: string
+   *               order:
+   *                 type: array
+   *                 items:
+   *                   type: object
+   *                   properties:
+   *                     linkId:
+   *                       type: string
+   *                     position:
+   *                       type: number
+   *     responses:
+   *       200:
+   *         description: Orden actualizado
+   */
+  async reorderLinks(req, res) {
+    try {
+      const { categoryId, order } = req.body; // order: [{ linkId, position }]
+      
+      // Verificar que la categoría existe
+      const category = await TabCategory.findOne({ categoryId });
+      if (!category) {
+        return res.status(400).json({
+          success: false,
+          message: 'Categoría no encontrada'
+        });
+      }
+
+      // Actualizar el orden de cada link
+      const operations = order.map((item) => ({
+        updateOne: {
+          filter: { linkId: item.linkId, categoryId },
+          update: { 
+            $set: { 
+              orden: item.position * 10, // Multiplicamos para dejar espacio entre inserts
+              lastUpdatedBy: req.user._id 
+            } 
+          }
+        }
+      }));
+
+      if (operations.length > 0) {
+        await TabLink.bulkWrite(operations);
+      }
+
+      // Obtener los links actualizados para devolverlos
+      const updatedLinks = await TabLink.find({ categoryId, isActive: true })
+        .sort({ orden: 1 })
+        .lean();
+
+      res.json({
+        success: true,
+        message: 'Orden actualizado exitosamente',
+        data: updatedLinks
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  // ===== FUNCIÓN PARA GALERÍA DE ICONOS =====
+
+  /**
+   * @swagger
+   * /api/tabs/icons/gallery:
+   *   get:
+   *     summary: Obtener galería de iconos disponibles
+   *     tags: [Tabs]
+   *     responses:
+   *       200:
+   *         description: Galería de iconos
+   */
+  async getIconsGallery(req, res) {
+    try {
+      console.log('📸 Obteniendo galería de iconos...');
+      
+      // Obtener todos los links activos
+      const links = await TabLink.find({ isActive: true })
+        .select('icono categoryId titulo')
+        .lean();
+
+      console.log(`📊 Encontrados ${links.length} links`);
+
+      // Crear un mapa de iconos únicos por categoría
+      const iconsByCategory = {};
+      const allIcons = [];
+
+      for (const link of links) {
+        // Obtener información de la categoría para cada link
+        const category = await TabCategory.findOne({ 
+          categoryId: link.categoryId 
+        }).lean();
+
+        const categoryName = category?.name || link.categoryId;
+        const categoryColor = category?.color || '#e03735';
+
+        if (!iconsByCategory[link.categoryId]) {
+          iconsByCategory[link.categoryId] = {
+            categoryId: link.categoryId,
+            categoryName: categoryName,
+            categoryColor: categoryColor,
+            icons: []
+          };
+        }
+
+        // Verificar si este icono ya fue agregado (evitar duplicados)
+        const existingIcon = iconsByCategory[link.categoryId].icons.find(
+          i => i.icono === link.icono
+        );
+
+        if (!existingIcon) {
+          const iconEntry = {
+            id: `${link.categoryId}-${iconsByCategory[link.categoryId].icons.length + 1}`,
+            icono: link.icono,
+            ejemplo: link.titulo,
+            preview: link.icono.substring(0, 100) + '...'
+          };
+          
+          iconsByCategory[link.categoryId].icons.push(iconEntry);
+          allIcons.push({
+            ...iconEntry,
+            categoryId: link.categoryId,
+            categoryName: categoryName,
+            categoryColor: categoryColor
+          });
+        }
+      }
+
+      console.log(`✅ Galería generada: ${allIcons.length} iconos únicos`);
+
+      res.json({
+        success: true,
+        data: {
+          byCategory: Object.values(iconsByCategory),
+          all: allIcons,
+          total: allIcons.length
+        }
+      });
+    } catch (error) {
+      console.error('🔥 Error en getIconsGallery:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener galería de iconos',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+}
+
+module.exports = new TabsController(); 
+================================= 
+src\controllers\users.controller.js 
+================================= 
+ 
+const usersService = require('../services/users.service');
+
+/**
+ * @swagger
+ * tags:
+ *   name: Users
+ *   description: Gestión de usuarios
+ */
+
+class UsersController {
+  /**
+   * @swagger
+   * /api/users:
+   *   post:
+   *     tags: [Users]
+   *     summary: Crear nuevo usuario
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - email
+   *               - password
+   *             properties:
+   *               email:
+   *                 type: string
+   *                 format: email
+   *               password:
+   *                 type: string
+   *                 format: password
+   *               role:
+   *                 type: string
+   *                 enum: [ADMIN, EDITOR, MODERATOR, VIEWER, CITIZEN]
+   *               status:
+   *                 type: string
+   *                 enum: [ACTIVE, INACTIVE, SUSPENDED, PENDING]
+   *               profile:
+   *                 type: object
+   *     responses:
+   *       201:
+   *         description: Usuario creado exitosamente
+   *       400:
+   *         description: Error en los datos
+   *       403:
+   *         description: No autorizado
+   */
+  async createUser(req, res) {
+    try {
+      const userData = req.body;
+      const creatorRole = req.user.role;
+      
+      const user = await usersService.createUser(userData, creatorRole);
+      
+      res.status(201).json({
+        success: true,
+        message: 'Usuario creado exitosamente',
+        data: user,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+  
+  /**
+   * @swagger
+   * /api/users:
+   *   get:
+   *     tags: [Users]
+   *     summary: Obtener lista de usuarios
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: page
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *       - name: limit
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           default: 10
+   *       - name: role
+   *         in: query
+   *         schema:
+   *           type: string
+   *       - name: status
+   *         in: query
+   *         schema:
+   *           type: string
+   *       - name: search
+   *         in: query
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Lista de usuarios
+   *       401:
+   *         description: No autenticado
+   */
+  async getUsers(req, res) {
+    try {
+      const { page = 1, limit = 10, role, status, search } = req.query;
+      
+      const filters = {};
+      if (role) filters.role = role;
+      if (status) filters.status = status;
+      if (search) filters.search = search;
+      
+      const result = await usersService.getUsers(
+        parseInt(page),
+        parseInt(limit),
+        filters
+      );
+      
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+  
+  /**
+   * @swagger
+   * /api/users/{id}:
+   *   get:
+   *     tags: [Users]
+   *     summary: Obtener usuario por ID
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Usuario encontrado
+   *       404:
+   *         description: Usuario no encontrado
+   */
+  async getUserById(req, res) {
+    try {
+      const { id } = req.params;
+      
+      const user = await usersService.getUserById(id);
+      
+      res.json({
+        success: true,
+        data: user,
+      });
+    } catch (error) {
+      res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+  
+  /**
+   * @swagger
+   * /api/users/{id}:
+   *   put:
+   *     tags: [Users]
+   *     summary: Actualizar usuario
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               profile:
+   *                 type: object
+   *               role:
+   *                 type: string
+   *                 enum: [ADMIN, EDITOR, MODERATOR, VIEWER, CITIZEN]
+   *               status:
+   *                 type: string
+   *                 enum: [ACTIVE, INACTIVE, SUSPENDED, PENDING]
+   *     responses:
+   *       200:
+   *         description: Usuario actualizado
+   *       403:
+   *         description: No autorizado
+   *       404:
+   *         description: Usuario no encontrado
+   */
+  async updateUser(req, res) {
+    try {
+      const { id } = req.params;
+      const updateData = req.body;
+      const updaterRole = req.user.role;
+      
+      const user = await usersService.updateUser(id, updateData, updaterRole);
+      
+      res.json({
+        success: true,
+        message: 'Usuario actualizado exitosamente',
+        data: user,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+  
+  /**
+   * @swagger
+   * /api/users/{id}:
+   *   delete:
+   *     tags: [Users]
+   *     summary: Eliminar usuario
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Usuario eliminado
+   *       403:
+   *         description: No autorizado
+   *       404:
+   *         description: Usuario no encontrado
+   */
+  async deleteUser(req, res) {
+    try {
+      const { id } = req.params;
+      const deleterRole = req.user.role;
+      
+      const result = await usersService.deleteUser(id, deleterRole);
+      
+      res.json({
+        success: true,
+        message: result.message,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+}
+
+module.exports = new UsersController(); 
+================================= 
+src\middleware\auth.js 
+================================= 
+ 
+// backend/src/middleware/auth.js
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+
+/**
+ * Middleware para verificar token JWT
+ */
+const authenticate = async (req, res, next) => {
+  console.log('\n🔐 ========== AUTH MIDDLEWARE INICIADO ==========');
+  
+  try {
+    // Obtener token del header
+    const authHeader = req.header('Authorization');
+    
+    console.log('📌 Headers completos:', req.headers);
+    console.log('📌 Authorization header:', authHeader);
+    
+    if (!authHeader) {
+      console.log('❌ No hay header Authorization');
+      return res.status(401).json({
+        success: false,
+        message: 'Acceso denegado. No se proporcionó token.',
+      });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    console.log('🔑 Token extraído (primeros 50 chars):', token.substring(0, 50) + '...');
+    
+    if (!token) {
+      console.log('❌ Token vacío después de replace');
+      return res.status(401).json({
+        success: false,
+        message: 'Acceso denegado. Token vacío.',
+      });
+    }
+    
+    // Verificar token
+    console.log('🔐 JWT_SECRET usado:', process.env.JWT_SECRET.substring(0, 20) + '...');
+    
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+      console.log('✅ Token verificado. Payload:', decoded);
+    } catch (jwtError) {
+      console.log('❌ Error verificando token:', jwtError.message);
+      console.log('🔍 Tipo de error:', jwtError.name);
+      
+      if (jwtError.name === 'JsonWebTokenError') {
+        return res.status(401).json({
+          success: false,
+          message: 'Token inválido.',
+        });
+      }
+      if (jwtError.name === 'TokenExpiredError') {
+        return res.status(401).json({
+          success: false,
+          message: 'Token expirado.',
+        });
+      }
+      throw jwtError;
+    }
+    
+    // Buscar usuario
+    console.log('🔍 Buscando usuario con ID:', decoded.userId);
+    const user = await User.findById(decoded.userId);
+    
+    if (!user) {
+      console.log('❌ Usuario no encontrado');
+      return res.status(401).json({
+        success: false,
+        message: 'Usuario no encontrado.',
+      });
+    }
+
+    console.log('✅ Usuario encontrado:', user.email, 'Rol:', user.role);
+
+    if (user.status !== 'ACTIVE') {
+      console.log('❌ Usuario inactivo:', user.status);
+      return res.status(403).json({
+        success: false,
+        message: 'Usuario inactivo o suspendido.',
+      });
+    }
+    
+    // Adjuntar usuario a la request
+    req.user = user;
+    req.token = token;
+    console.log('✅ Usuario autenticado correctamente. req.user asignado:', !!req.user);
+    console.log('🔚 ========== AUTH MIDDLEWARE FINALIZADO ==========\n');
+    
+    next();
+  } catch (error) {
+    console.error('🔥 Error en authenticate:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error en la autenticación.',
+    });
+  }
+};
+
+/**
+ * Middleware para verificar roles
+ */
+const authorize = (...roles) => {
+  return (req, res, next) => {
+    console.log('🔐 Verificando roles...');
+    console.log('📌 Roles requeridos:', roles);
+    
+    if (!req.user) {
+      console.log('❌ req.user es undefined en authorize');
+      return res.status(401).json({
+        success: false,
+        message: 'Usuario no autenticado.',
+      });
+    }
+    
+    console.log('📌 Rol del usuario:', req.user.role);
+    
+    if (!roles.includes(req.user.role)) {
+      console.log('❌ Rol no autorizado');
+      return res.status(403).json({
+        success: false,
+        message: 'No tiene permisos para realizar esta acción.',
+      });
+    }
+    
+    console.log('✅ Rol autorizado');
+    next();
+  };
+};
+
+module.exports = {
+  authenticate,
+  authorize,
+}; 
+================================= 
+src\middleware\upload.js 
+================================= 
+ 
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const sharp = require('sharp');
+
+// Crear directorios si no existen
+const uploadDirs = {
+  images: 'uploads/images',
+  documents: 'uploads/documents',
+  legisladores: 'uploads/legisladores',
+  content: 'uploads/content',
+};
+
+Object.values(uploadDirs).forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
+
+// Configuración de almacenamiento
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    let folder = 'uploads/';
+    
+    if (file.mimetype.startsWith('image/')) {
+      folder = uploadDirs.images;
+    } else if (file.mimetype === 'application/pdf') {
+      folder = uploadDirs.documents;
+    } else if (req.baseUrl.includes('legisladores')) {
+      folder = uploadDirs.legisladores;
+    } else if (req.baseUrl.includes('content')) {
+      folder = uploadDirs.content;
+    }
+    
+    cb(null, folder);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    const name = path.basename(file.originalname, ext)
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '-')
+      .substring(0, 50);
+    
+    cb(null, name + '-' + uniqueSuffix + ext);
+  }
+});
+
+// Filtrar tipos de archivo
+const fileFilter = (req, file, cb) => {
+  const allowedTypes = {
+    'image/jpeg': true,
+    'image/jpg': true,
+    'image/png': true,
+    'image/webp': true,
+    'image/gif': true,
+    'application/pdf': true,
+    'application/msword': true,
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': true,
+  };
+  
+  if (allowedTypes[file.mimetype]) {
+    cb(null, true);
+  } else {
+    cb(new Error('Tipo de archivo no permitido. Solo se permiten imágenes y documentos PDF/DOC.'), false);
+  }
+};
+
+// Configurar multer
+const upload = multer({
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+  },
+});
+
+// Procesador de imágenes
+const processImage = async (filePath, options = {}) => {
+  try {
+    const {
+      width = 1200,
+      height,
+      quality = 80,
+      format = 'webp'
+    } = options;
+    
+    const outputPath = filePath.replace(/\.[^/.]+$/, '') + `.${format}`;
+    
+    let processor = sharp(filePath);
+    
+    if (width || height) {
+      processor = processor.resize(width, height, {
+        fit: 'inside',
+        withoutEnlargement: true,
+      });
+    }
+    
+    if (format === 'webp') {
+      processor = processor.webp({ quality });
+    } else if (format === 'jpeg') {
+      processor = processor.jpeg({ quality });
+    } else if (format === 'png') {
+      processor = processor.png({ quality });
+    }
+    
+    await processor.toFile(outputPath);
+    
+    // Eliminar archivo original si se convirtió
+    if (format !== path.extname(filePath).replace('.', '')) {
+      fs.unlinkSync(filePath);
+    }
+    
+    return path.basename(outputPath);
+  } catch (error) {
+    console.error('Error procesando imagen:', error);
+    return path.basename(filePath);
+  }
+};
+
+// Generar thumbnails
+const generateThumbnails = async (filePath) => {
+  const baseName = path.basename(filePath, path.extname(filePath));
+  const dirName = path.dirname(filePath);
+  
+  const sizes = [
+    { name: 'thumbnail', width: 150, height: 150 },
+    { name: 'small', width: 300 },
+    { name: 'medium', width: 600 },
+    { name: 'large', width: 1200 },
+  ];
+  
+  const thumbnails = {};
+  
+  for (const size of sizes) {
+    const outputPath = path.join(dirName, `${baseName}-${size.name}.webp`);
+    
+    await sharp(filePath)
+      .resize(size.width, size.height, {
+        fit: 'cover',
+        position: 'center',
+      })
+      .webp({ quality: 80 })
+      .toFile(outputPath);
+    
+    thumbnails[size.name] = path.basename(outputPath);
+  }
+  
+  return thumbnails;
+};
+
+module.exports = {
+  upload,
+  processImage,
+  generateThumbnails,
+  uploadDirs,
+}; 
+================================= 
+src\middleware\validate.js 
+================================= 
+ 
+const { validationResult } = require('express-validator');
+
+/**
+ * Middleware para validar los resultados de express-validator
+ */
+const validate = (req, res, next) => {
+  const errors = validationResult(req);
+  
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      errors: errors.array().map(error => ({
+        field: error.param,
+        message: error.msg,
+      })),
+    });
+  }
+  
+  next();
+};
+
+module.exports = validate; 
+================================= 
+src\models\Content.js 
+================================= 
+ 
+const mongoose = require('mongoose');
+
+const contentSchema = new mongoose.Schema({
+  // Información básica
+  title: {
+    type: String,
+    required: [true, 'El título es requerido'],
+    trim: true,
+    maxlength: [200, 'El título no puede exceder 200 caracteres'],
+  },
+  slug: {
+    type: String,
+    required: [true, 'El slug es requerido'],
+    unique: true,
+    lowercase: true,
+    trim: true,
+    match: [/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug inválido. Use solo letras, números y guiones.'],
+  },
+  content: {
+    type: String,
+    required: [true, 'El contenido es requerido'],
+  },
+  excerpt: {
+    type: String,
+    trim: true,
+    maxlength: [300, 'El extracto no puede exceder 300 caracteres'],
+  },
+  
+  // Categorización
+  type: {
+    type: String,
+    enum: ['page', 'news', 'article', 'announcement'],
+    default: 'page',
+    required: true,
+  },
+  category: {
+    type: String,
+    enum: [
+      'institucional', 
+      'historia', 
+      'directiva', 
+      'noticias', 
+      'eventos', 
+      'transparencia',
+      'participacion',
+      'legislacion'
+    ],
+    default: 'noticias',
+  },
+  tags: [{
+    type: String,
+    trim: true,
+    lowercase: true,
+  }],
+  
+  // Metadatos
+  author: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+  },
+  status: {
+    type: String,
+    enum: ['draft', 'published', 'archived', 'scheduled'],
+    default: 'draft',
+  },
+  language: {
+    type: String,
+    enum: ['es', 'qu', 'ay'],
+    default: 'es',
+  },
+  
+  // Imágenes y multimedia
+  featuredImage: {
+    url: String,
+    alt: String,
+    caption: String,
+    credit: String,
+  },
+  gallery: [{
+    url: String,
+    alt: String,
+    caption: String,
+    order: Number,
+  }],
+  attachments: [{
+    name: String,
+    url: String,
+    size: Number,
+    type: String,
+  }],
+  
+  // SEO
+  seo: {
+    title: {
+      type: String,
+      trim: true,
+      maxlength: [60, 'El título SEO no puede exceder 60 caracteres'],
+    },
+    description: {
+      type: String,
+      trim: true,
+      maxlength: [160, 'La descripción SEO no puede exceder 160 caracteres'],
+    },
+    keywords: [String],
+    canonicalUrl: String,
+  },
+  
+  // Fechas
+  publishedAt: {
+    type: Date,
+  },
+  scheduledFor: {
+    type: Date,
+  },
+  expiresAt: {
+    type: Date,
+  },
+  
+  // Estadísticas
+  views: {
+    type: Number,
+    default: 0,
+  },
+  
+  // Relaciones
+  relatedContent: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Content',
+  }],
+  
+  // Metadata del sistema
+  lastModifiedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
+  revision: {
+    type: Number,
+    default: 1,
+  },
+  versionHistory: [{
+    content: String,
+    modifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    modifiedAt: Date,
+    revision: Number,
+    comment: String,
+  }],
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true },
+});
+
+// Índices para búsqueda eficiente
+contentSchema.index({ slug: 1 }, { unique: true });
+contentSchema.index({ title: 'text', content: 'text', excerpt: 'text' });
+contentSchema.index({ type: 1, status: 1, publishedAt: -1 });
+contentSchema.index({ category: 1, tags: 1 });
+contentSchema.index({ scheduledFor: 1 });
+contentSchema.index({ author: 1 });
+
+// Middleware para generar slug automáticamente
+contentSchema.pre('validate', function(next) {
+  if (!this.slug && this.title) {
+    this.slug = this.title
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remover acentos
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+  next();
+});
+
+// Middleware para manejar fechas de publicación
+contentSchema.pre('save', function(next) {
+  if (this.status === 'published' && !this.publishedAt) {
+    this.publishedAt = new Date();
+  }
+  
+  if (this.status === 'scheduled' && !this.scheduledFor) {
+    this.scheduledFor = new Date();
+  }
+  
+  next();
+});
+
+// Virtual para URL amigable
+contentSchema.virtual('url').get(function() {
+  const baseUrl = '/contenido';
+  const typePaths = {
+    page: '/paginas',
+    news: '/noticias',
+    article: '/articulos',
+    announcement: '/anuncios',
+  };
+  
+  return `${baseUrl}${typePaths[this.type] || ''}/${this.slug}`;
+});
+
+// Método para incrementar vistas
+contentSchema.methods.incrementViews = async function() {
+  this.views += 1;
+  await this.save();
+};
+
+const Content = mongoose.model('Content', contentSchema);
+
+module.exports = Content; 
+================================= 
+src\models\Legislador.js 
+================================= 
+ 
+const mongoose = require('mongoose');
+
+const legisladorSchema = new mongoose.Schema({
+  // Información personal
+  nombres: {
+    type: String,
+    required: [true, 'Los nombres son requeridos'],
+    trim: true,
+  },
+  apellidos: {
+    type: String,
+    required: [true, 'Los apellidos son requeridos'],
+    trim: true,
+  },
+  nombreCompleto: {
+    type: String,
+    trim: true,
+  },
+  ci: {
+    type: String,
+    required: [true, 'La cédula de identidad es requerida'],
+    unique: true,
+    trim: true,
+  },
+  fechaNacimiento: {
+    type: Date,
+  },
+  lugarNacimiento: {
+    ciudad: String,
+    departamento: String,
+    provincia: String,
+  },
+  
+  // Información profesional
+  tituloAcademico: [{
+    titulo: String,
+    institucion: String,
+    año: Number,
+  }],
+  profesion: String,
+  experienciaLaboral: [{
+    cargo: String,
+    institucion: String,
+    periodo: String,
+    descripcion: String,
+  }],
+  
+  // Información política
+  partidoPolitico: {
+    type: String,
+    required: [true, 'El partido político es requerido'],
+  },
+  bancada: String,
+  cargoActual: {
+    type: String,
+    enum: [
+      'Presidente',
+      'Vicepresidente', 
+      'Senador',
+      'Senadora',
+      'Secretario',
+      'Pro-Secretario'
+    ],
+    default: 'Senador',
+  },
+  distrito: {
+    departamento: String,
+    provincia: String,
+    municipio: String,
+    circunscripcion: String,
+  },
+  
+  // Periodo legislativo
+  periodo: {
+    inicio: {
+      type: Date,
+      required: true,
+    },
+    fin: {
+      type: Date,
+      required: true,
+    },
+  },
+  reelecciones: {
+    type: Number,
+    default: 0,
+  },
+  
+  // Comisiones y comités
+  comisiones: [{
+    nombre: String,
+    cargo: {
+      type: String,
+      enum: ['Presidente', 'Vicepresidente', 'Secretario', 'Miembro'],
+      default: 'Miembro',
+    },
+    periodo: String,
+  }],
+  comites: [{
+    nombre: String,
+    cargo: String,
+    periodo: String,
+  }],
+  brigadasParlamentarias: [String],
+  
+  // Contacto
+  contacto: {
+    email: {
+      type: String,
+      lowercase: true,
+      match: [/^\S+@\S+\.\S+$/, 'Por favor ingrese un email válido'],
+    },
+    telefono: {
+      oficina: String,
+      celular: String,
+    },
+    direccionOficina: {
+      edificio: String,
+      oficina: String,
+      piso: String,
+    },
+    redesSociales: {
+      twitter: String,
+      facebook: String,
+      instagram: String,
+      linkedin: String,
+    },
+  },
+  
+  // Biografía y declaraciones
+  biografia: String,
+  declaracionJurada: {
+    url: String,
+    fecha: Date,
+    vigente: Boolean,
+  },
+  principios: [String],
+  
+  // Multimedia
+  fotoPerfil: {
+    url: String,
+    alt: String,
+  },
+  galeria: [{
+    url: String,
+    descripcion: String,
+    fecha: Date,
+    tipo: {
+      type: String,
+      enum: ['actividad', 'sesion', 'evento', 'personal'],
+    },
+  }],
+  videos: [{
+    titulo: String,
+    url: String,
+    plataforma: {
+      type: String,
+      enum: ['youtube', 'vimeo', 'facebook'],
+    },
+    descripcion: String,
+  }],
+  
+  // Proyectos y participación
+  proyectosPresentados: {
+    type: Number,
+    default: 0,
+  },
+  proyectosAprobados: {
+    type: Number,
+    default: 0,
+  },
+  asistenciaSesiones: {
+    type: Number,
+    default: 0,
+  },
+  porcentajeAsistencia: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100,
+  },
+  
+  // Estado
+  estado: {
+    type: String,
+    enum: ['activo', 'inactivo', 'suspendido', 'licencia'],
+    default: 'activo',
+  },
+  
+  // Metadata
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+  },
+  lastUpdatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
+  
+  // Campos calculados
+  edad: {
+    type: Number,
+    min: 25,
+  },
+  añosServicio: {
+    type: Number,
+    default: 0,
+  },
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true },
+});
+
+// Índices
+legisladorSchema.index({ ci: 1 }, { unique: true });
+legisladorSchema.index({ nombres: 'text', apellidos: 'text', nombreCompleto: 'text' });
+legisladorSchema.index({ partidoPolitico: 1, bancada: 1 });
+legisladorSchema.index({ 'distrito.departamento': 1, 'distrito.provincia': 1 });
+legisladorSchema.index({ estado: 1, cargoActual: 1 });
+legisladorSchema.index({ periodo: 1 });
+
+// Middleware para generar nombre completo
+legisladorSchema.pre('save', function(next) {
+  this.nombreCompleto = `${this.nombres} ${this.apellidos}`.trim();
+  
+  // Calcular edad si hay fecha de nacimiento
+  if (this.fechaNacimiento) {
+    const hoy = new Date();
+    const nacimiento = new Date(this.fechaNacimiento);
+    let edad = hoy.getFullYear() - nacimiento.getFullYear();
+    const mes = hoy.getMonth() - nacimiento.getMonth();
+    
+    if (mes < 0 || (mes === 0 && hoy.getDate() < nacimiento.getDate())) {
+      edad--;
+    }
+    
+    this.edad = edad;
+  }
+  
+  // Calcular años de servicio
+  if (this.periodo && this.periodo.inicio) {
+    const inicio = new Date(this.periodo.inicio);
+    const hoy = new Date();
+    const años = hoy.getFullYear() - inicio.getFullYear();
+    this.añosServicio = años > 0 ? años : 0;
+  }
+  
+  next();
+});
+
+// Virtual para nombre en formato inverso
+legisladorSchema.virtual('nombreFormal').get(function() {
+  return `${this.apellidos}, ${this.nombres}`;
+});
+
+// Virtual para URL del perfil
+legisladorSchema.virtual('perfilUrl').get(function() {
+  const slug = this.nombreCompleto
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  
+  return `/legisladores/${slug}`;
+});
+
+// Método para calcular estadísticas
+legisladorSchema.methods.calcularEstadisticas = async function() {
+  // Aquí se podrían agregar cálculos más complejos
+  const asistenciaTotal = 100; // Esto sería dinámico
+  this.porcentajeAsistencia = (this.asistenciaSesiones / asistenciaTotal) * 100;
+  await this.save();
+};
+
+const Legislador = mongoose.model('Legislador', legisladorSchema);
+
+module.exports = Legislador; 
+================================= 
+src\models\TabCategory.js 
+================================= 
+ 
+// ============================================
+// src/models/TabCategory.js
+// ============================================
+const mongoose = require('mongoose');
+
+const tabCategorySchema = new mongoose.Schema({
+  categoryId: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true,
+    lowercase: true,
+    match: [/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'ID inválido. Use solo letras, números y guiones']
+  },
+  
+  name: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  
+  description: {
+    type: String,
+    trim: true
+  },
+  
+  order: {
+    type: Number,
+    default: 0
+  },
+  
+  color: {
+    type: String,
+    default: '#e03735',
+    match: [/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'Color debe ser hexadecimal']
+  },
+  
+  icon: {
+    type: String
+  },
+  
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  lastUpdatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }
+}, {
+  timestamps: true
+});
+
+tabCategorySchema.index({ categoryId: 1 });
+tabCategorySchema.index({ order: 1 });
+tabCategorySchema.index({ isActive: 1 });
+
+module.exports = mongoose.model('TabCategory', tabCategorySchema); 
+================================= 
+src\models\TabLink.js 
+================================= 
+ 
+// ============================================
+// src/models/TabLink.js (MODIFICADO)
+// ============================================
+const mongoose = require('mongoose');
+
+const tabLinkSchema = new mongoose.Schema({
+  // CAMBIADO: tabId eliminado, ahora usamos categoryId
+  categoryId: {
+    type: String,
+    ref: 'TabCategory',
+    required: [true, 'El ID de la categoría es requerido'],
+    index: true,
+  },
+  
+  // Estos campos se mantienen igual
+  areaTitulo: {
+    type: String,
+    required: [true, 'El título del área es requerido'],
+  },
+  areaDescripcion: {
+    type: String,
+    required: [true, 'La descripción del área es requerida'],
+  },
+
+  linkId: {
+    type: String,
+    required: [true, 'El ID único del link es requerido'],
+    unique: true,
+    trim: true,
+  },
+  titulo: {
+    type: String,
+    required: [true, 'El título del link es requerido'],
+    trim: true,
+  },
+  descripcion: {
+    type: String,
+    required: [true, 'La descripción del link es requerida'],
+    trim: true,
+  },
+  icono: {
+    type: String,
+    required: [true, 'El SVG del icono es requerido'],
+  },
+  path: {
+    type: String,
+    required: [true, 'La ruta (path) del link es requerida'],
+    trim: true,
+  },
+  orden: {
+    type: Number,
+    default: 0,
+  },
+  isActive: {
+    type: Boolean,
+    default: true,
+    index: true,
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
+  lastUpdatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true },
+});
+
+// Índices actualizados
+tabLinkSchema.index({ categoryId: 1, isActive: 1 });
+tabLinkSchema.index({ categoryId: 1, orden: 1 });
+
+const TabLink = mongoose.model('TabLink', tabLinkSchema);
+
+module.exports = TabLink; 
+================================= 
+src\models\User.js 
+================================= 
+ 
+// models/User.js - Versión segura
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+const userSchema = new mongoose.Schema({
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    lowercase: true,
+    trim: true,
+    match: [/^\S+@\S+\.\S+$/, 'Email inválido'],
+    index: true
+  },
+  password: {
+    type: String,
+    required: true,
+    minlength: 8,
+    select: false // No devolver en queries por defecto
+  },
+  role: {
+    type: String,
+    enum: ['SUPER_ADMIN', 'ADMIN', 'EDITOR', 'MODERATOR', 'VIEWER', 'CITIZEN'],
+    default: 'CITIZEN',
+    index: true
+  },
+  status: {
+    type: String,
+    enum: ['ACTIVE', 'INACTIVE', 'SUSPENDED', 'PENDING', 'LOCKED'],
+    default: 'PENDING'
+  },
+  profile: {
+    firstName: { type: String, trim: true },
+    lastName: { type: String, trim: true },
+    ci: { type: String, trim: true },
+    phone: { type: String, trim: true },
+    position: { type: String, trim: true },
+    department: { type: String, trim: true },
+    avatar: { type: String }
+  },
+  // SEGURIDAD
+  loginAttempts: { type: Number, default: 0 },
+  lockUntil: { type: Date },
+  lastLogin: { type: Date },
+  lastPasswordChange: { type: Date, default: Date.now },
+  passwordHistory: [{ type: String }], // Últimas contraseñas
+  twoFactorEnabled: { type: Boolean, default: false },
+  twoFactorSecret: { type: String, select: false },
+  refreshToken: { type: String, select: false }
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+// Índices compuestos
+userSchema.index({ email: 1, status: 1 });
+userSchema.index({ role: 1, status: 1 });
+
+// Virtual para verificar si está bloqueado
+userSchema.virtual('isLocked').get(function() {
+  return !!(this.lockUntil && this.lockUntil > Date.now());
+});
+
+// Middleware pre-save
+userSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) return next();
+  
+  try {
+    // Verificar que no sea una contraseña anterior
+    if (this.passwordHistory && this.passwordHistory.length > 0) {
+      const isPrevious = await Promise.any(
+        this.passwordHistory.map(oldHash => 
+          bcrypt.compare(this.password, oldHash)
+        )
+      ).catch(() => false);
+      
+      if (isPrevious) {
+        throw new Error('No puedes usar una contraseña anterior');
+      }
+    }
+    
+    // Encriptar
+    const salt = await bcrypt.genSalt(12);
+    this.password = await bcrypt.hash(this.password, salt);
+    
+    // Guardar en historial (máximo 5)
+    if (!this.passwordHistory) this.passwordHistory = [];
+    this.passwordHistory.push(this.password);
+    if (this.passwordHistory.length > 5) {
+      this.passwordHistory.shift();
+    }
+    
+    this.lastPasswordChange = Date.now();
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Métodos de seguridad
+userSchema.methods = {
+  comparePassword: async function(candidatePassword) {
+    return await bcrypt.compare(candidatePassword, this.password);
+  },
+  
+  incrementLoginAttempts: async function() {
+    this.loginAttempts += 1;
+    
+    if (this.loginAttempts >= 5) {
+      this.lockUntil = Date.now() + 30 * 60 * 1000; // 30 minutos
+    }
+    
+    return await this.save();
+  },
+  
+  resetLoginAttempts: async function() {
+    this.loginAttempts = 0;
+    this.lockUntil = undefined;
+    this.lastLogin = Date.now();
+    return await this.save();
+  },
+  
+  isPasswordExpired: function() {
+    const ninetyDays = 90 * 24 * 60 * 60 * 1000;
+    return Date.now() - this.lastPasswordChange > ninetyDays;
+  }
+};
+
+module.exports = mongoose.model('User', userSchema); 
+================================= 
+src\routes\auth.routes.js 
+================================= 
+ 
+const express = require('express');
+const router = express.Router();
+const authController = require('../controllers/auth.controller');
+const { authenticate } = require('../middleware/auth');
+const validate = require('../middleware/validate');
+const validators = require('../utils/validators');
+
+// Ruta pública: Login
+router.post('/login', validators.login, validate, authController.login);
+
+// Ruta pública: Registrar ciudadano
+router.post('/register', validators.register, validate, authController.register);
+
+// Ruta pública: Validar token
+router.post('/validate', authController.validateToken);
+
+// Ruta protegida: Obtener usuario actual
+router.get('/me', authenticate, authController.getCurrentUser);
+
+module.exports = router; 
+================================= 
+src\routes\content.routes.js 
+================================= 
+ 
+const express = require('express');
+const router = express.Router();
+const contentController = require('../controllers/content.controller');
+const { authenticate, authorize } = require('../middleware/auth');
+const { upload } = require('../middleware/upload');
+
+// Rutas públicas
+router.get('/types', contentController.getContentTypes);
+router.get('/categories', contentController.getCategories);
+router.get('/search', contentController.searchContent);
+router.get('/slug/:slug', contentController.getContentBySlug);
+router.get('/:id', contentController.getContentById);
+router.get('/:id/related', contentController.getRelatedContent);
+router.get('/', contentController.getContents);
+
+// Rutas protegidas (requieren autenticación)
+router.use(authenticate);
+
+// Rutas de administración (admin/editor)
+router.post(
+  '/',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  contentController.createContent
+);
+
+router.put(
+  '/:id',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  contentController.updateContent
+);
+
+router.patch(
+  '/:id/status',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  contentController.changeStatus
+);
+
+// Rutas solo para super admin y admin
+router.delete(
+  '/:id',
+  authorize('SUPER_ADMIN', 'ADMIN'),
+  contentController.deleteContent
+);
+
+router.get(
+  '/stats',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  contentController.getStats
+);
+
+// Rutas para subir archivos
+router.post(
+  '/upload/image',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  upload.single('image'),
+  contentController.uploadImage
+);
+
+router.post(
+  '/upload/document',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  upload.single('document'),
+  contentController.uploadDocument
+);
+
+module.exports = router; 
+================================= 
+src\routes\legisladores.routes.js 
+================================= 
+ 
+const express = require('express');
+const router = express.Router();
+const legisladoresController = require('../controllers/legisladores.controller');
+const { authenticate, authorize } = require('../middleware/auth');
+const { upload } = require('../middleware/upload');
+
+// Rutas públicas
+router.get('/', legisladoresController.getLegisladores);
+router.get('/cargos', legisladoresController.getCargosDisponibles);
+router.get('/estados', legisladoresController.getEstadosDisponibles);
+router.get('/distribution/party', legisladoresController.getDistributionByParty);
+router.get('/distribution/department', legisladoresController.getByDepartamento);
+router.get('/comisiones', legisladoresController.getComisionesActivas);
+router.get('/search', legisladoresController.searchLegisladores);
+router.get('/ci/:ci', legisladoresController.getLegisladorByCI);
+router.get('/:id', legisladoresController.getLegisladorById);
+
+// Rutas protegidas (requieren autenticación)
+router.use(authenticate);
+
+// Rutas de administración (admin/editor)
+router.post(
+  '/',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  legisladoresController.createLegislador
+);
+
+router.put(
+  '/:id',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  legisladoresController.updateLegislador
+);
+
+// Rutas solo para super admin y admin
+router.delete(
+  '/:id',
+  authorize('SUPER_ADMIN', 'ADMIN'),
+  legisladoresController.deleteLegislador
+);
+
+router.get(
+  '/stats',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  legisladoresController.getStats
+);
+
+// Rutas para subir archivos
+router.post(
+  '/upload/foto',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  upload.single('foto'),
+  legisladoresController.uploadFotoPerfil
+);
+
+module.exports = router; 
+================================= 
+src\routes\tabs.routes.js 
+================================= 
+ 
+// src/routes/tabs.routes.js
+const express = require('express');
+const router = express.Router();
+const tabsController = require('../controllers/tabs.controller');
+const { authenticate, authorize } = require('../middleware/auth');
+
+console.log('✅ Cargando rutas de tabs...');
+
+// ===== RUTAS PÚBLICAS (NO REQUIEREN TOKEN) =====
+router.get('/', (req, res) => {
+  console.log('📌 GET /api/tabs - Pública');
+  tabsController.getTabsData(req, res);
+});
+
+router.get('/icons/gallery', (req, res) => {
+  console.log('📌 GET /api/tabs/icons/gallery - Pública');
+  tabsController.getIconsGallery(req, res);
+});
+
+router.get('/categories', (req, res) => {
+  console.log('📌 GET /api/tabs/categories - Pública (temporal)');
+  tabsController.getCategories(req, res);
+});
+
+router.get('/:tabId', (req, res) => {
+  console.log('📌 GET /api/tabs/:tabId - Pública');
+  tabsController.getTabLinks(req, res);
+});
+
+// ===== MIDDLEWARE DE AUTENTICACIÓN =====
+// A PARTIR DE AQUÍ, TODAS LAS RUTAS REQUIEREN TOKEN
+console.log('🔐 Activando middleware de autenticación para rutas protegidas');
+router.use(authenticate);
+router.use(authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'));
+
+// ===== RUTAS PROTEGIDAS (REQUIEREN TOKEN) =====
+router.post('/categories', (req, res) => {
+  console.log('📌 POST /api/tabs/categories - Protegida');
+  tabsController.createCategory(req, res);
+});
+
+router.put('/categories/:categoryId', (req, res) => {
+  console.log('📌 PUT /api/tabs/categories/:categoryId - Protegida');
+  tabsController.updateCategory(req, res);
+});
+
+router.delete('/categories/:categoryId', (req, res) => {
+  console.log('📌 DELETE /api/tabs/categories/:categoryId - Protegida');
+  tabsController.deleteCategory(req, res);
+});
+
+router.get('/links', (req, res) => {
+  console.log('📌 GET /api/tabs/links - Protegida');
+  tabsController.getAllLinks(req, res);
+});
+
+router.get('/links/:linkId', (req, res) => {
+  console.log('📌 GET /api/tabs/links/:linkId - Protegida');
+  tabsController.getLinkById(req, res);
+});
+
+router.post('/links', (req, res) => {
+  console.log('📌 POST /api/tabs/links - Protegida');
+  tabsController.createLink(req, res);
+});
+
+router.put('/links/:linkId', (req, res) => {
+  console.log('📌 PUT /api/tabs/links/:linkId - Protegida');
+  tabsController.updateLink(req, res);
+});
+
+router.delete('/links/:linkId', (req, res) => {
+  console.log('📌 DELETE /api/tabs/links/:linkId - Protegida');
+  tabsController.deleteLink(req, res);
+});
+
+router.post('/links/reorder', (req, res) => {
+  console.log('📌 POST /api/tabs/links/reorder - Protegida');
+  tabsController.reorderLinks(req, res);
+});
+
+console.log('✅ Rutas de tabs configuradas correctamente');
+module.exports = router; 
+================================= 
+src\routes\users.routes.js 
+================================= 
+ 
+const express = require('express');
+const router = express.Router();
+const usersController = require('../controllers/users.controller');
+const { authenticate, authorize } = require('../middleware/auth');
+const validate = require('../middleware/validate');
+const validators = require('../utils/validators');
+
+// Todas las rutas requieren autenticación
+router.use(authenticate);
+
+// Crear usuario (admin+ only)
+router.post(
+  '/',
+  authorize('SUPER_ADMIN', 'ADMIN'),
+  validators.register,
+  validate,
+  usersController.createUser
+);
+
+// Obtener usuarios (admin+ only)
+router.get(
+  '/',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  usersController.getUsers
+);
+
+// Obtener usuario por ID
+router.get('/:id', usersController.getUserById);
+
+// Actualizar usuario
+router.put(
+  '/:id',
+  validators.updateUser,
+  validate,
+  usersController.updateUser
+);
+
+// Eliminar usuario (super admin only)
+router.delete(
+  '/:id',
+  authorize('SUPER_ADMIN'),
+  usersController.deleteUser
+);
+
+module.exports = router; 
+================================= 
+src\scripts\seedTabs.js 
+================================= 
+ 
+// ============================================
+// src/scripts/seedTabs.js (COMPLETAMENTE NUEVO)
+// ============================================
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+const TabCategory = require('../models/TabCategory');
+const TabLink = require('../models/TabLink');
+
+dotenv.config();
+
+// SVGs ORIGINALES (los mismos que tenías)
+const SVG_ICONS = {
+  legislacion: {
+    tratamiento: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 31.2879 31.2879"><title>Recurso 1</title><g id="e1d8294c-62c4-4fcd-aaa0-6e3342ac2c84" data-name="Capa 2"><g id="e6bf4da3-0cda-4c51-985a-c9690b2f7bfe" data-name="Capa 1"><path d="M22.2963,10.466a.4572.4572,0,0,0-.1474-.3148q-2.3246-1.8765-4.6647-3.7339a.4979.4979,0,0,0-.2859-.1044Q14.0141,6.3042,10.83,6.31a.8063.8063,0,0,0-.7935.5627,1.4058,1.4058,0,0,0-.0485.4214q-.0035,7.2065-.0018,14.413c0,.0682-.0005.1366.0025.2048a.8205.8205,0,0,0,.8551.839c.49.0057.9807.0026,1.4711.0006.2238-.0009.3712-.1277.3659-.3067-.0052-.1748-.1448-.2864-.3639-.2868-.4407-.0008-.8814,0-1.3221,0-.3635,0-.412-.0479-.412-.4032q0-2.6341.0005-5.2683,0-4.6,0-9.199c0-.3242.0574-.3823.3759-.3823q2.9049-.0006,5.81,0c.0545,0,.1088.0046.1876.0081V7.14q0,1.5735,0,3.147c0,.3356.083.42.4139.42q2.0484,0,4.0968,0h.2274c.0039.078.009.1325.009.187q.0008,5.4559,0,10.9121c0,.29-.0586.3488-.3474.35-.4469.0018-.8938-.0015-1.3406.0052a.2936.2936,0,1,0-.0081.5872c.5088.0053,1.0185.0157,1.5263-.0072a.7938.7938,0,0,0,.7668-.8235Q22.3035,16.192,22.2963,10.466Zm-4.7331-.3678V7.2413l3.5731,2.8569Z" style="fill:#e03735"/><path d="M18.9733,17.668a.4665.4665,0,0,0-.1419-.2493q-.8479-.6963-1.7119-1.3727a.4937.4937,0,0,0-.2893-.09c-.7075.0066-1.4149.0195-2.1218.0449a.5805.5805,0,0,0-.3322.1278q-.7991.6827-1.576,1.3911a.6465.6465,0,0,0-.1831.3426c-.11.6226-.193,1.25-.3013,1.8728a.8811.8811,0,0,0,.1358.6817c.3227.4924.6214,1.0006.9193,1.5085a.6854.6854,0,0,1,.0877.33q.0085,2.0854.0023,4.171a.3117.3117,0,0,0,.19.3288.3025.3025,0,0,0,.3513-.097q.291-.2882.5831-.5752l1.38-1.3608a1.8962,1.8962,0,0,0,.1461.1888q.8718.8658,1.7474,1.7276c.17.1678.3323.1986.4508.0582a.5292.5292,0,0,0,.1076-.317c.0066-1.4834.003-2.9669.0068-4.45a.58.58,0,0,1,.0663-.2616c.2778-.5191.5695-1.0309.841-1.5532a.6156.6156,0,0,0,.0547-.3681C19.2591,19.0514,19.1185,18.3591,18.9733,17.668Zm-1.1592,8.0408-.07.0583c-.4623-.4833-.9217-.9695-1.3878-1.449-.3865-.3974-.4319-.4019-.8163-.014-.475.4793-.9361.9725-1.4032,1.46l-.0627-.0462V22.4069a10.8929,10.8929,0,0,1,1.1075.3809,1.5469,1.5469,0,0,0,1.4473-.0276c.3721-.1889.778-.3111,1.1853-.4693Zm.9277-5.7552q-.4271.7936-.8681,1.5795a.4007.4007,0,0,1-.1874.16q-.8262.3339-1.66.6495a.3992.3992,0,0,1-.2462.0065c-.559-.1817-1.1164-.3688-1.67-.566a.49.49,0,0,1-.2317-.1878c-.3011-.4765-.5863-.9631-.8867-1.44a.5229.5229,0,0,1-.0737-.3862c.088-.5568.168-1.1149.2609-1.6709a.43.43,0,0,1,.1249-.2335c.4371-.3936.8789-.7826,1.3278-1.1626a.5275.5275,0,0,1,.2951-.1129c.29-.0149.5824-.0053.8738-.0053v-.03c.248,0,.4973.0158.7435-.0051a.606.606,0,0,1,.4667.1627q.6159.5084,1.2442,1.0018a.4627.4627,0,0,1,.1829.3027c.1073.5778.233,1.1523.3442,1.7295A.3437.3437,0,0,1,18.7418,19.9536Z" style="fill:#e03735"/><path d="M12.3532,14.8707q1.8708.0008,3.7415.0005.4746,0,.9493,0,1.4147,0,2.8293,0c.21,0,.3388-.1054.35-.2782.0127-.1971-.1322-.3165-.3889-.3165q-3.7414-.0007-7.4829,0c-.2369,0-.3717.1055-.3766.2909C11.97,14.7632,12.1017,14.8706,12.3532,14.8707Z" style="fill:#e03735"/><path d="M12.243,12.7137a1.48,1.48,0,0,0,.1673.0026q1.8426,0,3.6851,0,.8653,0,1.7308,0c.6948,0,1.39.0017,2.0844-.0017a.2856.2856,0,0,0,.3116-.2954.2968.2968,0,0,0-.2955-.2973c-.0307-.0027-.0619-.0009-.0929-.0009q-3.7224,0-7.4445.0008a.6988.6988,0,0,0-.1846.0122.2941.2941,0,0,0,.0383.5793Z" style="fill:#e03735"/><path d="M15.84,17.2183a2.1744,2.1744,0,1,0,2.1684,2.1832A2.1779,2.1779,0,0,0,15.84,17.2183ZM15.8321,20.97a1.5777,1.5777,0,1,1,1.58-1.5534A1.5867,1.5867,0,0,1,15.8321,20.97Z" style="fill:#e03735"/><circle cx="15.644" cy="15.644" r="14.144" style="fill:none;stroke:#e03735;stroke-miterlimit:10;stroke-width:3px"/></g></g></svg>`,
+    aprobados: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 31.2879 31.2879"><title>Recurso 2</title><g id="a611b04c-5610-4aad-81ac-465098786325" data-name="Capa 2"><g id="be095a94-c544-4627-9cd0-537542899b2f" data-name="Capa 1"><path d="M21.4542,6.8845l-11.7171.01a.7061.7061,0,0,0-.6361.6866l0,16.1247a.72.72,0,0,0,.7686.6971l11.5849,0a.7378.7378,0,0,0,.733-.6969V7.5814A.7379.7379,0,0,0,21.4542,6.8845ZM21.149,23.3652h-11.01V7.9224h11.01Z" style="fill:#e03735"/><path d="M13.6939,17.3387a2.7354,2.7354,0,0,0,1.1184,4.5084,2.7915,2.7915,0,0,0,3.3691-3.5862A2.7347,2.7347,0,0,0,13.6939,17.3387Zm3.6236.9616c-.5217.7913-1.1813,1.5373-1.7093,2.33a.4548.4548,0,0,1-.631.0055L13.7913,18.87a.2532.2532,0,0,1,.3256-.2522l1.0993.9414.0726.0029,1.7866-1.7543a.313.313,0,0,1,.3468-.01C17.589,17.9558,17.4087,18.162,17.3175,18.3Z" style="fill:#e03735"/><rect x="12.2123" y="9.3166" width="6.8635" height="0.8222" style="fill:#e03735"/><polygon points="18.682 12.051 18.682 11.301 18.629 11.247 12.212 11.247 12.212 12.105 18.629 12.105 18.682 12.051" style="fill:#e03735"/><rect x="12.2123" y="13.213" width="6.0413" height="0.8222" style="fill:#e03735"/><polygon points="17.825 15.143 12.212 15.179 12.212 16.001 17.825 16.001 17.825 15.143" style="fill:#e03735"/><circle cx="15.644" cy="15.644" r="14.144" style="fill:none;stroke:#e03735;stroke-miterlimit:10;stroke-width:3px"/></g></g></svg>`,
+    sancionados: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 31.2879 31.2879"><title>Recurso 3</title><g id="bc2b39d4-712f-4cd4-a756-6645d236fc69" data-name="Capa 2"><g id="a86d0594-03d2-4b15-b19a-6fbd509bb0d8" data-name="Capa 1"><path d="M21.0369,18.2324a5.1158,5.1158,0,0,1-2.7749,1.2568,7.554,7.554,0,0,0,.2811,1.6053,6.2147,6.2147,0,0,0,.6433,1.4937H10.5479c0-.1967.0054-.3846-.001-.5721-.0252-.74-.1294-1.4717-.2261-2.2043-.0935-.71-.1953-1.4185-.2821-2.1291q-.1926-1.5771-.2412-3.1658c-.0037-.1241,0-.2485,0-.3816h1.18V11.2446H9.479V8.5581H20.8369v9.3257l.2038-.1751a4.9078,4.9078,0,0,0,1.6041,1.07V12.573q0-2.0728,0-4.1459c0-.3678-.019-.7364-.0007-1.1032a.4489.4489,0,0,0-.4524-.4709c-1.5494.009-3.0989.0044-4.6484.0044l-6.6129,0A.4132.4132,0,0,0,10.486,7.3c-.0015.2513,0,.5026,0,.7538v.1022h-.1021q-.4282,0-.8565,0a.409.409,0,0,0-.4487.4444q0,1.1222.0014,2.2443v.4018H7.5751v2.8872c.0214.0018.0378.0045.0542.0045.3538,0,.7079.0016,1.062-.0016.0619-.0005.0776.0164.0749.0775-.018.3932-.0232.7874-.05,1.18-.04.5977-.0817,1.196-.1463,1.7915-.0811.7455-.1894,1.4881-.28,2.2327-.0936.77-.19,1.54-.2657,2.3121a4.95,4.95,0,0,0,.0573,1.4583,1.368,1.368,0,0,0,.3994.7873,1.1769,1.1769,0,0,0,.91.2688,1.0481,1.0481,0,0,0,.8336-.4382,1.638,1.638,0,0,0,.2667-.7237c.0113-.0754.0346-.0977.1106-.0974q1.0824.0045,2.165.0019,2.2523-.0031,4.504-.0076c.3134,0,.6266.006.94.007.3827.0013.7652.0024,1.1479-.0019a.183.183,0,0,1,.1643.0789,3.93,3.93,0,0,0,1.4532,1.1549.139.139,0,0,0,.1013.0093,3.8581,3.8581,0,0,0,1.106-.7585,3.4123,3.4123,0,0,0,.5919-.724c.164-.2823.3335-.5638.4685-.86a6.8126,6.8126,0,0,0,.5266-1.9587c.0188-.1433.0286-.2878.0431-.4378A5.115,5.115,0,0,1,21.0369,18.2324Zm2.3259,2.0251q-1.0833,1.0838-2.1674,2.1668a.1986.1986,0,0,1-.32-.0007q-.627-.626-1.253-1.2531a.1985.1985,0,1,1,.2726-.2817q.518.5173,1.0353,1.0352c.0321.0323.0622.0666.105.1125.236-.2384.4619-.4678.6894-.6958q.68-.6813,1.3617-1.3612a.1975.1975,0,1,1,.2764.278Z" style="fill:#e03735"/><path d="M12.3649,10.7322c-.2937.0055-.5878.0047-.8817.0006-.08-.0012-.109.0177-.1081.1033.0042.4221.0018.8444.0018,1.2666h.0074c0,.4988.0008.9976,0,1.4964-.0008.3193-.0028.6386-.0082.9578-.0013.0753.0234.0984.0985.0974.2853-.0037.5707-.0015.8559-.0013.1323,0,.1322,0,.132-.1282-.0014-.6758-.004-1.3517-.004-2.0276q0-.83.0055-1.6609C12.464,10.7624,12.4494,10.7306,12.3649,10.7322Z" style="fill:#e03735"/><path d="M7.088,10.7328c-.3.003-.5992.0037-.8988,0-.0746-.001-.0969.0185-.0966.0952.0032.6221.0018,1.2443.0018,1.8664h0q0,.9331,0,1.8664c0,.0513-.0049.0946.0715.0938.3139-.0031.6277-.0019.9416,0,.0519,0,.07-.02.0695-.0709-.0013-.5049,0-1.01-.0012-1.5148,0-.2876-.0051-.5753-.0048-.863q0-.6933.0064-1.3867C7.1782,10.748,7.1535,10.7322,7.088,10.7328Z" style="fill:#e03735"/><path d="M11.0117,15.7261a.2028.2028,0,0,0,.2059.2063c.02.0018.04.0018.06.0018q1.58,0,3.1589,0,2.2989,0,4.598-.0006a.5912.5912,0,0,0,.11-.0086.1847.1847,0,0,0,.1514-.1454.1713.1713,0,0,0-.0664-.1978.3433.3433,0,0,0-.1752-.0486q-1.9478-.0041-3.8959-.002H13.472q-1.1175,0-2.2347.0005A.2031.2031,0,0,0,11.0117,15.7261Z" style="fill:#e03735"/><path d="M19.2843,18.0985a.198.198,0,0,0-.2026-.2793q-.924-.0009-1.8478.0006-2.4051,0-4.81,0c-.2079,0-.4158.0059-.6237.006-.1937,0-.3878-.01-.5814-.0028a.28.28,0,0,0-.1619.0741.169.169,0,0,0-.0245.2068.202.202,0,0,0,.2033.1135q.9063-.0015,1.813,0H17.834c.4166,0,.8332-.0009,1.25,0A.201.201,0,0,0,19.2843,18.0985Z" style="fill:#e03735"/><path d="M15.0126,20.1012q-1.8713,0-3.7426,0c-.0285,0-.0627-.0083-.0844.0042a.3826.3826,0,0,0-.15.1111.1922.1922,0,0,0,.1915.2829c.42.0008.8393-.0012,1.2588-.0012q2.5437,0,5.0873.0015h.42l-.0656-.3948c-.0272-.0012-.05-.0032-.0721-.0032Q16.4344,20.1016,15.0126,20.1012Z" style="fill:#e03735"/><path d="M13.804,11.3637h4.8805c.14,0,.2795.0027.4192-.0011a.1989.1989,0,0,0,.1988-.1954.1959.1959,0,0,0-.1811-.2022A.84.84,0,0,0,19.01,10.96q-1.1558.001-2.3115.0025-1.6824,0-3.3648-.0025h-.4729v.4033h.9429Z" style="fill:#e03735"/><path d="M19.278,13.352a.1991.1991,0,0,0-.1916-.1043q-1.0105.0016-2.021.0005l-4,0h-.2028v.3965h.4927l5.619.0018a.4341.4341,0,0,0,.1361-.0033.393.393,0,0,0,.1551-.0909A.1654.1654,0,0,0,19.278,13.352Z" style="fill:#e03735"/><circle cx="15.644" cy="15.644" r="14.144" style="fill:none;stroke:#e03735;stroke-miterlimit:10;stroke-width:3px"/></g></g></svg>`,
+    modificaciones: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 28.2879 28.2879"><title>Recurso 4</title><g id="a0b18691-39f9-44cf-a7c9-8db7d6a13904" data-name="Capa 2"><g id="f6d66acb-d5f5-4263-9318-9e649c5340ac" data-name="Capa 1"><circle cx="14.144" cy="14.144" r="14.144" style="fill:#e03735"/><path d="M22.2785,7.3379q-1.4942-1.4715-2.9856-2.9461a2.0289,2.0289,0,0,0-1.4823-.6149q-4.7658.0011-9.5318.0017A1.9045,1.9045,0,0,0,6.2974,5.7521q-.006,7.6057.0065,15.2113a2.1305,2.1305,0,0,0,.1949.8764,1.8492,1.8492,0,0,0,1.81,1.0891c2.3865.0019,4.773-.0012,7.1595.0058a.75.75,0,0,1,.3867.12c1.085.713,2.1629,1.4369,3.245,2.1545.1459.0967.3038.1757.4559.263h.2966c.0915-.0617.22-.1034.2667-.1893a1.3081,1.3081,0,0,0,.1906-.5389c.0234-.5972.0088-1.196.0088-1.8143.2094,0,.3981.0023.5871,0A1.9485,1.9485,0,0,0,22.902,20.913q.0027-6.0273.0018-12.0547A2.0421,2.0421,0,0,0,22.2785,7.3379ZM19.0532,6.009l1.5176,1.57H19.0532Zm2.5786,3.0932V20.8785a.69.69,0,0,1-.7806.78c-.3671.0011-.7341-.0019-1.1012.0008a.6418.6418,0,0,0-.7018.6953c-.0031.4159-.0006.8319-.0006,1.2874-.0877-.0556-.1508-.0938-.2119-.1347-.8161-.5437-1.6342-1.0844-2.4463-1.634a1.212,1.212,0,0,0-.7116-.2181q-3.6636.0088-7.3273.0034c-.5535,0-.7838-.23-.7838-.7837q0-7.5192,0-15.0381c0-.5569.2285-.788.7795-.788q4.5956,0,9.1907,0h.24c0,.3919,0,.7578,0,1.1237,0,.6637-.0023,1.3273.0007,1.991a.64.64,0,0,0,.6985.698c.9671.0027,1.9342.0009,2.9013.0009h.2546Z" style="fill:#fff"/><path d="M19.1727,13.7331c.2539-.1648.5256-.3021.7822-.4632a.6034.6034,0,0,0,.2364-.8441q-.6292-1.1265-1.29-2.2352a.6067.6067,0,0,0-.8493-.2182,2.4966,2.4966,0,0,0-.4382.2547.6691.6691,0,0,1-.9648.0171c-.0858-.0731-.151-.1184-.147-.2435.01-.3032.0059-.607.0025-.9105a.6392.6392,0,0,0-.6878-.6876c-.4022-.0037-.8046-.0008-1.2068-.0006-.4236,0-.8471-.0054-1.2705.002a.63.63,0,0,0-.6453.643,4.7955,4.7955,0,0,0,.002.6137c.0337.3348-.0116.6105-.39.7141a.251.251,0,0,0-.0889.0562.1973.1973,0,0,1-.2647.0071c-.2645-.1618-.5323-.319-.806-.4645a.5959.5959,0,0,0-.8363.2Q9.6368,11.2981,9,12.4448a.5954.5954,0,0,0,.2254.813,1.9858,1.9858,0,0,0,.4209.242.69.69,0,0,1,.5082.88.35.35,0,0,1-.1188.2109c-.2551.1634-.5256.3024-.7831.4622a.6009.6009,0,0,0-.249.84q.6327,1.1364,1.3,2.2536a.6015.6015,0,0,0,.8336.2139,2.5018,2.5018,0,0,0,.4384-.2542.69.69,0,0,1,.9841-.0176.2838.2838,0,0,1,.136.25c-.0061.3176-.0081.6354,0,.9529a.6225.6225,0,0,0,.633.6324q1.27.011,2.5408,0a.6257.6257,0,0,0,.6346-.6316,2.6127,2.6127,0,0,0-.0029-.5285.6778.6778,0,0,1,.4907-.8679.3521.3521,0,0,1,.2407-.0025c.275.1429.5368.3108.81.4576a.6031.6031,0,0,0,.8525-.2037q.667-1.1166,1.3-2.2533a.6018.6018,0,0,0-.23-.8293,2.1788,2.1788,0,0,0-.4211-.2418.6752.6752,0,0,1-.4991-.8637A.3868.3868,0,0,1,19.1727,13.7331Zm-1.454.99a.6944.6944,0,0,0,.3694.7212c.22.1252.438.2546.6793.3953-.21.365-.4155.7221-.6323,1.0988-.229-.1313-.45-.2518-.6644-.3826a.7271.7271,0,0,0-.8813.0529,5.4609,5.4609,0,0,1-.8732.507.7288.7288,0,0,0-.4828.74c.0065.2593.0013.519.0013.7894H13.9638c0-.2472,0-.4979,0-.7488a.7251.7251,0,0,0-.522-.7977,5.4648,5.4648,0,0,1-.8012-.464.7146.7146,0,0,0-.95-.0554c-.2014.1153-.4022.231-.6249.359-.2121-.3664-.4188-.7229-.6359-1.0979.244-.1422.462-.2713.682-.3967a.6974.6974,0,0,0,.368-.7221,8.5536,8.5536,0,0,1,0-1.115.6972.6972,0,0,0-.37-.7212c-.22-.1251-.4377-.2545-.6793-.3952.21-.365.4157-.7221.6325-1.0989.2288.1314.45.2519.6645.3828a.7268.7268,0,0,0,.881-.053,5.4721,5.4721,0,0,1,.8734-.5071.7286.7286,0,0,0,.4826-.74c-.0065-.2593-.0011-.5189-.0011-.7893h1.2709c0,.2472,0,.498,0,.7488a.7254.7254,0,0,0,.5222.7977,5.457,5.457,0,0,1,.801.4639.7145.7145,0,0,0,.95.0554c.2014-.1152.4022-.231.6251-.3589.2121.3663.4186.7228.6359,1.0979-.2168.1258-.419.2506-.6282.3627a.7367.7367,0,0,0-.4189.7984A6.5669,6.5669,0,0,1,17.7187,14.7227Z" style="fill:#fff"/><path d="M14.5966,12.2592a1.9052,1.9052,0,1,0,1.9074,1.8972A1.9227,1.9227,0,0,0,14.5966,12.2592Zm-.0048,2.5391a.634.634,0,1,1,.6413-.6266A.64.64,0,0,1,14.5918,14.7983Z" style="fill:#fff"/></g></g></svg>`,
+    promulgadas: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 31.2879 31.2879"><title>Recurso 5</title><g id="beae7a4a-4663-45e3-b953-3d54ad056c98" data-name="Capa 2"><g id="e951fe5e-4505-4904-8915-c92a0ee48042" data-name="Capa 1"><path d="M22.7361,8.1185c0-.2941-.1224-.415-.42-.415l-13.3983,0c-.3,0-.4191.1182-.4191.4146q0,2.3174-.0026,4.6346a.4069.4069,0,0,1-.057.1992,4.6864,4.6864,0,0,0-.65,3.2292A4.7493,4.7493,0,0,0,14.901,19.53c.033-.02.0671-.0373.1046-.058.22.2619.4345.5162.6454.7736a.1272.1272,0,0,1,.0107.0965.8956.8956,0,0,0,.25.8972q.402.4039.8059.8057c.9024.9019,1.802,1.8067,2.708,2.7049A1.6626,1.6626,0,1,0,21.77,22.3915q-1.7508-1.7539-3.5054-3.5042a.8889.8889,0,0,0-.8856-.2537.1539.1539,0,0,1-.1168-.0165c-.2554-.2078-.5067-.4207-.7645-.6365a3.4475,3.4475,0,0,0,.1761-.3219.1921.1921,0,0,1,.2123-.128q2.726.0053,5.4518.0024a.3466.3466,0,0,0,.3984-.3821Q22.7362,12.6348,22.7361,8.1185Zm-4.1337,12.074a.5209.5209,0,0,1,.0537.0434q1.32,1.3182,2.6384,2.638a.9863.9863,0,0,1-.5159,1.6738.9186.9186,0,0,1-.8517-.2557Q18.5688,22.944,17.22,21.5866l-.0058-.0105Zm-1.1373-.8508a.2006.2006,0,0,1,.2985.0027c.1173.11.229.2261.3382.3347L16.71,21.07c-.1138-.1121-.24-.2278-.3556-.3537a.19.19,0,0,1,.01-.2731Q16.9114,19.8891,17.4651,19.3417Zm-.7189-.27-.66.6357-.5207-.62.5494-.5434Zm-4.19.4546a4.0733,4.0733,0,1,1,3.988-4.1353A4.0832,4.0832,0,0,1,12.5561,19.5259Zm9.4928-2.675H17.0347c.067-.3764.1339-.7523.2044-1.1486h.1155c1.0609,0,2.1218.002,3.1826-.0036a.5406.5406,0,0,0,.2783-.0823.2933.2933,0,0,0,.1064-.3456.3246.3246,0,0,0-.2864-.24c-.0427-.0039-.0859-.0024-.1289-.0024-1.0608,0-2.1218-.0013-3.1826.0019-.0948,0-.121-.0261-.138-.1213-.0554-.31-.1282-.6162-.195-.9237-.0073-.0339-.0194-.0667-.0333-.1139h3.5476c.0394,0,.0791.0015.1182-.0014a.3364.3364,0,0,0,.0011-.671c-.0356-.0027-.0716-.0017-.1075-.0017q-1.8708,0-3.7418.0021a.18.18,0,0,1-.1831-.108,4.5882,4.5882,0,0,0-.7374-.9742c-.0171-.0176-.0329-.0365-.0683-.076h.1422q2.3008,0,4.6019-.0019a.5585.5585,0,0,0,.2371-.048.322.322,0,0,0,.161-.3658.3329.3329,0,0,0-.2968-.2564c-.0713-.0059-.1433-.0037-.215-.0037q-2.6987,0-5.3975-.0026a.5048.5048,0,0,1-.2324-.0593,4.7476,4.7476,0,0,0-5.314.4735c-.0943.0762-.1841.1581-.2942.2531V8.3866h12.87Z" style="fill:#e03735"/><path d="M10.5049,10.1819a.5953.5953,0,0,0,.2.0282q2.4568.0023,4.9136.0011t4.9137,0a.77.77,0,0,0,.1178-.0053.333.333,0,0,0,.2845-.3591c-.0138-.1975-.1608-.3127-.4007-.3127q-4.9189,0-9.838,0a.7093.7093,0,0,0-.1176.0076.3306.3306,0,0,0-.28.298A.3264.3264,0,0,0,10.5049,10.1819Z" style="fill:#e03735"/><path d="M12.4807,11.8673a3.5829,3.5829,0,1,0,3.5792,3.62A3.5835,3.5835,0,0,0,12.4807,11.8673Zm-.0052,6.4849a2.8981,2.8981,0,1,1,2.9085-2.9009A2.8974,2.8974,0,0,1,12.4755,18.3522Z" style="fill:#e03735"/><circle cx="15.644" cy="15.644" r="14.144" style="fill:none;stroke:#e03735;stroke-miterlimit:10;stroke-width:3px"/></g></g></svg>`,
+    rechazados: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 31.2879 31.2879"><title>Recurso 6</title><g id="a0033232-4802-4256-becb-62574bef2b7f" data-name="Capa 2"><g id="b89c528a-660d-485d-a816-d2e1dd583144" data-name="Capa 1"><path d="M21.8326,6.314l-12.48.0112a.752.752,0,0,0-.6775.7313l0,17.1749a.7669.7669,0,0,0,.8186.7425l12.3394,0a.7859.7859,0,0,0,.7807-.7423V7.0563A.7859.7859,0,0,0,21.8326,6.314Zm-.325,17.5541H9.78V7.42H21.5076Z" style="fill:#e03735"/><rect x="11.9888" y="8.9045" width="7.3105" height="0.8757" style="fill:#e03735"/><polygon points="18.88 11.817 18.88 11.018 18.823 10.961 11.989 10.961 11.989 11.874 18.823 11.874 18.88 11.817" style="fill:#e03735"/><rect x="11.9888" y="13.0547" width="6.4347" height="0.8757" style="fill:#e03735"/><polygon points="17.967 15.111 11.989 15.149 11.989 16.025 17.967 16.025 17.967 15.111" style="fill:#e03735"/><path d="M13.5669,17.4491a2.9047,2.9047,0,1,0,4.6414.6754A2.9118,2.9118,0,0,0,13.5669,17.4491Zm4.0187,3.4-.5364.5365-1.3827-1.3827-1.3826,1.3827-.5365-.5365L15.13,19.467l-1.3827-1.3827.5365-.5365,1.3826,1.3827,1.3827-1.3827.5364.5365L16.203,19.467Z" style="fill:#e03735"/><circle cx="15.644" cy="15.644" r="14.144" style="fill:none;stroke:#e03735;stroke-miterlimit:10;stroke-width:3px"/></g></g></svg>`
+  },
+  fiscalizacion: {
+    escrito: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 119.6946 119.6946"><title>Recurso 1</title><g id="b68a5b0f-240f-4da3-89cf-838251c5b548" data-name="Capa 2"><g id="e7e1173a-3ff9-4e95-83dd-24d5320ad489" data-name="Capa 1"><path d="M68.359,92.1409c-.7861.3251-1.5208.1165-1.6428-.8088-.4208-3.1921.2681-7.4346.0851-10.7325L83.3835,51.8482l.032-23.2035a4.6184,4.6184,0,0,0-4.493-4.0172L32.4308,24.626a4.6868,4.6868,0,0,0-4.6572,3.8527L27.7669,93.622a4.6252,4.6252,0,0,0,4.5015,4.3359L79.0789,97.95A4.9067,4.9067,0,0,0,83.4173,94.27V76.6764L77.4452,86.8243C74.4983,88.2444,71.3088,90.9209,68.359,92.1409ZM52.93,38.7425l22.88-.0374a1.0237,1.0237,0,0,1,.6635,1.8154l-23.2594.16A1.005,1.005,0,0,1,52.93,38.7425ZM34.6175,35.159a3.7586,3.7586,0,0,1,2.6057-2.3038,51.2708,51.2708,0,0,1,8.1293-.0245,3.7787,3.7787,0,0,1,2.7258,2.3477,27.9379,27.9379,0,0,1,.0779,8.7736,3.7628,3.7628,0,0,1-2.3847,2.5249c-1.225.4142-6.4817.4086-7.9337.2512A3.8963,3.8963,0,0,1,34.3193,43.21C34.1587,41.7316,34.1569,36.3846,34.6175,35.159Zm-.2548,22.003a3.96,3.96,0,0,1,3.0241-3.195,46.73,46.73,0,0,1,7.6348-.0208,3.962,3.962,0,0,1,3.37,3.8305c.1515,1.67.19,6.5176-.4063,7.9346a3.7155,3.7155,0,0,1-2.7814,2.1281,52.21,52.21,0,0,1-7.6934,0A3.89,3.89,0,0,1,34.32,64.4845,45.26,45.26,0,0,1,34.3627,57.162ZM48.1478,86.4943a4.0178,4.0178,0,0,1-3.27,2.6212,46.96,46.96,0,0,1-7.1844-.0192,3.8621,3.8621,0,0,1-3.3712-3.5024,45.5052,45.5052,0,0,1,.038-7.3232,4.0481,4.0481,0,0,1,3.5252-3.1847,40.52,40.52,0,0,1,6.81-.0286,4.0017,4.0017,0,0,1,3.6979,3.83C48.5408,80.3745,48.565,85.214,48.1478,86.4943Zm5.1142-26.635,19.6032-.0432c1.4321.1212,1.7358,1.9741.163,2.1342l-19.6455.0006A1.0476,1.0476,0,0,1,53.262,59.8593Zm9.289,23.3633a61.7045,61.7045,0,0,1-9.0046.0045,2.4224,2.4224,0,0,1-1.0173-.3734,1.1856,1.1856,0,0,1,.1926-1.6049l10.4808-.15C64.556,81.8634,64.01,83.0568,62.551,83.2226Z" style="fill:#e03735"/><path d="M94.6612,52.42c-.4323-.2569-2.2278-1.425-2.5719-1.2021L84.4738,64.3951c-.905,1.0908-2.2821.1851-1.75-1.095,2.11-4.24,5.3237-8.4035,7.3275-12.6378.0984-.2081.3447-.5838.218-.8011-.6877-.19-1.6688-1.1209-2.2671-1.2694-.1853-.0462-.28-.1066-.4069.0984L69.3678,80.2327c-.0875.2181-.0054.3048.1383.4536.4286.4446,1.9041.914,2.4517,1.3907l8.6074-15.0448a1.0519,1.0519,0,1,1,1.9459.7973L73.7847,83.0052c-.0863.3239.0477.17.189.2527.3942.2314,2.3171,1.4314,2.5574,1.263L94.8544,52.6782C94.9438,52.3546,94.794,52.4992,94.6612,52.42Z" style="fill:#e03735"/><path d="M99.9288,42.4075c-.5065-.8062-4.4109-2.3763-5.3165-3.1917a1.4728,1.4728,0,0,0-1.0927-.1485c-.9684.21-1.7968,2.92-2.555,3.6511l7.1826,4.1039C98.7225,45.78,100.6442,43.5467,99.9288,42.4075Z" style="fill:#e03735"/><path d="M89.8784,44.7534l-.9913,1.9774,7.1289,4.088c.0235-.6156,1.2431-1.6966.8374-2.217Z" style="fill:#e03735"/><polygon points="68.852 82.732 68.852 89.442 74.577 86.087 68.852 82.732" style="fill:#e03735"/><path d="M44.5525,77.1636a42.1554,42.1554,0,0,0-6.6748.0425,1.8275,1.8275,0,0,0-1.4206,1.3617,45.8238,45.8238,0,0,0-.0133,6.8682,1.6267,1.6267,0,0,0,1.5546,1.5548,45.3043,45.3043,0,0,0,6.7178,0,1.8056,1.8056,0,0,0,1.557-1.8795,42.7389,42.7389,0,0,0-.0024-6.229A1.8738,1.8738,0,0,0,44.5525,77.1636Zm.163,4.0986c-.27.359-3.0041,3.1268-3.2674,3.2783a1.2761,1.2761,0,0,1-1.3276,0c-.1588-.0915-2.1474-2.1079-2.2736-2.3069A1.2054,1.2054,0,0,1,37.8,80.8094c1.0674-1.1274,2.2422.8139,2.9842,1.4285.838-.592,3.0869-4.0076,4.1555-2.3529C45.3157,80.4668,45.0687,80.7927,44.7155,81.2622Z" style="fill:#e03735"/><path d="M37.6374,65.7493a39.3747,39.3747,0,0,0,6.7479.1262A1.8917,1.8917,0,0,0,46.19,64.57a44.6652,44.6652,0,0,0,.0809-6.9641,1.6674,1.6674,0,0,0-1.3874-1.558,53.4727,53.4727,0,0,0-7.3372.0418,1.5676,1.5676,0,0,0-1.1024,1.3528,46.5641,46.5641,0,0,0,0,6.8809A1.7218,1.7218,0,0,0,37.6374,65.7493Zm.2741-6.1837c1.1543-1.1508,2.5441,1.47,3.0144,1.3879.7782-.5023,2.2779-2.6953,3.1316-2.6974.9291-.0021,1.2479.9422.8042,1.714a36.7159,36.7159,0,0,1-3.6623,3.5464.9622.9622,0,0,1-.98-.1868,29.0213,29.0213,0,0,1-2.5978-2.646A1.2335,1.2335,0,0,1,37.9115,59.5656Z" style="fill:#e03735"/><path d="M37.8318,44.6067a46.8471,46.8471,0,0,0,6.8844-.0035,1.8138,1.8138,0,0,0,1.5546-1.5547,43.8462,43.8462,0,0,0-.0037-6.55A1.7525,1.7525,0,0,0,44.5483,34.78a46.4192,46.4192,0,0,0-6.8385.0344,2.0238,2.0238,0,0,0-1.2527,1.3659,48.0681,48.0681,0,0,0-.0163,7.0351A1.6935,1.6935,0,0,0,37.8318,44.6067Zm.7963-6.5123c.771.0348,1.5613,1.3,2.1565,1.7561.2168,0,2.2628-2.6,2.9837-2.75a1.0668,1.0668,0,0,1,1.2328,1.3977,39.568,39.568,0,0,1-3.7606,3.7794,1.3688,1.3688,0,0,1-1.1852-.2218,17.9879,17.9879,0,0,1-2.3908-2.5207C37.4092,38.7422,37.8958,38.2461,38.6281,38.0944Z" style="fill:#e03735"/><circle cx="59.8473" cy="59.8473" r="58.3473" style="fill:none;stroke:#e03735;stroke-miterlimit:10;stroke-width:3px"/></g></g></svg>`,
+    oral: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 119.6946 119.6946"><title>Recurso 2</title><g id="bd9f7787-880b-4505-821f-b36e6c4f8819" data-name="Capa 2"><g id="faa2a8bd-1cd3-423c-b433-cccec0091693" data-name="Capa 1"><path d="M89.4429,23.8206a2.0159,2.0159,0,0,0-2.0353-1.835c-1.3861-.11-3.0536.0047-4.4758,0-16.2719-.0571-32.7012.0252-48.9059,0-1.5649-.0025-3.4541-.2337-3.7721,1.772.0138,24.1631-.03,48.3692.0167,72.5148a1.9789,1.9789,0,0,0,1.7516,1.5847l14.882.003a1.99,1.99,0,0,0,1.3271-3.3337c-.9448-.9827-2.7255-.3321-3.9429-.58l-10.165.0414V64.46c0-.0245.0936-.0939.0379-.1635-.2354-.32-.5874-.5219-.7057-.9081l.1334-.1629c.011.3158.3413.6326.5682.8672l-.0331-.6.2.0994-.2-.366.1328-.0009-.1391-.1614.0058-37.1387H85.57V93.987H72.3915a2.134,2.134,0,0,0-1.1557.846,1.9741,1.9741,0,0,0,1.4309,3.016l15.0048.0075A1.9966,1.9966,0,0,0,89.41,96.3258C89.4825,72.16,89.4191,47.9936,89.4429,23.8206Z" style="fill:#e03735"/><path d="M68.6893,75.8027c-.2583-.6215-.6719-1.1476-.87-1.7679-.1671.1814-.6442-.4323-.7246-.5748a3.2956,3.2956,0,0,0-.8748-1.1271,9.5924,9.5924,0,0,0-14.3751,1.9084,9.7894,9.7894,0,0,0,.5,11.304L50.6722,97.7568a1.9883,1.9883,0,0,0,2.7146,1.7811l6.46-3.62,6.5073,3.6391a1.983,1.983,0,0,0,2.6628-1.8567L67.3482,85.5453A9.9342,9.9342,0,0,0,68.6893,75.8027ZM64.37,94.0011c-1.1678-.4975-2.451-1.5907-3.6439-2.0946a2.0815,2.0815,0,0,0-1.9818.1107c-1.0944.54-2.3425,1.5245-3.4209,1.9839a.3991.3991,0,0,1-.2475.0521l.8012-5.8715a9.4867,9.4867,0,0,0,7.9392,0l.8012,5.8715A.3991.3991,0,0,1,64.37,94.0011Zm.368-11.6045a5.691,5.691,0,1,1-4.94-8.61A5.7061,5.7061,0,0,1,64.7381,82.3966Z" style="fill:#e03735"/><path d="M42.6323,67.5618l31.9109.0515.2832.2165-.1328-.2669H77.196a1.992,1.992,0,0,0-.5307-3.94l-33.8364.0007A1.9778,1.9778,0,0,0,42.6323,67.5618Z" style="fill:#e03735"/><path d="M42.695,61.4935l34.3679-.0024a1.9794,1.9794,0,0,0-.198-3.94c-11.5526.0715-23.132-.1305-34.6686.1016a5.2441,5.2441,0,0,1-.7915.3762c-.0329.0451-.0167.1885-.0757.2776a2.5457,2.5457,0,0,1-.2446.1954c-.0136.0309.0308.0962.0175.1358C40.6286,60.0587,41.1538,61.2632,42.695,61.4935Z" style="fill:#e03735"/><path d="M42.4307,55.352H77.2628a1.962,1.962,0,0,0-.3348-3.8694l-34.2772.0186A1.9564,1.9564,0,0,0,42.4307,55.352Z" style="fill:#e03735"/><path d="M69.8563,38.07a1.9779,1.9779,0,0,0-.1348-3.9363l-19.864.0188a1.9745,1.9745,0,0,0-.0809,3.9115Z" style="fill:#e03735"/><path d="M49.6548,45.3921l20.2672.0167a1.96,1.96,0,0,0,.1167-3.8522l-11.3069-.0641c-2.8764.2719-6.0462-.2019-8.8965.0443A1.9564,1.9564,0,0,0,49.6548,45.3921Z" style="fill:#e03735"/><circle cx="59.8473" cy="59.8473" r="58.3473" style="fill:none;stroke:#e03735;stroke-miterlimit:10;stroke-width:3px"/></g></g></svg>`
+  },
+  gestion: {
+    resoluciones: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 119.6946 119.6946"><title>Recurso 3</title><g id="a9976677-ebb2-4d5d-8915-67f81c5a404d" data-name="Capa 2"><g id="f31edede-d25d-428d-9d8d-9dcfdc81b15a" data-name="Capa 1"><path d="M87.9844,49.788l-.1426-24.276a3.0012,3.0012,0,0,0-2.654-2.0594l-14.3409.0141c-.09-.6925-1.09-2.4829-1.82-2.4829H62.63a4.9522,4.9522,0,1,0-8.5291,0H47.7036c-.5337,0-2.0057,1.7205-1.6921,2.46l-14.6737.0289a3.0279,3.0279,0,0,0-2.5487,2.3893l.0992,74.54a3.3254,3.3254,0,0,0,1.8594,1.9566l55.1864-.0488a3.0142,3.0142,0,0,0,2.0676-2.87l.0347-18.1463c.1333-.4423,2.4594-1.6177,3.08-2.0819C101.4253,71.507,99.57,55.17,87.9844,49.788ZM57.626,16.0938a2.5007,2.5007,0,1,1,1.2457,4.8425C55.6073,21.5688,54.8189,16.74,57.626,16.0938ZM83.0551,96.5129c0,.5067-1.1243,1.177-1.6728,1.02L34.56,97.4238a1.4669,1.4669,0,0,1-.8956-1.574l.0006-65.786c-.1568-.5488.5132-1.673,1.02-1.673H46.02v3.7035c0,.74,1.2551,1.1871,1.8972,1.2452,6.7038.6071,14.3124-.48,21.1141-.0058.551.1328,1.6784-.8136,1.6784-1.2394V28.3908H82.0454a2.1937,2.1937,0,0,1,1.01,1.01V48.3673c-6.5637-1.17-12.7958,2.0281-16.7637,7.1405l-11.9795.1411c-1.4256.3628-1.1727,4.839.1252,4.839h9.5393a18.3159,18.3159,0,0,0,0,9.8759H54.4371c-1.2979,0-1.5508,4.4761-.1252,4.8391l11.9795.141c3.9661,5.13,10.19,8.3029,16.7637,7.14Zm7.8622-22.2152a13.62,13.62,0,1,1-10.5937-22.509C91.9591,51.5235,98.5544,65.4558,90.9173,74.2977Z" style="fill:#e03735"/><path d="M54.6757,45.66l21.988.0193c2.1216.1737,1.9549-4.6533.4376-4.9374l-22.8452.0375C53.08,41.1325,52.8442,45.6564,54.6757,45.66Z" style="fill:#e03735"/><path d="M76.8689,85.1919l-22.3835.0341c-1.5619.3583-1.5551,4.6008-.0421,4.884l22.451.0174C78.7351,90.0744,78.6706,85.2914,76.8689,85.1919Z" style="fill:#e03735"/><path d="M47.49,38.2565c-2.4742-.3256-5.7114.2244-8.27.0556a.8333.8333,0,0,0-.4953.4026,77.7965,77.7965,0,0,0-.1214,8.4283c.119.9107.3948.9314,1.2315,1.0128a52.3918,52.3918,0,0,0,7.6551-.0027c.91-.1191.931-.3948,1.0128-1.2318a52.3158,52.3158,0,0,0-.0031-7.6547C48.4027,38.5325,48.2329,38.3543,47.49,38.2565Z" style="fill:#e03735"/><path d="M47.49,53.0705c-2.4742-.3254-5.7114.2244-8.27.0555a.8341.8341,0,0,0-.4953.4027,77.7986,77.7986,0,0,0-.1214,8.4285c.119.91.3948.9312,1.2315,1.0127a52.3637,52.3637,0,0,0,7.6551-.0028c.91-.1193.931-.3948,1.0128-1.2318a52.3186,52.3186,0,0,0-.0031-7.6549C48.4027,53.3466,48.2329,53.1684,47.49,53.0705Z" style="fill:#e03735"/><path d="M47.49,67.8846c-2.4742-.3257-5.7114.2244-8.27.0555a.8333.8333,0,0,0-.4953.4026,77.7994,77.7994,0,0,0-.1214,8.4285c.119.9105.3948.9314,1.2315,1.0126a52.378,52.378,0,0,0,7.6551-.0025c.91-.1193.931-.3948,1.0128-1.2319a52.3172,52.3172,0,0,0-.0031-7.6548C48.4027,68.16,48.2329,67.9822,47.49,67.8846Z" style="fill:#e03735"/><path d="M47.49,82.6985c-2.4742-.3254-5.7114.2243-8.27.0554a.8344.8344,0,0,0-.4953.4029,77.7967,77.7967,0,0,0-.1214,8.4284c.119.91.3948.9312,1.2315,1.0127a52.3637,52.3637,0,0,0,7.6551-.0028c.91-.1191.931-.3948,1.0128-1.2318a52.3158,52.3158,0,0,0-.0031-7.6547C48.4027,82.9746,48.2329,82.7964,47.49,82.6985Z" style="fill:#e03735"/><path d="M87.4823,58.7358c-1.54.34-7.4407,7.7279-9.284,8.9183-.5931.1052-3.3878-3.7325-4.5084-3.98a1.8215,1.8215,0,0,0-2.1358,2.5933,73.3832,73.3832,0,0,0,5.45,5.5453,1.8823,1.8823,0,0,0,1.9536.1766L89.5351,61.47A1.8217,1.8217,0,0,0,87.4823,58.7358Z" style="fill:#e03735"/><circle cx="59.8473" cy="59.8473" r="58.3473" style="fill:none;stroke:#e03735;stroke-miterlimit:10;stroke-width:3px"/></g></g></svg>`,
+    declaraciones: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 119.6946 119.6946"><title>Recurso 4</title><g id="e660d384-37c5-47ee-a616-d32fbfeb6b61" data-name="Capa 2"><g id="a1fd74ee-a440-493a-b862-745cab3954d9" data-name="Capa 1"><path d="M86.5237,95.3592H33.1844v-72.19H71.6359V36.5038a1.8791,1.8791,0,0,0,1.5531,1.5531H86.5237V65.7976l3.1054-1.9822.1087-.2128-.0255-27.7169-.3478-.6161-14.998-14.992-.4782-.2715L31.4119,19.95A1.5538,1.5538,0,0,0,29.9662,21.29l.0109,76.1522a1.7762,1.7762,0,0,0,1.0576,1.0846l57.26.05c.4885.1307,1.4418-.7327,1.4418-1.1287v-17.94L86.5237,81.596ZM74.9562,25.6325l9.104,9.1041h-9.104Z" style="fill:#e03735"/><path d="M107.0051,64.4351c-1.3361-1.6944-2.4194-4.1456-3.7724-5.76a1.7749,1.7749,0,0,0-1.5245-.6755,5.5387,5.5387,0,0,0-1.4234.7269L63.98,82.7232l-5.4692,7.7051a1.6054,1.6054,0,0,0,1.705,2.4543c2.8449-.2282,6.3118-1.4794,9.1756-1.9633L106.606,66.3326A1.7792,1.7792,0,0,0,107.0051,64.4351Zm-43.4023,24.39c.7162-.867,1.2766-2.0388,1.9907-2.8815.1265-.149.2467-.3632.4708-.33l1.5016,2.4618Zm7.0647-2.6274a.4513.4513,0,0,1-.4062.0386,27.0191,27.0191,0,0,1-1.5683-2.4475.4509.4509,0,0,1-.0524-.3134L93.0534,67.4456l.2685.0656L94.979,70.18ZM97.6723,68.2549,95.9486,65.532l5.561-3.584,1.7225,2.7766Z" style="fill:#e03735"/><rect x="38.5399" y="55.3011" width="42.6287" height="2.4635" style="fill:#e03735"/><polygon points="81.169 46.679 81.008 46.518 38.7 46.518 38.54 46.679 38.54 48.982 81.169 48.982 81.169 46.679" style="fill:#e03735"/><polygon points="81.169 66.387 81.169 64.084 38.54 64.084 38.54 66.387 38.7 66.547 81.008 66.547 81.169 66.387" style="fill:#e03735"/><polygon points="38.54 75.223 59.104 75.223 59.104 72.92 58.944 72.76 38.54 72.76 38.54 75.223" style="fill:#e03735"/><rect x="38.5399" y="36.7715" width="9.8536" height="2.4635" style="fill:#e03735"/><circle cx="59.8473" cy="59.8473" r="58.3473" style="fill:none;stroke:#e03735;stroke-miterlimit:10;stroke-width:3px"/></g></g></svg>`,
+    minutas: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 119.6946 119.6946"><title>Recurso 5</title><g id="bf1beeac-bf47-42a8-ade3-9f83c22f8c37" data-name="Capa 2"><g id="bac8af5a-c182-439e-9ed0-6a2eba23a948" data-name="Capa 1"><path d="M90.5654,25.18l-.1-.0469H29.1973l-.211.0469c-.0918.043-.9668.6895-.9668,1.12V96.075l.7979.7969H39.7783a.9134.9134,0,0,0,.836-.5713,2.09,2.09,0,0,0,.1679-.8877c0-.9258-.416-2.2295-1.34-2.2295H31.708V28.6483H87.8418V93.1834H80.1074c-.9414,0-1.4433,1.3076-1.4433,2.252a1.8071,1.8071,0,0,0,.209.9092,1.004,1.004,0,0,0,.8984.5273H90.7334l.7969-.7969V26.3C91.53,25.87,90.6572,25.2225,90.5654,25.18Z" style="fill:#e03735"/><path d="M76.8887,70.9266l-.0547-.1172-.1055-.0762c-.72-.5176-2.1709-.4756-3.5722-.4336a13.8224,13.8224,0,0,1-1.6924-.0078,27.246,27.246,0,0,1-7.35-2.2158,14.2316,14.2316,0,0,1-1.3858-.7539c-1.248-.7334-2.5322-1.4932-3.4785-1.3008a9.0236,9.0236,0,0,0-2.124,1.1035,17.1616,17.1616,0,0,1-1.69.9512,28.06,28.06,0,0,1-7.6514,2.251,10.0592,10.0592,0,0,1-1.8731-.02c-1.6015-.1182-3.2587-.24-4.18,2.0859-4.2041,10.624-.6788,24.0508,8.0263,30.5684,1.419,1.0615,7.9629,5.0009,10.0908,5.0009.0342,0,.0674-.0009.1-.0029,1.9482-.1269,8.3027-3.8291,9.8476-4.998C79.1162,95.911,82.166,82.1385,76.8887,70.9266ZM61.2813,103.4539c-1.5645.5625-1.6446.5313-2.9463.003l-.5117-.2061C46.3594,98.7137,41.2774,87.1424,45.1084,74.3914a37.161,37.161,0,0,0,14.5684-4.2627,37.9706,37.9706,0,0,0,14.7851,4.2618C78.3047,87.1287,72.8,99.3162,61.2813,103.4539Z" style="fill:#e03735"/><path d="M38.7705,37.3856H80.7793c.3086,0,.6367-.2578.9766-.7666a1.7688,1.7688,0,0,0,.3759-1.3164,2.6086,2.6086,0,0,0-.69-1.22.9276.9276,0,0,0-.6621-.3857H38.4805l-1.0586,1.8477-.0069.1171A2.3388,2.3388,0,0,0,38.1084,37,.9261.9261,0,0,0,38.7705,37.3856Z" style="fill:#e03735"/><path d="M37.4317,43.9774a2.2809,2.2809,0,0,0,2.333,1.48l.041-.0009a182.301,182.301,0,0,1,18.997.07c3.8653.1465,7.8038.2959,11.6768.2959,3.0693-.001,6.0986-.0948,9.0166-.3575,1.9736-.1777,2.6934-1.16,2.709-1.9462.0156-.7452-.6026-1.5811-2.083-1.7715l-41.2842.084h-.13l-.1133.0634A1.8988,1.8988,0,0,0,37.4317,43.9774Z" style="fill:#e03735"/><path d="M37.4317,52.0428a2.2816,2.2816,0,0,0,2.333,1.4814l.041-.0009a182.3743,182.3743,0,0,1,19.001.07c3.8652.1465,7.8027.2949,11.6757.2949,3.0684,0,6.0967-.0937,9.0137-.3564,1.9736-.1788,2.6934-1.16,2.709-1.9473.0156-.7451-.6016-1.58-2.083-1.7715l-41.2842.084h-.13l-.1133.0635A1.8987,1.8987,0,0,0,37.4317,52.0428Z" style="fill:#e03735"/><path d="M38.7656,61.4061l.0772.0254,42.2178-.1573.1445-.0009.1221-.0772a1.7873,1.7873,0,0,0,.7119-1.82,1.6917,1.6917,0,0,0-1.1241-1.4619l-43.0273-.0186-.1992.6905C37.4043,59.534,37.0147,60.8319,38.7656,61.4061Z" style="fill:#e03735"/><path d="M67.2637,79.8231c-.9258.2773-2.5186,2.1933-5.0313,5.3164a37.0605,37.0605,0,0,1-4.0058,4.581c-.3643.0537-1.5059-.92-2.1973-1.4892a7.5935,7.5935,0,0,0-2.7568-1.7627,1.7734,1.7734,0,0,0-1.8291.5586,2.1025,2.1025,0,0,0-.0157,2.15c.2774.6132,5.3555,4.4765,5.88,4.7089a2.8475,2.8475,0,0,0,1.1573.3106,1.7043,1.7043,0,0,0,.8828-.2471l.122-.1006c.96-1.0937,1.9483-2.1738,2.9395-3.2558a84.7652,84.7652,0,0,0,7.1846-8.58l.081-.1943a1.7609,1.7609,0,0,0-.4375-1.752A2.02,2.02,0,0,0,67.2637,79.8231Z" style="fill:#e03735"/><circle cx="59.8473" cy="59.8473" r="58.3473" style="fill:none;stroke:#e03735;stroke-miterlimit:10;stroke-width:3px"/></g></g></svg>`
+  }
+};
+
+// CATEGORÍAS POR DEFECTO
+const DEFAULT_CATEGORIES = [
+  {
+    categoryId: 'legislacion',
+    name: 'Legislación',
+    description: 'Acceda a toda la información relacionada con los proyectos de ley y legislación',
+    order: 10,
+    color: '#e03735',
+    icon: SVG_ICONS.legislacion.tratamiento,
+    isActive: true
+  },
+  {
+    categoryId: 'fiscalizacion',
+    name: 'Fiscalización',
+    description: 'Sistema de control y seguimiento de actividades institucionales',
+    order: 20,
+    color: '#e03735',
+    icon: SVG_ICONS.fiscalizacion.escrito,
+    isActive: true
+  },
+  {
+    categoryId: 'gestion',
+    name: 'Gestión',
+    description: 'Documentación y resoluciones de gestión institucional',
+    order: 30,
+    color: '#e03735',
+    icon: SVG_ICONS.gestion.resoluciones,
+    isActive: true
+  }
+];
+
+// LINKS POR DEFECTO (usando categoryId en lugar de tabId)
+const DEFAULT_LINKS = [
+  // ===== LEGISLACIÓN =====
+  {
+    categoryId: 'legislacion',
+    areaTitulo: 'Área de Legislación',
+    areaDescripcion: 'Acceda a toda la información relacionada con los proyectos de ley y legislación',
+    linkId: 'leyes-tratamiento',
+    titulo: 'Proyectos de Ley en Tratamiento',
+    descripcion: 'Proyectos actualmente en proceso legislativo',
+    icono: SVG_ICONS.legislacion.tratamiento,
+    path: '/legislacion/proyectos-en-tratamiento',
+    orden: 10,
+    isActive: true
+  },
+  {
+    categoryId: 'legislacion',
+    areaTitulo: 'Área de Legislación',
+    areaDescripcion: 'Acceda a toda la información relacionada con los proyectos de ley y legislación',
+    linkId: 'leyes-aprobados',
+    titulo: 'Proyectos de Ley Aprobados',
+    descripcion: 'Proyectos que han sido aprobados por la cámara',
+    icono: SVG_ICONS.legislacion.aprobados,
+    path: '/legislacion/proyectos-aprobados',
+    orden: 20,
+    isActive: true
+  },
+  {
+    categoryId: 'legislacion',
+    areaTitulo: 'Área de Legislación',
+    areaDescripcion: 'Acceda a toda la información relacionada con los proyectos de ley y legislación',
+    linkId: 'leyes-sancionados',
+    titulo: 'Proyectos de Ley Sancionados',
+    descripcion: 'Proyectos que han recibido sanción oficial',
+    icono: SVG_ICONS.legislacion.sancionados,
+    path: '/legislacion/proyectos-sancionados',
+    orden: 30,
+    isActive: true
+  },
+  {
+    categoryId: 'legislacion',
+    areaTitulo: 'Área de Legislación',
+    areaDescripcion: 'Acceda a toda la información relacionada con los proyectos de ley y legislación',
+    linkId: 'leyes-modificaciones',
+    titulo: 'Proyectos de Ley con Modificaciones',
+    descripcion: 'Proyectos que han sido modificados durante el proceso',
+    icono: SVG_ICONS.legislacion.modificaciones,
+    path: '/legislacion/proyectos-modificaciones',
+    orden: 40,
+    isActive: true
+  },
+  {
+    categoryId: 'legislacion',
+    areaTitulo: 'Área de Legislación',
+    areaDescripcion: 'Acceda a toda la información relacionada con los proyectos de ley y legislación',
+    linkId: 'leyes-promulgadas',
+    titulo: 'Leyes Promulgadas',
+    descripcion: 'Leyes que han sido promulgadas oficialmente',
+    icono: SVG_ICONS.legislacion.promulgadas,
+    path: '/legislacion/leyes-promulgadas',
+    orden: 50,
+    isActive: true
+  },
+  {
+    categoryId: 'legislacion',
+    areaTitulo: 'Área de Legislación',
+    areaDescripcion: 'Acceda a toda la información relacionada con los proyectos de ley y legislación',
+    linkId: 'leyes-rechazados',
+    titulo: 'Proyectos de Ley Rechazados',
+    descripcion: 'Proyectos que no han superado el proceso legislativo',
+    icono: SVG_ICONS.legislacion.rechazados,
+    path: '/legislacion/proyectos-rechazados',
+    orden: 60,
+    isActive: true
+  },
+
+  // ===== FISCALIZACIÓN =====
+  {
+    categoryId: 'fiscalizacion',
+    areaTitulo: 'Área de Fiscalización',
+    areaDescripcion: 'Sistema de control y seguimiento de actividades institucionales',
+    linkId: 'informe-escrito',
+    titulo: 'Petición de Informe Escrito',
+    descripcion: 'Solicitudes formales de información por escrito',
+    icono: SVG_ICONS.fiscalizacion.escrito,
+    path: '/fiscalizacion/informe-escrito',
+    orden: 10,
+    isActive: true
+  },
+  {
+    categoryId: 'fiscalizacion',
+    areaTitulo: 'Área de Fiscalización',
+    areaDescripcion: 'Sistema de control y seguimiento de actividades institucionales',
+    linkId: 'informe-oral',
+    titulo: 'Petición de Informe Oral',
+    descripcion: 'Solicitudes de información mediante presentaciones orales',
+    icono: SVG_ICONS.fiscalizacion.oral,
+    path: '/fiscalizacion/informe-oral',
+    orden: 20,
+    isActive: true
+  },
+
+  // ===== GESTIÓN =====
+  {
+    categoryId: 'gestion',
+    areaTitulo: 'Área de Gestión',
+    areaDescripcion: 'Documentación y resoluciones de gestión institucional',
+    linkId: 'resoluciones-camarales',
+    titulo: 'Resoluciones Camarales',
+    descripcion: 'Documentos oficiales de resolución institucional',
+    icono: SVG_ICONS.gestion.resoluciones,
+    path: '/gestion/resoluciones-camarales',
+    orden: 10,
+    isActive: true
+  },
+  {
+    categoryId: 'gestion',
+    areaTitulo: 'Área de Gestión',
+    areaDescripcion: 'Documentación y resoluciones de gestión institucional',
+    linkId: 'declaraciones-camarales',
+    titulo: 'Declaraciones Camarales',
+    descripcion: 'Declaraciones oficiales de la cámara',
+    icono: SVG_ICONS.gestion.declaraciones,
+    path: '/gestion/declaraciones-camarales',
+    orden: 20,
+    isActive: true
+  },
+  {
+    categoryId: 'gestion',
+    areaTitulo: 'Área de Gestión',
+    areaDescripcion: 'Documentación y resoluciones de gestión institucional',
+    linkId: 'minutas-comunicacion',
+    titulo: 'Minutas de Comunicación',
+    descripcion: 'Registros de comunicación institucional',
+    icono: SVG_ICONS.gestion.minutas,
+    path: '/gestion/minutas-comunicacion',
+    orden: 30,
+    isActive: true
+  }
+];
+
+const seedTabs = async () => {
+  try {
+    console.log('🔌 Conectando a MongoDB...');
+    await mongoose.connect(process.env.MONGODB_URI);
+    console.log('✅ Conectado a MongoDB');
+
+    // Limpiar colecciones
+    await TabCategory.deleteMany({});
+    await TabLink.deleteMany({});
+    console.log('🗑️ Colecciones limpiadas');
+
+    // Insertar categorías
+    await TabCategory.insertMany(DEFAULT_CATEGORIES);
+    console.log(`✅ ${DEFAULT_CATEGORIES.length} categorías insertadas`);
+
+    // Insertar links
+    await TabLink.insertMany(DEFAULT_LINKS);
+    console.log(`✅ ${DEFAULT_LINKS.length} links insertados`);
+
+    // Verificar
+    const categoriesCount = await TabCategory.countDocuments();
+    const linksCount = await TabLink.countDocuments();
+    console.log(`📊 Total: ${categoriesCount} categorías, ${linksCount} links`);
+
+    await mongoose.disconnect();
+    console.log('👋 Desconectado de MongoDB');
+    
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error en el seed:', error);
+    process.exit(1);
+  }
+};
+
+seedTabs(); 
+================================= 
+src\services\auth.service.js 
+================================= 
+ 
+// services/auth.service.js - Versión segura
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const User = require('../models/User');
+
+class AuthService {
+  generateAccessToken(userId) {
+    return jwt.sign(
+      { 
+        userId,
+        jti: crypto.randomBytes(16).toString('hex') // JWT ID para revocación
+      },
+      process.env.JWT_SECRET,
+      { 
+        expiresIn: process.env.JWT_EXPIRES_IN || '15m',
+        issuer: 'senado-api',
+        audience: 'senado-client'
+      }
+    );
+  }
+  
+  generateRefreshToken(userId) {
+    return jwt.sign(
+      { userId, type: 'refresh' },
+      process.env.JWT_REFRESH_SECRET,
+      { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d' }
+    );
+  }
+  
+  async login(email, password) {
+    try {
+      // Buscar usuario (incluyendo password)
+      const user = await User.findOne({ email: email.toLowerCase() })
+        .select('+password +loginAttempts +lockUntil');
+      
+      if (!user) {
+        throw new Error('Credenciales inválidas');
+      }
+      
+      // Verificar bloqueo
+      if (user.isLocked) {
+        throw new Error('Cuenta bloqueada. Intenta más tarde.');
+      }
+      
+      if (user.status !== 'ACTIVE') {
+        throw new Error('Cuenta inactiva o suspendida');
+      }
+      
+      // Verificar contraseña
+      const isValid = await user.comparePassword(password);
+      
+      if (!isValid) {
+        await user.incrementLoginAttempts();
+        throw new Error('Credenciales inválidas');
+      }
+      
+      // Resetear intentos
+      await user.resetLoginAttempts();
+      
+      // Generar tokens
+      const accessToken = this.generateAccessToken(user._id);
+      const refreshToken = this.generateRefreshToken(user._id);
+      
+      // Guardar refresh token (hasheado)
+      const hashedRefreshToken = crypto
+        .createHash('sha256')
+        .update(refreshToken)
+        .digest('hex');
+      
+      user.refreshToken = hashedRefreshToken;
+      await user.save();
+      
+      return {
+        user: {
+          id: user._id,
+          email: user.email,
+          role: user.role,
+          profile: user.profile,
+          status: user.status,
+          requiresPasswordChange: user.isPasswordExpired()
+        },
+        tokens: {
+          accessToken,
+          refreshToken,
+          expiresIn: 15 * 60 // 15 minutos en segundos
+        }
+      };
+      
+    } catch (error) {
+      throw error;
+    }
+  }
+  
+  async refreshAccessToken(refreshToken) {
+    try {
+      // Verificar refresh token
+      const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+      
+      if (decoded.type !== 'refresh') {
+        throw new Error('Token inválido');
+      }
+      
+      // Buscar usuario con refresh token
+      const hashedToken = crypto
+        .createHash('sha256')
+        .update(refreshToken)
+        .digest('hex');
+      
+      const user = await User.findOne({
+        _id: decoded.userId,
+        refreshToken: hashedToken,
+        status: 'ACTIVE'
+      });
+      
+      if (!user) {
+        throw new Error('Token inválido o usuario no encontrado');
+      }
+      
+      // Generar nuevo access token
+      const newAccessToken = this.generateAccessToken(user._id);
+      
+      return {
+        accessToken: newAccessToken,
+        expiresIn: 15 * 60
+      };
+      
+    } catch (error) {
+      throw new Error('Token de refresco inválido');
+    }
+  }
+  
+  async logout(userId, refreshToken) {
+    try {
+      if (refreshToken) {
+        const hashedToken = crypto
+          .createHash('sha256')
+          .update(refreshToken)
+          .digest('hex');
+        
+        await User.updateOne(
+          { _id: userId, refreshToken: hashedToken },
+          { $unset: { refreshToken: "" } }
+        );
+      }
+      
+      // Aquí podrías agregar el token a una blacklist
+      
+      return { success: true };
+    } catch (error) {
+      throw error;
+    }
+  }
+}
+
+module.exports = new AuthService(); 
+================================= 
+src\services\content.service.js 
+================================= 
+ 
+const Content = require('../models/Content');
+
+class ContentService {
+  /**
+   * Crear nuevo contenido
+   */
+  async createContent(data, authorId) {
+    try {
+      const contentData = {
+        ...data,
+        author: authorId,
+        lastModifiedBy: authorId,
+      };
+      
+      const content = new Content(contentData);
+      await content.save();
+      
+      return content;
+    } catch (error) {
+      throw new Error(`Error al crear contenido: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Obtener contenido paginado con filtros
+   */
+  async getContents(page = 1, limit = 10, filters = {}) {
+    try {
+      const query = {};
+      
+      // Aplicar filtros
+      if (filters.type) query.type = filters.type;
+      if (filters.category) query.category = filters.category;
+      if (filters.status) query.status = filters.status;
+      if (filters.language) query.language = filters.language;
+      
+      // Filtrar por tags
+      if (filters.tags && filters.tags.length > 0) {
+        query.tags = { $in: filters.tags };
+      }
+      
+      // Buscar por texto
+      if (filters.search) {
+        query.$text = { $search: filters.search };
+      }
+      
+      // Filtrar por fecha
+      if (filters.fromDate || filters.toDate) {
+        query.publishedAt = {};
+        if (filters.fromDate) query.publishedAt.$gte = new Date(filters.fromDate);
+        if (filters.toDate) query.publishedAt.$lte = new Date(filters.toDate);
+      }
+      
+      // Solo contenido publicado o programado que ya debería publicarse
+      if (!filters.includeDrafts) {
+        query.$or = [
+          { status: 'published' },
+          { 
+            status: 'scheduled',
+            scheduledFor: { $lte: new Date() }
+          }
+        ];
+      }
+      
+      const skip = (page - 1) * limit;
+      
+      const [contents, total] = await Promise.all([
+        Content.find(query)
+          .populate('author', 'email profile')
+          .populate('lastModifiedBy', 'email profile')
+          .sort({ publishedAt: -1, createdAt: -1 })
+          .skip(skip)
+          .limit(limit),
+        Content.countDocuments(query),
+      ]);
+      
+      return {
+        contents,
+        total,
+        pages: Math.ceil(total / limit),
+        page,
+        limit,
+      };
+    } catch (error) {
+      throw new Error(`Error al obtener contenidos: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Obtener contenido por ID
+   */
+  async getContentById(id) {
+    try {
+      const content = await Content.findById(id)
+        .populate('author', 'email profile')
+        .populate('lastModifiedBy', 'email profile')
+        .populate('relatedContent', 'title slug type');
+      
+      if (!content) {
+        throw new Error('Contenido no encontrado');
+      }
+      
+      return content;
+    } catch (error) {
+      throw new Error(`Error al obtener contenido: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Obtener contenido por slug
+   */
+  async getContentBySlug(slug) {
+    try {
+      const content = await Content.findOne({ slug })
+        .populate('author', 'email profile')
+        .populate('lastModifiedBy', 'email profile')
+        .populate('relatedContent', 'title slug type');
+      
+      if (!content) {
+        throw new Error('Contenido no encontrado');
+      }
+      
+      // Incrementar vistas si está publicado
+      if (content.status === 'published') {
+        await content.incrementViews();
+      }
+      
+      return content;
+    } catch (error) {
+      throw new Error(`Error al obtener contenido: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Actualizar contenido
+   */
+  async updateContent(id, data, userId) {
+    try {
+      const content = await Content.findById(id);
+      
+      if (!content) {
+        throw new Error('Contenido no encontrado');
+      }
+      
+      // Guardar versión actual en el historial
+      content.versionHistory.push({
+        content: content.content,
+        modifiedBy: content.lastModifiedBy,
+        modifiedAt: content.updatedAt,
+        revision: content.revision,
+        comment: 'Actualización automática',
+      });
+      
+      // Actualizar campos
+      Object.keys(data).forEach(key => {
+        if (key !== '_id' && key !== '__v') {
+          content[key] = data[key];
+        }
+      });
+      
+      content.lastModifiedBy = userId;
+      content.revision += 1;
+      content.updatedAt = new Date();
+      
+      await content.save();
+      
+      return content;
+    } catch (error) {
+      throw new Error(`Error al actualizar contenido: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Eliminar contenido
+   */
+  async deleteContent(id) {
+    try {
+      const content = await Content.findByIdAndDelete(id);
+      
+      if (!content) {
+        throw new Error('Contenido no encontrado');
+      }
+      
+      return { message: 'Contenido eliminado exitosamente' };
+    } catch (error) {
+      throw new Error(`Error al eliminar contenido: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Cambiar estado del contenido
+   */
+  async changeContentStatus(id, status, userId) {
+    try {
+      const content = await Content.findById(id);
+      
+      if (!content) {
+        throw new Error('Contenido no encontrado');
+      }
+      
+      content.status = status;
+      content.lastModifiedBy = userId;
+      
+      if (status === 'published' && !content.publishedAt) {
+        content.publishedAt = new Date();
+      }
+      
+      await content.save();
+      
+      return content;
+    } catch (error) {
+      throw new Error(`Error al cambiar estado: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Obtener estadísticas de contenido
+   */
+  async getContentStats() {
+    try {
+      const stats = await Content.aggregate([
+        {
+          $group: {
+            _id: {
+              type: '$type',
+              status: '$status',
+              category: '$category',
+            },
+            count: { $sum: 1 },
+            totalViews: { $sum: '$views' },
+          },
+        },
+        {
+          $group: {
+            _id: '$_id.type',
+            byStatus: {
+              $push: {
+                status: '$_id.status',
+                count: '$count',
+              },
+            },
+            byCategory: {
+              $push: {
+                category: '$_id.category',
+                count: '$count',
+              },
+            },
+            total: { $sum: '$count' },
+            totalViews: { $sum: '$totalViews' },
+          },
+        },
+      ]);
+      
+      return stats;
+    } catch (error) {
+      throw new Error(`Error al obtener estadísticas: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Buscar contenido por texto
+   */
+  async searchContent(query, limit = 20) {
+    try {
+      const results = await Content.find(
+        { $text: { $search: query } },
+        { score: { $meta: 'textScore' } }
+      )
+        .sort({ score: { $meta: 'textScore' } })
+        .limit(limit)
+        .select('title slug excerpt type category publishedAt featuredImage');
+      
+      return results;
+    } catch (error) {
+      throw new Error(`Error en búsqueda: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Obtener contenido relacionado
+   */
+  async getRelatedContent(contentId, limit = 5) {
+    try {
+      const content = await Content.findById(contentId);
+      
+      if (!content) {
+        return [];
+      }
+      
+      const related = await Content.find({
+        $and: [
+          { _id: { $ne: contentId } },
+          { 
+            $or: [
+              { category: content.category },
+              { tags: { $in: content.tags } },
+              { type: content.type },
+            ],
+          },
+          { status: 'published' },
+        ],
+      })
+        .limit(limit)
+        .select('title slug excerpt type category publishedAt featuredImage');
+      
+      return related;
+    } catch (error) {
+      throw new Error(`Error al obtener contenido relacionado: ${error.message}`);
+    }
+  }
+}
+
+module.exports = new ContentService(); 
+================================= 
+src\services\legisladores.service.js 
+================================= 
+ 
+const Legislador = require('../models/Legislador');
+
+class LegisladoresService {
+  /**
+   * Crear nuevo legislador
+   */
+  async createLegislador(data, userId) {
+    try {
+      const legisladorData = {
+        ...data,
+        createdBy: userId,
+        lastUpdatedBy: userId,
+      };
+      
+      const legislador = new Legislador(legisladorData);
+      await legislador.save();
+      
+      return legislador;
+    } catch (error) {
+      throw new Error(`Error al crear legislador: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Obtener legisladores paginados con filtros
+   */
+  async getLegisladores(page = 1, limit = 10, filters = {}) {
+    try {
+      const query = {};
+      
+      // Aplicar filtros
+      if (filters.partidoPolitico) query.partidoPolitico = filters.partidoPolitico;
+      if (filters.bancada) query.bancada = filters.bancada;
+      if (filters.cargoActual) query.cargoActual = filters.cargoActual;
+      if (filters.estado) query.estado = filters.estado;
+      
+      // Filtrar por departamento
+      if (filters.departamento) {
+        query['distrito.departamento'] = filters.departamento;
+      }
+      
+      // Filtrar por comisión
+      if (filters.comision) {
+        query['comisiones.nombre'] = filters.comision;
+      }
+      
+      // Buscar por texto
+      if (filters.search) {
+        query.$text = { $search: filters.search };
+      }
+      
+      const skip = (page - 1) * limit;
+      
+      const [legisladores, total] = await Promise.all([
+        Legislador.find(query)
+          .populate('createdBy', 'email profile')
+          .populate('lastUpdatedBy', 'email profile')
+          .sort({ apellidos: 1, nombres: 1 })
+          .skip(skip)
+          .limit(limit),
+        Legislador.countDocuments(query),
+      ]);
+      
+      return {
+        legisladores,
+        total,
+        pages: Math.ceil(total / limit),
+        page,
+        limit,
+      };
+    } catch (error) {
+      throw new Error(`Error al obtener legisladores: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Obtener legislador por ID
+   */
+  async getLegisladorById(id) {
+    try {
+      const legislador = await Legislador.findById(id)
+        .populate('createdBy', 'email profile')
+        .populate('lastUpdatedBy', 'email profile');
+      
+      if (!legislador) {
+        throw new Error('Legislador no encontrado');
+      }
+      
+      return legislador;
+    } catch (error) {
+      throw new Error(`Error al obtener legislador: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Obtener legislador por CI
+   */
+  async getLegisladorByCI(ci) {
+    try {
+      const legislador = await Legislador.findOne({ ci })
+        .populate('createdBy', 'email profile')
+        .populate('lastUpdatedBy', 'email profile');
+      
+      if (!legislador) {
+        throw new Error('Legislador no encontrado');
+      }
+      
+      return legislador;
+    } catch (error) {
+      throw new Error(`Error al obtener legislador: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Actualizar legislador
+   */
+  async updateLegislador(id, data, userId) {
+    try {
+      const legislador = await Legislador.findById(id);
+      
+      if (!legislador) {
+        throw new Error('Legislador no encontrado');
+      }
+      
+      // Actualizar campos
+      Object.keys(data).forEach(key => {
+        if (key !== '_id' && key !== '__v' && key !== 'ci') {
+          legislador[key] = data[key];
+        }
+      });
+      
+      legislador.lastUpdatedBy = userId;
+      legislador.updatedAt = new Date();
+      
+      await legislador.save();
+      
+      return legislador;
+    } catch (error) {
+      throw new Error(`Error al actualizar legislador: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Eliminar legislador
+   */
+  async deleteLegislador(id) {
+    try {
+      const legislador = await Legislador.findByIdAndDelete(id);
+      
+      if (!legislador) {
+        throw new Error('Legislador no encontrado');
+      }
+      
+      return { message: 'Legislador eliminado exitosamente' };
+    } catch (error) {
+      throw new Error(`Error al eliminar legislador: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Obtener estadísticas de legisladores
+   */
+  async getLegisladoresStats() {
+    try {
+      const stats = await Legislador.aggregate([
+        {
+          $group: {
+            _id: {
+              partido: '$partidoPolitico',
+              cargo: '$cargoActual',
+              estado: '$estado',
+            },
+            count: { $sum: 1 },
+            avgAsistencia: { $avg: '$porcentajeAsistencia' },
+            avgProyectos: { $avg: '$proyectosPresentados' },
+          },
+        },
+        {
+          $group: {
+            _id: '$_id.partido',
+            porCargo: {
+              $push: {
+                cargo: '$_id.cargo',
+                count: '$count',
+              },
+            },
+            porEstado: {
+              $push: {
+                estado: '$_id.estado',
+                count: '$count',
+              },
+            },
+            total: { $sum: '$count' },
+            promedioAsistencia: { $avg: '$avgAsistencia' },
+            promedioProyectos: { $avg: '$avgProyectos' },
+          },
+        },
+      ]);
+      
+      return stats;
+    } catch (error) {
+      throw new Error(`Error al obtener estadísticas: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Obtener distribución por partido político
+   */
+  async getDistributionByParty() {
+    try {
+      const distribution = await Legislador.aggregate([
+        {
+          $group: {
+            _id: '$partidoPolitico',
+            count: { $sum: 1 },
+            legisladores: {
+              $push: {
+                nombre: '$nombreCompleto',
+                cargo: '$cargoActual',
+                departamento: '$distrito.departamento',
+              },
+            },
+          },
+        },
+        { $sort: { count: -1 } },
+      ]);
+      
+      return distribution;
+    } catch (error) {
+      throw new Error(`Error al obtener distribución: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Obtener legisladores por departamento
+   */
+  async getByDepartamento() {
+    try {
+      const byDepartamento = await Legislador.aggregate([
+        {
+          $group: {
+            _id: '$distrito.departamento',
+            count: { $sum: 1 },
+            legisladores: {
+              $push: {
+                nombre: '$nombreCompleto',
+                partido: '$partidoPolitico',
+                cargo: '$cargoActual',
+              },
+            },
+          },
+        },
+        { $sort: { count: -1 } },
+      ]);
+      
+      return byDepartamento;
+    } catch (error) {
+      throw new Error(`Error al obtener por departamento: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Buscar legisladores por texto
+   */
+  async searchLegisladores(query, limit = 20) {
+    try {
+      const results = await Legislador.find(
+        { $text: { $search: query } },
+        { score: { $meta: 'textScore' } }
+      )
+        .sort({ score: { $meta: 'textScore' } })
+        .limit(limit)
+        .select('nombres apellidos nombreCompleto partidoPolitico cargoActual fotoPerfil distrito');
+      
+      return results;
+    } catch (error) {
+      throw new Error(`Error en búsqueda: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Obtener comisiones activas
+   */
+  async getComisionesActivas() {
+    try {
+      const comisiones = await Legislador.aggregate([
+        { $unwind: '$comisiones' },
+        {
+          $group: {
+            _id: '$comisiones.nombre',
+            miembros: { $sum: 1 },
+            presidentes: {
+              $sum: {
+                $cond: [{ $eq: ['$comisiones.cargo', 'Presidente'] }, 1, 0],
+              },
+            },
+            legisladores: {
+              $push: {
+                nombre: '$nombreCompleto',
+                cargo: '$comisiones.cargo',
+                partido: '$partidoPolitico',
+              },
+            },
+          },
+        },
+        { $sort: { miembros: -1 } },
+      ]);
+      
+      return comisiones;
+    } catch (error) {
+      throw new Error(`Error al obtener comisiones: ${error.message}`);
+    }
+  }
+}
+
+module.exports = new LegisladoresService(); 
+================================= 
+src\services\users.service.js 
+================================= 
+ 
+const User = require('../models/User');
+
+class UsersService {
+  /**
+   * Crear usuario (para administradores)
+   */
+  async createUser(userData, creatorRole) {
+    try {
+      // Verificar permisos
+      if (creatorRole === 'CITIZEN' || creatorRole === 'VIEWER') {
+        throw new Error('No tiene permisos para crear usuarios');
+      }
+      
+      // Verificar si el usuario ya existe
+      const existingUser = await User.findOne({ email: userData.email.toLowerCase() });
+      
+      if (existingUser) {
+        throw new Error('El email ya está registrado');
+      }
+      
+      // Crear usuario
+      const user = new User({
+        ...userData,
+        email: userData.email.toLowerCase(),
+      });
+      
+      await user.save();
+      
+      return user;
+    } catch (error) {
+      throw error;
+    }
+  }
+  
+  /**
+   * Obtener todos los usuarios (paginated)
+   */
+  async getUsers(page = 1, limit = 10, filters = {}) {
+    try {
+      const query = {};
+      
+      // Aplicar filtros
+      if (filters.role) query.role = filters.role;
+      if (filters.status) query.status = filters.status;
+      if (filters.search) {
+        query.$or = [
+          { email: { $regex: filters.search, $options: 'i' } },
+          { 'profile.firstName': { $regex: filters.search, $options: 'i' } },
+          { 'profile.lastName': { $regex: filters.search, $options: 'i' } },
+        ];
+      }
+      
+      const skip = (page - 1) * limit;
+      
+      const [users, total] = await Promise.all([
+        User.find(query)
+          .select('-password -refreshToken')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit),
+        User.countDocuments(query),
+      ]);
+      
+      return {
+        users,
+        total,
+        pages: Math.ceil(total / limit),
+        page,
+        limit,
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+  
+  /**
+   * Obtener usuario por ID
+   */
+  async getUserById(id) {
+    try {
+      const user = await User.findById(id).select('-password -refreshToken');
+      
+      if (!user) {
+        throw new Error('Usuario no encontrado');
+      }
+      
+      return user;
+    } catch (error) {
+      throw error;
+    }
+  }
+  
+  /**
+   * Actualizar usuario
+   */
+  async updateUser(id, updateData, updaterRole) {
+    try {
+      const user = await User.findById(id);
+      
+      if (!user) {
+        throw new Error('Usuario no encontrado');
+      }
+      
+      // Verificar permisos
+      if (updaterRole === 'CITIZEN' && user._id.toString() !== id) {
+        throw new Error('Solo puede actualizar su propio perfil');
+      }
+      
+      if (updaterRole === 'VIEWER') {
+        throw new Error('No tiene permisos para actualizar usuarios');
+      }
+      
+      // Actualizar campos permitidos
+      const allowedFields = ['profile', 'status'];
+      if (updaterRole === 'SUPER_ADMIN' || updaterRole === 'ADMIN') {
+        allowedFields.push('role');
+      }
+      
+      Object.keys(updateData).forEach(key => {
+        if (allowedFields.includes(key)) {
+          user[key] = updateData[key];
+        }
+      });
+      
+      await user.save();
+      
+      return user;
+    } catch (error) {
+      throw error;
+    }
+  }
+  
+  /**
+   * Eliminar usuario
+   */
+  async deleteUser(id, deleterRole) {
+    try {
+      if (deleterRole !== 'SUPER_ADMIN') {
+        throw new Error('Solo el super administrador puede eliminar usuarios');
+      }
+      
+      const user = await User.findByIdAndDelete(id);
+      
+      if (!user) {
+        throw new Error('Usuario no encontrado');
+      }
+      
+      return { message: 'Usuario eliminado exitosamente' };
+    } catch (error) {
+      throw error;
+    }
+  }
+}
+
+module.exports = new UsersService(); 
+================================= 
+src\utils\validators.js 
+================================= 
+ 
+const { body } = require('express-validator');
+
+const userValidators = {
+  register: [
+    body('email')
+      .isEmail().withMessage('Debe ser un email válido')
+      .normalizeEmail(),
+    body('password')
+      .isLength({ min: 8 }).withMessage('La contraseña debe tener al menos 8 caracteres')
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+      .withMessage('La contraseña debe contener al menos una mayúscula, una minúscula y un número'),
+    body('firstName')
+      .optional()
+      .trim()
+      .isLength({ min: 2 }).withMessage('El nombre debe tener al menos 2 caracteres'),
+    body('lastName')
+      .optional()
+      .trim()
+      .isLength({ min: 2 }).withMessage('El apellido debe tener al menos 2 caracteres'),
+    body('ci')
+      .optional()
+      .trim()
+      .isLength({ min: 5 }).withMessage('La cédula debe tener al menos 5 caracteres'),
+    body('phone')
+      .optional()
+      .trim()
+      .isMobilePhone().withMessage('Debe ser un número de teléfono válido'),
+  ],
+  
+  login: [
+    body('email')
+      .isEmail().withMessage('Debe ser un email válido')
+      .normalizeEmail(),
+    body('password')
+      .notEmpty().withMessage('La contraseña es requerida'),
+  ],
+  
+  updateUser: [
+    body('email')
+      .optional()
+      .isEmail().withMessage('Debe ser un email válido')
+      .normalizeEmail(),
+    body('password')
+      .optional()
+      .isLength({ min: 8 }).withMessage('La contraseña debe tener al menos 8 caracteres')
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+      .withMessage('La contraseña debe contener al menos una mayúscula, una minúscula y un número'),
+    body('firstName')
+      .optional()
+      .trim()
+      .isLength({ min: 2 }).withMessage('El nombre debe tener al menos 2 caracteres'),
+    body('lastName')
+      .optional()
+      .trim()
+      .isLength({ min: 2 }).withMessage('El apellido debe tener al menos 2 caracteres'),
+  ],
+};
+
+module.exports = userValidators; 
+Total archivos: 31 

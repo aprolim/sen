@@ -1,14 +1,18 @@
-// src/models/TabLink.js
+// ============================================
+// src/models/TabLink.js (MODIFICADO)
+// ============================================
 const mongoose = require('mongoose');
 
 const tabLinkSchema = new mongoose.Schema({
-  // Identificación
-  tabId: {
+  // CAMBIADO: tabId eliminado, ahora usamos categoryId
+  categoryId: {
     type: String,
-    enum: ['legislacion', 'fiscalizacion', 'gestion'],
-    required: [true, 'El ID de la pestaña (tabId) es requerido'],
+    ref: 'TabCategory',
+    required: [true, 'El ID de la categoría es requerido'],
     index: true,
   },
+  
+  // Estos campos se mantienen igual
   areaTitulo: {
     type: String,
     required: [true, 'El título del área es requerido'],
@@ -18,7 +22,6 @@ const tabLinkSchema = new mongoose.Schema({
     required: [true, 'La descripción del área es requerida'],
   },
 
-  // Información del Link
   linkId: {
     type: String,
     required: [true, 'El ID único del link es requerido'],
@@ -44,14 +47,10 @@ const tabLinkSchema = new mongoose.Schema({
     required: [true, 'La ruta (path) del link es requerida'],
     trim: true,
   },
-
-  // Orden para la UI
   orden: {
     type: Number,
     default: 0,
   },
-
-  // Metadata del sistema
   isActive: {
     type: Boolean,
     default: true,
@@ -71,9 +70,9 @@ const tabLinkSchema = new mongoose.Schema({
   toObject: { virtuals: true },
 });
 
-// Índices para búsquedas eficientes
-tabLinkSchema.index({ tabId: 1, isActive: 1 });
-tabLinkSchema.index({ tabId: 1, orden: 1 });
+// Índices actualizados
+tabLinkSchema.index({ categoryId: 1, isActive: 1 });
+tabLinkSchema.index({ categoryId: 1, orden: 1 });
 
 const TabLink = mongoose.model('TabLink', tabLinkSchema);
 
