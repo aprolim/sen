@@ -49,6 +49,10 @@ const corsOptions = {
       'http://localhost:3000',
       'http://localhost:3001',
       'http://localhost:3002',
+      'http://10.0.0.20',
+      'http://demopanel.senado.gob.bo',
+      'http://demoap.senado.gob.bo',
+
     ];
     
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
