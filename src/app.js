@@ -50,6 +50,8 @@ const corsOptions = {
       'http://localhost:3001',
       'http://localhost:3002',
       'http://10.0.0.20',
+      'http://10.0.0.22',
+      'http://10.0.0.21',
       'http://demopanel.senado.gob.bo',
       'http://demoap.senado.gob.bo',
 
