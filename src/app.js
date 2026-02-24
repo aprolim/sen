@@ -82,6 +82,14 @@ const generalLimiter = rateLimit({
   legacyHeaders: false
 });
 
+app.use(cors(corsOptions));
+
+// ✅ NUEVO: Permitir acceso desde redes privadas
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  next();
+});
+
 const authLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutos
   max: 5, // Solo 5 intentos de login
