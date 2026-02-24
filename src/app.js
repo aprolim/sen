@@ -54,7 +54,6 @@ const corsOptions = {
       'http://10.0.0.21',
       'http://demopanel.senado.gob.bo',
       'http://demoap.senado.gob.bo',
-
     ];
     
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
@@ -64,11 +63,26 @@ const corsOptions = {
     }
   },
   credentials: true,
-  optionsSuccessStatus: 200,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+  optionsSuccessStatus: 204, // ✅ CAMBIADO: 204 en lugar de 200 para OPTIONS
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept']
 };
 
 app.use(cors(corsOptions));
+
+// ✅ NUEVO: Middleware para Private Network Access y manejo de OPTIONS
+app.use((req, res, next) => {
+  // Cabecera crítica para Private Network Access
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  
+  // Manejo explícito de OPTIONS (por si acaso)
+  if (req.method === 'OPTIONS') {
+    console.log('📡 Preflight request de:', req.headers.origin);
+    return res.sendStatus(204); // No content, con todas las cabeceras ya aplicadas por cors()
+  }
+  
+  next();
+});
 
 // C. RATE LIMITING - Protección DDoS/Brute Force
 const generalLimiter = rateLimit({
@@ -80,14 +94,6 @@ const generalLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false
-});
-
-app.use(cors(corsOptions));
-
-// ✅ NUEVO: Permitir acceso desde redes privadas
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Private-Network', 'true');
-  next();
 });
 
 const authLimiter = rateLimit({
@@ -324,12 +330,13 @@ const startServer = async () => {
     const connectDB = require('./config/database');
     await connectDB();
     
-    // Iniciar servidor
-    app.listen(PORT, () => {
+    // Iniciar servidor - ✅ MODIFICADO: Escuchar en 0.0.0.0 para aceptar conexiones externas
+    app.listen(PORT, '0.0.0.0', () => {
       console.log('\n' + '═'.repeat(60));
       console.log('✅ SERVIDOR SEGURO INICIADO');
       console.log('═'.repeat(60));
-      console.log(`🚀 URL:          http://localhost:${PORT}`);
+      console.log(`🚀 URL Local:    http://localhost:${PORT}`);
+      console.log(`🌐 URL Red:      http://10.0.0.20:${PORT}`); // Ajusta según tu IP
       console.log(`📚 Documentación: http://localhost:${PORT}/api/docs`);
       console.log(`🔍 Health Check:  http://localhost:${PORT}/api/health`);
       console.log('═'.repeat(60));
@@ -338,6 +345,8 @@ const startServer = async () => {
       console.log('   • Login Limiting (5 intentos/5min)');
       console.log('   • Helmet.js (Headers seguridad)');
       console.log('   • CORS restringido');
+      console.log('   • Private Network Access habilitado');
+      console.log('   • OPTIONS responden con 204');
       console.log('   • Sanitización MongoDB');
       console.log('   • Protección XSS');
       console.log('   • Protección HPP');
