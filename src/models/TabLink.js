@@ -11,16 +11,6 @@ const tabLinkSchema = new mongoose.Schema({
     required: [true, 'El ID de la categoría es requerido'],
     index: true,
   },
-  
-  // Estos campos se mantienen igual
-  areaTitulo: {
-    type: String,
-    required: [true, 'El título del área es requerido'],
-  },
-  areaDescripcion: {
-    type: String,
-    required: [true, 'La descripción del área es requerida'],
-  },
 
   linkId: {
     type: String,

@@ -583,8 +583,6 @@ class TabsController {
 
       const newLink = new TabLink({
         categoryId,
-        areaTitulo: category.name,
-        areaDescripcion: category.description,
         linkId,
         titulo,
         descripcion,
