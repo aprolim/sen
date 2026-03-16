@@ -97,7 +97,7 @@ const generalLimiter = rateLimit({
 });
 
 const authLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000, // 5 minutos
+  windowMs: 3 * 60 * 1000, // 5 minutos
   max: 5, // Solo 5 intentos de login
   message: {
     success: false,
@@ -198,6 +198,7 @@ const usersRoutes = require('./routes/users.routes');
 const contentRoutes = require('./routes/content.routes');
 const legisladoresRoutes = require('./routes/legisladores.routes');
 const tabsRoutes = require('./routes/tabs.routes');
+const iconsRoutes = require('./routes/icons.routes');
 
 // Aplicar rate limiting específico a login
 app.use('/api/auth/login', authLimiter);
@@ -209,6 +210,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/legisladores', legisladoresRoutes);
 app.use('/api/tabs', tabsRoutes);
+app.use('/api/icons', iconsRoutes);
 
 // ============================================
 // 4. RUTAS DEL SISTEMA
