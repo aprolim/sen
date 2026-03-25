@@ -87,7 +87,7 @@ app.use((req, res, next) => {
 // C. RATE LIMITING - Protección DDoS/Brute Force
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100, // 100 peticiones por IP
+  max: 1000, // 100 peticiones por IP
   message: {
     success: false,
     message: 'Demasiadas peticiones desde esta IP'
