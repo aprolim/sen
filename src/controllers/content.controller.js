@@ -4,29 +4,31 @@ const { processImage, generateThumbnails } = require('../middleware/upload');
 const path = require('path');
 const fs = require('fs');
 
-// ==================== DATOS SIMULADOS PARA PRUEBAS ====================
-// Estos datos solo se usan si la base de datos está vacía o para pruebas rápidas
-// NO reemplazan la funcionalidad existente, solo la complementan
-
-const imagenesSimuladas = [
+// ==================== DATOS SIMULADOS PARA PRUEBA ====================
+const imagenes = [
   'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800&h=500&fit=crop',
   'https://images.unsplash.com/photo-1548839140-29a749e1cf4d?w=800&h=500&fit=crop',
   'https://images.unsplash.com/photo-1529101091764-c3526daf3e28?w=800&h=500&fit=crop',
   'https://images.unsplash.com/photo-1541872703-74c5e44368f9?w=800&h=500&fit=crop'
 ]
 
-const noticiasImportantesSimuladas = [
+// 4 NOTICIAS IMPORTANTES
+const noticiasSimuladas = [
   {
     id: 1,
     slug: 'tarija-en-su-aniversario',
     titulo: 'Tarija en su aniversario: Leyes, inversión y agenda nacional en una sesión que proyecta desarrollo para Bolivia',
     descripcion: 'En el marco del aniversario del departamento de Tarija, la Cámara de Senadores realizó una sesión especial donde se aprobaron importantes leyes que beneficiarán al desarrollo productivo de la región. Se destinaron más de Bs 500 millones para proyectos de infraestructura vial y energética.',
     descripcion2: 'El presidente del Senado destacó el compromiso del gobierno nacional con el desarrollo equitativo de todos los departamentos, anunciando la construcción de la planta procesadora de uva y la ampliación del aeropuerto Capitán Oriel Lea Plaza.',
-    content: `<p>En una sesión histórica realizada en la ciudad de Tarija, la Cámara de Senadores rindió homenaje al departamento en su aniversario. Durante la jornada legislativa, se aprobaron por unanimidad tres proyectos de ley clave para el desarrollo productivo de la región.</p><p>El primero de ellos destina más de Bs 500 millones para proyectos de infraestructura vial, incluyendo la ampliación de la carretera Tarija-Yacuiba y la construcción del puente sobre el río Pilcomayo.</p><p>El presidente del Senado destacó durante su discurso la importancia de la inversión en infraestructura como motor del desarrollo económico. Anunció además la construcción de la planta procesadora de uva y la ampliación del aeropuerto Capitán Oriel Lea Plaza.</p><p>Los senadores de Tarija expresaron su satisfacción por los logros alcanzados y reiteraron su compromiso de seguir trabajando por el desarrollo del departamento.</p><p>Finalmente, se aprobó una declaración camaral que reconoce los méritos del pueblo tarijeño y su contribución al desarrollo nacional.</p>`,
-    excerpt: 'La Cámara de Senadores realizó una sesión especial en Tarija',
+    content: `<p>En una sesión histórica realizada en la ciudad de Tarija, la Cámara de Senadores rindió homenaje al departamento en su aniversario. Durante la jornada legislativa, se aprobaron por unanimidad tres proyectos de ley clave para el desarrollo productivo de la región.</p>
+    <p>El primero de ellos destina más de Bs 500 millones para proyectos de infraestructura vial, incluyendo la ampliación de la carretera Tarija-Yacuiba y la construcción del puente sobre el río Pilcomayo. El segundo proyecto crea un fondo de desarrollo productivo para pequeños agricultores de la región, con énfasis en la producción vitivinícola.</p>
+    <p>El presidente del Senado destacó durante su discurso la importancia de la inversión en infraestructura como motor del desarrollo económico.</p>
+    <p>Los senadores de Tarija expresaron su satisfacción por los logros alcanzados y reiteraron su compromiso de seguir trabajando por el desarrollo del departamento.</p>
+    <p>Finalmente, se aprobó una declaración camaral que reconoce los méritos del pueblo tarijeño y su contribución al desarrollo nacional.</p>`,
+    excerpt: 'La Cámara de Senadores realizó una sesión especial en Tarija aprobando importantes leyes',
     publishedAt: '2026-04-15T00:00:00.000Z',
     fechaFormateada: '15 de abril de 2026',
-    featuredImage: { url: imagenesSimuladas[0], alt: 'Sesión en Tarija' },
+    featuredImage: { url: imagenes[0], alt: 'Sesión en Tarija' },
     categoria: 'Sesión Especial',
     type: 'news',
     status: 'published',
@@ -36,14 +38,18 @@ const noticiasImportantesSimuladas = [
   {
     id: 2,
     slug: 'ley-general-de-aguas',
-    titulo: 'Senado aprueba Ley General de Aguas para garantizar el acceso al agua potable',
-    descripcion: 'Por unanimidad, la Cámara Alta aprobó la nueva Ley General de Aguas que garantiza el acceso al agua potable como derecho fundamental.',
-    descripcion2: 'La ley contempla la creación de un fondo de inversión de Bs 1.200 millones.',
-    content: `<p>Por unanimidad, la Cámara de Senadores aprobó la nueva Ley General de Aguas, que garantiza el acceso al agua potable como derecho fundamental.</p><p>La ley contempla la creación de un fondo de inversión de Bs 1.200 millones para proyectos de riego tecnificado y plantas de tratamiento.</p><p>Durante el debate, senadores de diferentes regiones destacaron la importancia de esta norma.</p><p>La comisión de Medio Ambiente será la encargada de dar seguimiento a la implementación.</p><p>Organizaciones sociales manifestaron su respaldo a la iniciativa.</p>`,
-    excerpt: 'La Cámara Alta aprueba Ley General de Aguas',
+    titulo: 'Senado aprueba Ley General de Aguas para garantizar el acceso al agua potable en todo el territorio nacional',
+    descripcion: 'Por unanimidad, la Cámara Alta aprobó la nueva Ley General de Aguas que garantiza el acceso al agua potable como derecho fundamental. La normativa establece mecanismos de distribución equitativa y protección de fuentes hídricas.',
+    descripcion2: 'La ley contempla la creación de un fondo de inversión de Bs 1.200 millones para proyectos de riego tecnificado y plantas de tratamiento en áreas rurales y periurbanas.',
+    content: `<p>Por unanimidad, la Cámara de Senadores aprobó la nueva Ley General de Aguas, que garantiza el acceso al agua potable como derecho fundamental.</p>
+    <p>La ley contempla la creación de un fondo de inversión de Bs 1.200 millones para proyectos de riego tecnificado y plantas de tratamiento en áreas rurales y periurbanas.</p>
+    <p>Durante el debate, senadores de diferentes regiones destacaron la importancia de esta norma para garantizar el acceso al agua en comunidades rurales.</p>
+    <p>La comisión de Medio Ambiente será la encargada de dar seguimiento a la implementación de esta ley.</p>
+    <p>Organizaciones sociales y gremiales manifestaron su respaldo a la iniciativa, destacando el trabajo conjunto entre el Legislativo y la sociedad civil.</p>`,
+    excerpt: 'La Cámara Alta aprueba por unanimidad la nueva Ley General de Aguas',
     publishedAt: '2026-04-10T00:00:00.000Z',
     fechaFormateada: '10 de abril de 2026',
-    featuredImage: { url: imagenesSimuladas[1], alt: 'Agua potable' },
+    featuredImage: { url: imagenes[1], alt: 'Agua potable' },
     categoria: 'Medio Ambiente',
     type: 'news',
     status: 'published',
@@ -54,13 +60,17 @@ const noticiasImportantesSimuladas = [
     id: 3,
     slug: 'reforma-sistema-judicial',
     titulo: 'Comisión de Constitución aprueba dictamen de reforma parcial del sistema judicial',
-    descripcion: 'La Comisión de Constitución aprobó el proyecto de ley de reforma parcial del Órgano Judicial.',
-    descripcion2: 'La reforma busca fortalecer la independencia judicial.',
-    content: `<p>La Comisión de Constitución aprobó el proyecto de ley de reforma parcial del Órgano Judicial.</p><p>El senador presidente de la comisión señaló que la reforma busca fortalecer la independencia judicial.</p><p>La iniciativa fue trabajada durante varios meses, recibiendo aportes de expertos.</p><p>Entre los puntos clave se incluye la renovación escalonada de magistrados.</p><p>Organizaciones de derechos humanos manifestaron su respaldo.</p>`,
-    excerpt: 'Comisión de Constitución aprueba reforma judicial',
+    descripcion: 'La Comisión de Constitución, Derechos Humanos y Legislación aprobó el proyecto de ley de reforma parcial del Órgano Judicial, que incluye la renovación de altas cortes y mecanismos de transparencia.',
+    descripcion2: 'El senador presidente de la comisión señaló que la reforma busca fortalecer la independencia judicial y agilizar los procesos.',
+    content: `<p>La Comisión de Constitución, Derechos Humanos y Legislación aprobó el proyecto de ley de reforma parcial del Órgano Judicial.</p>
+    <p>El senador presidente de la comisión señaló que la reforma busca fortalecer la independencia judicial y agilizar los procesos.</p>
+    <p>La iniciativa fue trabajada durante varios meses, recibiendo aportes de expertos en derecho constitucional.</p>
+    <p>Entre los puntos clave de la reforma se incluye la renovación escalonada de magistrados.</p>
+    <p>Organizaciones de derechos humanos manifestaron su respaldo a la iniciativa.</p>`,
+    excerpt: 'Comisión de Constitución aprueba proyecto de reforma judicial',
     publishedAt: '2026-04-05T00:00:00.000Z',
     fechaFormateada: '5 de abril de 2026',
-    featuredImage: { url: imagenesSimuladas[2], alt: 'Reforma judicial' },
+    featuredImage: { url: imagenes[2], alt: 'Reforma judicial' },
     categoria: 'Justicia',
     type: 'news',
     status: 'published',
@@ -71,13 +81,17 @@ const noticiasImportantesSimuladas = [
     id: 4,
     slug: 'dialogo-bilateral-bolivia-chile',
     titulo: 'Bolivia y Chile retoman diálogo bilateral en mesa técnica convocada por el Senado',
-    descripcion: 'Representantes del Senado boliviano y del Congreso chileno se reunieron en una mesa técnica.',
-    descripcion2: 'Se acordó establecer una agenda de trabajo conjunta.',
-    content: `<p>Representantes del Senado boliviano y del Congreso chileno se reunieron en una mesa técnica.</p><p>Se acordó establecer una agenda de trabajo conjunta y próximos encuentros.</p><p>El presidente del Senado boliviano destacó la importancia del diálogo.</p><p>Los senadores chilenos expresaron su interés en profundizar la relación bilateral.</p><p>Este diálogo representa un paso importante en las relaciones bilaterales.</p>`,
-    excerpt: 'Senado y Congreso chileno retoman diálogo bilateral',
+    descripcion: 'Representantes del Senado boliviano y del Congreso chileno se reunieron en una mesa técnica para abordar temas de integración fronteriza, comercio bilateral y cooperación en materia hídrica.',
+    descripcion2: 'El encuentro, realizado en la ciudad de La Paz, contó con la participación de senadores de ambas naciones.',
+    content: `<p>Representantes del Senado boliviano y del Congreso chileno se reunieron en una mesa técnica para abordar temas de integración fronteriza.</p>
+    <p>Se acordó establecer una agenda de trabajo conjunta y próximos encuentros en la ciudad de Antofagasta.</p>
+    <p>El presidente del Senado boliviano destacó la importancia del diálogo como herramienta para fortalecer las relaciones entre ambos países.</p>
+    <p>Los senadores chilenos expresaron su interés en profundizar la relación bilateral.</p>
+    <p>Este diálogo representa un paso importante en las relaciones entre Bolivia y Chile.</p>`,
+    excerpt: 'Senado boliviano y Congreso chileno retoman diálogo bilateral',
     publishedAt: '2026-04-01T00:00:00.000Z',
     fechaFormateada: '1 de abril de 2026',
-    featuredImage: { url: imagenesSimuladas[3], alt: 'Diálogo bilateral' },
+    featuredImage: { url: imagenes[3], alt: 'Diálogo bilateral' },
     categoria: 'Relaciones Internacionales',
     type: 'news',
     status: 'published',
@@ -86,8 +100,8 @@ const noticiasImportantesSimuladas = [
   }
 ]
 
-// Generar 96 noticias adicionales simuladas
-const generarNoticiasSimuladas = () => {
+// Generar 96 noticias adicionales
+const generarNoticiasAdicionales = () => {
   const categorias = ['Seguridad', 'Economía', 'Educación', 'Salud', 'Infraestructura', 'Energía', 'Cultura', 'Deporte', 'Tecnología', 'Turismo', 'Agricultura', 'Minería']
   const noticias = []
   
@@ -99,13 +113,17 @@ const generarNoticiasSimuladas = () => {
     noticias.push({
       id: i,
       slug: `noticia-${i}`,
-      titulo: `Senado impulsa proyecto de ley sobre ${categoria.toLowerCase()}`,
-      descripcion: `La Cámara de Senadores continúa trabajando en iniciativas legislativas sobre ${categoria.toLowerCase()}.`,
-      content: `<p>La Cámara de Senadores continúa trabajando en iniciativas legislativas sobre ${categoria.toLowerCase()}.</p><p>La iniciativa fue presentada por senadores de diferentes fuerzas políticas.</p><p>Durante el debate, legisladores destacaron la importancia de esta norma.</p><p>La comisión correspondiente dará seguimiento a la implementación.</p><p>Organizaciones sociales manifestaron su respaldo.</p>`,
+      titulo: `Senado impulsa proyecto de ley sobre ${categoria.toLowerCase()} para beneficio del país`,
+      descripcion: `La Cámara de Senadores continúa trabajando en iniciativas legislativas que promuevan el desarrollo del país. En esta oportunidad, se presentó un proyecto de ley relacionado con ${categoria.toLowerCase()}.`,
+      content: `<p>La Cámara de Senadores continúa trabajando en iniciativas legislativas que promuevan el desarrollo del país.</p>
+      <p>La iniciativa fue presentada por senadores de diferentes fuerzas políticas y recibió amplio respaldo.</p>
+      <p>Durante el debate, legisladores de distintos departamentos destacaron la importancia de esta norma.</p>
+      <p>La comisión correspondiente será la encargada de dar seguimiento a la implementación.</p>
+      <p>Organizaciones sociales manifestaron su respaldo a la iniciativa.</p>`,
       excerpt: `Senado impulsa proyecto de ley sobre ${categoria.toLowerCase()}`,
       publishedAt: fecha.toISOString(),
       fechaFormateada: fecha.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }),
-      featuredImage: { url: imagenesSimuladas[i % imagenesSimuladas.length], alt: `Noticia ${i}` },
+      featuredImage: { url: imagenes[i % imagenes.length], alt: `Noticia ${i}` },
       categoria: categoria,
       type: 'news',
       status: 'published',
@@ -117,27 +135,164 @@ const generarNoticiasSimuladas = () => {
   return noticias
 }
 
-const noticiasSimuladas = [...noticiasImportantesSimuladas, ...generarNoticiasSimuladas()]
+const todasLasNoticias = [...noticiasSimuladas, ...generarNoticiasAdicionales()]
 
-// Variable para controlar si usamos datos reales o simulados
-let usarDatosReales = false // Cambiar a true cuando la BD esté lista
+// Variable para controlar modo simulación
+let usarDatosSimulados = true
 
 /**
  * @swagger
  * tags:
  *   name: Content
- *   description: Gestión de contenido (páginas, noticias, artículos)
+ *   description: Gestión de contenido
  */
-
 class ContentController {
   /**
-   * @swagger
-   * /api/content:
-   *   post:
-   *     summary: Crear nuevo contenido
-   *     tags: [Content]
-   *     security:
-   *       - bearerAuth: []
+   * Obtener lista de contenido paginada
+   */
+  async getContents(req, res) {
+    try {
+      const queryPage = parseInt(req.query.page) || 1;
+      const queryLimit = parseInt(req.query.limit) || 12;
+      const { type, status } = req.query;
+      
+      // MODO SIMULACIÓN
+      if (usarDatosSimulados) {
+        let filtradas = [...todasLasNoticias]
+        
+        if (type && type !== 'all') {
+          filtradas = filtradas.filter(n => n.type === type)
+        }
+        
+        if (status && status !== 'all') {
+          filtradas = filtradas.filter(n => n.status === status)
+        }
+        
+        const ordenadas = filtradas.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
+        
+        const total = ordenadas.length
+        const start = (queryPage - 1) * queryLimit
+        const end = start + queryLimit
+        const contents = ordenadas.slice(start, end)
+        
+        console.log(`📡 [SIMULADO] getContents: ${contents.length} noticias, total: ${total}`)
+        
+        return res.json({
+          success: true,
+          data: {
+            contents,
+            total,
+            page: queryPage,
+            limit: queryLimit,
+            pages: Math.ceil(total / queryLimit)
+          }
+        })
+      }
+      
+      // MODO REAL (base de datos)
+      const filters = {};
+      if (type) filters.type = type;
+      if (status) filters.status = status;
+
+      const result = await contentService.getContents(queryPage, queryLimit, filters);
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      console.error('❌ Error en getContents:', error);
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * Obtener contenido por slug
+   */
+  async getContentBySlug(req, res) {
+    try {
+      const { slug } = req.params
+      
+      // MODO SIMULACIÓN
+      if (usarDatosSimulados) {
+        const content = todasLasNoticias.find(n => n.slug === slug)
+        
+        if (!content) {
+          return res.status(404).json({
+            success: false,
+            message: 'Contenido no encontrado',
+          })
+        }
+        
+        content.views += 1
+        
+        console.log(`📡 [SIMULADO] getContentBySlug: ${slug} encontrado`)
+        
+        return res.json({
+          success: true,
+          data: content,
+        })
+      }
+      
+      // MODO REAL
+      const content = await contentService.getContentBySlug(slug);
+
+      res.json({
+        success: true,
+        data: content,
+      });
+    } catch (error) {
+      res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * Obtener contenido por ID
+   */
+  async getContentById(req, res) {
+    try {
+      const { id } = req.params
+      
+      // MODO SIMULACIÓN
+      if (usarDatosSimulados) {
+        const content = todasLasNoticias.find(n => n.id == id)
+        
+        if (!content) {
+          return res.status(404).json({
+            success: false,
+            message: 'Contenido no encontrado',
+          })
+        }
+        
+        return res.json({
+          success: true,
+          data: content,
+        })
+      }
+      
+      // MODO REAL
+      const content = await contentService.getContentById(id);
+
+      res.json({
+        success: true,
+        data: content,
+      });
+    } catch (error) {
+      res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * Crear nuevo contenido
    */
   async createContent(req, res) {
     try {
@@ -157,175 +312,7 @@ class ContentController {
   }
 
   /**
-   * @swagger
-   * /api/content:
-   *   get:
-   *     summary: Obtener lista de contenido
-   *     tags: [Content]
-   */
-  async getContents(req, res) {
-    try {
-      // Si estamos en modo simulación, devolver datos simulados
-      if (usarDatosReales === false) {
-        const { page = 1, limit = 12, type, status } = req.query
-        
-        let filtradas = [...noticiasSimuladas]
-        
-        if (type && type !== 'all') {
-          filtradas = filtradas.filter(n => n.type === type)
-        }
-        
-        if (status && status !== 'all') {
-          filtradas = filtradas.filter(n => n.status === status)
-        }
-        
-        const ordenadas = filtradas.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
-        
-        const total = ordenadas.length
-        const start = (parseInt(page) - 1) * parseInt(limit)
-        const end = start + parseInt(limit)
-        const contents = ordenadas.slice(start, end)
-        
-        return res.json({
-          success: true,
-          data: {
-            contents,
-            total,
-            page: parseInt(page),
-            limit: parseInt(limit),
-            pages: Math.ceil(total / parseInt(limit))
-          }
-        })
-      }
-      
-      // Modo real: usar servicio de base de datos
-      const { page = 1, limit = 10, type, category, status, search, includeDrafts, language, fromDate, toDate, tags } = req.query;
-
-      const filters = {};
-      if (type) filters.type = type;
-      if (category) filters.category = category;
-      if (status) filters.status = status;
-      if (search) filters.search = search;
-      if (language) filters.language = language;
-      if (fromDate) filters.fromDate = fromDate;
-      if (toDate) filters.toDate = toDate;
-      if (includeDrafts) filters.includeDrafts = includeDrafts === 'true';
-      if (tags) filters.tags = tags.split(',');
-
-      const result = await contentService.getContents(
-        parseInt(page),
-        parseInt(limit),
-        filters
-      );
-
-      res.json({
-        success: true,
-        data: result,
-      });
-    } catch (error) {
-      res.status(400).json({
-        success: false,
-        message: error.message,
-      });
-    }
-  }
-
-  /**
-   * @swagger
-   * /api/content/{id}:
-   *   get:
-   *     summary: Obtener contenido por ID
-   *     tags: [Content]
-   */
-  async getContentById(req, res) {
-    try {
-      // Modo simulación
-      if (usarDatosReales === false) {
-        const { id } = req.params;
-        const content = noticiasSimuladas.find(n => n.id == id);
-        
-        if (!content) {
-          return res.status(404).json({
-            success: false,
-            message: 'Contenido no encontrado',
-          });
-        }
-        
-        return res.json({
-          success: true,
-          data: content,
-        });
-      }
-      
-      // Modo real
-      const { id } = req.params;
-      const content = await contentService.getContentById(id);
-
-      res.json({
-        success: true,
-        data: content,
-      });
-    } catch (error) {
-      res.status(404).json({
-        success: false,
-        message: error.message,
-      });
-    }
-  }
-
-  /**
-   * @swagger
-   * /api/content/slug/{slug}:
-   *   get:
-   *     summary: Obtener contenido por slug
-   *     tags: [Content]
-   */
-  async getContentBySlug(req, res) {
-    try {
-      // Modo simulación
-      if (usarDatosReales === false) {
-        const { slug } = req.params;
-        const content = noticiasSimuladas.find(n => n.slug === slug);
-        
-        if (!content) {
-          return res.status(404).json({
-            success: false,
-            message: 'Contenido no encontrado',
-          });
-        }
-        
-        content.views += 1;
-        
-        return res.json({
-          success: true,
-          data: content,
-        });
-      }
-      
-      // Modo real
-      const { slug } = req.params;
-      const content = await contentService.getContentBySlug(slug);
-
-      res.json({
-        success: true,
-        data: content,
-      });
-    } catch (error) {
-      res.status(404).json({
-        success: false,
-        message: error.message,
-      });
-    }
-  }
-
-  /**
-   * @swagger
-   * /api/content/{id}:
-   *   put:
-   *     summary: Actualizar contenido
-   *     tags: [Content]
-   *     security:
-   *       - bearerAuth: []
+   * Actualizar contenido
    */
   async updateContent(req, res) {
     try {
@@ -346,13 +333,7 @@ class ContentController {
   }
 
   /**
-   * @swagger
-   * /api/content/{id}:
-   *   delete:
-   *     summary: Eliminar contenido
-   *     tags: [Content]
-   *     security:
-   *       - bearerAuth: []
+   * Eliminar contenido
    */
   async deleteContent(req, res) {
     try {
@@ -372,13 +353,7 @@ class ContentController {
   }
 
   /**
-   * @swagger
-   * /api/content/{id}/status:
-   *   patch:
-   *     summary: Cambiar estado del contenido
-   *     tags: [Content]
-   *     security:
-   *       - bearerAuth: []
+   * Cambiar estado del contenido
    */
   async changeStatus(req, res) {
     try {
@@ -401,29 +376,23 @@ class ContentController {
   }
 
   /**
-   * @swagger
-   * /api/content/stats:
-   *   get:
-   *     summary: Obtener estadísticas de contenido
-   *     tags: [Content]
-   *     security:
-   *       - bearerAuth: []
+   * Obtener estadísticas de contenido
    */
   async getStats(req, res) {
     try {
-      // Modo simulación
-      if (usarDatosReales === false) {
+      // MODO SIMULACIÓN
+      if (usarDatosSimulados) {
         return res.json({
           success: true,
           data: {
-            total: noticiasSimuladas.length,
-            importantes: noticiasImportantesSimuladas.length,
-            publicadas: noticiasSimuladas.filter(n => n.status === 'published').length
+            total: todasLasNoticias.length,
+            importantes: noticiasSimuladas.length,
+            publicadas: todasLasNoticias.filter(n => n.status === 'published').length
           },
         });
       }
       
-      // Modo real
+      // MODO REAL
       const stats = await contentService.getContentStats();
 
       res.json({
@@ -439,11 +408,7 @@ class ContentController {
   }
 
   /**
-   * @swagger
-   * /api/content/search:
-   *   get:
-   *     summary: Buscar contenido
-   *     tags: [Content]
+   * Buscar contenido
    */
   async searchContent(req, res) {
     try {
@@ -456,10 +421,10 @@ class ContentController {
         });
       }
 
-      // Modo simulación
-      if (usarDatosReales === false) {
+      // MODO SIMULACIÓN
+      if (usarDatosSimulados) {
         const termino = q.toLowerCase();
-        const results = noticiasSimuladas.filter(item => 
+        const results = todasLasNoticias.filter(item => 
           item.titulo.toLowerCase().includes(termino) ||
           (item.descripcion && item.descripcion.toLowerCase().includes(termino))
         ).slice(0, parseInt(limit));
@@ -485,28 +450,24 @@ class ContentController {
   }
 
   /**
-   * @swagger
-   * /api/content/{id}/related:
-   *   get:
-   *     summary: Obtener contenido relacionado
-   *     tags: [Content]
+   * Obtener contenido relacionado
    */
   async getRelatedContent(req, res) {
     try {
       const { id } = req.params;
-      const { limit = 5 } = req.query;
+      const limit = parseInt(req.query.limit) || 5;
 
-      // Modo simulación
-      if (usarDatosReales === false) {
-        const current = noticiasSimuladas.find(n => n.id == id);
+      // MODO SIMULACIÓN
+      if (usarDatosSimulados) {
+        const current = todasLasNoticias.find(n => n.id == id);
         
         if (!current) {
           return res.json({ success: true, data: [] });
         }
         
-        const related = noticiasSimuladas
+        const related = todasLasNoticias
           .filter(n => n.id != id && n.type === current.type)
-          .slice(0, parseInt(limit));
+          .slice(0, limit);
         
         return res.json({
           success: true,
@@ -514,7 +475,7 @@ class ContentController {
         });
       }
 
-      const related = await contentService.getRelatedContent(id, parseInt(limit));
+      const related = await contentService.getRelatedContent(id, limit);
 
       res.json({
         success: true,
@@ -529,11 +490,7 @@ class ContentController {
   }
 
   /**
-   * @swagger
-   * /api/content/types:
-   *   get:
-   *     summary: Obtener tipos de contenido disponibles
-   *     tags: [Content]
+   * Obtener tipos de contenido disponibles
    */
   async getContentTypes(req, res) {
     try {
@@ -557,11 +514,7 @@ class ContentController {
   }
 
   /**
-   * @swagger
-   * /api/content/categories:
-   *   get:
-   *     summary: Obtener categorías disponibles
-   *     tags: [Content]
+   * Obtener categorías disponibles
    */
   async getCategories(req, res) {
     try {
@@ -589,13 +542,7 @@ class ContentController {
   }
 
   /**
-   * @swagger
-   * /api/content/upload/image:
-   *   post:
-   *     summary: Subir imagen para contenido
-   *     tags: [Content]
-   *     security:
-   *       - bearerAuth: []
+   * Subir imagen para contenido
    */
   async uploadImage(req, res) {
     try {
@@ -643,13 +590,7 @@ class ContentController {
   }
 
   /**
-   * @swagger
-   * /api/content/upload/document:
-   *   post:
-   *     summary: Subir documento
-   *     tags: [Content]
-   *     security:
-   *       - bearerAuth: []
+   * Subir documento
    */
   async uploadDocument(req, res) {
     try {
