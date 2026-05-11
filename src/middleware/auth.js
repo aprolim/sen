@@ -4,9 +4,16 @@ const User = require('../models/User');
 
 /**
  * Middleware para verificar token JWT
+ * MODIFICADO: Permite peticiones OPTIONS (preflight CORS) sin autenticación
  */
 const authenticate = async (req, res, next) => {
   console.log('\n🔐 ========== AUTH MIDDLEWARE INICIADO ==========');
+  
+  // ✅ NUEVO: Permitir peticiones OPTIONS (preflight CORS)
+  if (req.method === 'OPTIONS') {
+    console.log('📡 OPTIONS request - permitiendo sin autenticación');
+    return next();
+  }
   
   try {
     // Obtener token del header
