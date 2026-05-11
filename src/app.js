@@ -1,3 +1,4 @@
+// src/app.js
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -63,22 +64,20 @@ const corsOptions = {
     }
   },
   credentials: true,
-  optionsSuccessStatus: 204, // ✅ CAMBIADO: 204 en lugar de 200 para OPTIONS
+  optionsSuccessStatus: 204,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept']
 };
 
 app.use(cors(corsOptions));
 
-// ✅ NUEVO: Middleware para Private Network Access y manejo de OPTIONS
+// Middleware para Private Network Access y manejo de OPTIONS
 app.use((req, res, next) => {
-  // Cabecera crítica para Private Network Access
   res.setHeader('Access-Control-Allow-Private-Network', 'true');
   
-  // Manejo explícito de OPTIONS (por si acaso)
   if (req.method === 'OPTIONS') {
     console.log('📡 Preflight request de:', req.headers.origin);
-    return res.sendStatus(204); // No content, con todas las cabeceras ya aplicadas por cors()
+    return res.sendStatus(204);
   }
   
   next();
@@ -86,8 +85,8 @@ app.use((req, res, next) => {
 
 // C. RATE LIMITING - Protección DDoS/Brute Force
 const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 1000, // 100 peticiones por IP
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
   message: {
     success: false,
     message: 'Demasiadas peticiones desde esta IP'
@@ -97,8 +96,8 @@ const generalLimiter = rateLimit({
 });
 
 const authLimiter = rateLimit({
-  windowMs: 3 * 60 * 1000, // 5 minutos
-  max: 5, // Solo 5 intentos de login
+  windowMs: 3 * 60 * 1000,
+  max: 5,
   message: {
     success: false,
     message: 'Demasiados intentos de login. Intenta más tarde.'
@@ -109,9 +108,9 @@ const authLimiter = rateLimit({
 app.use(generalLimiter);
 
 // D. PROTECCIÓN CONTRA INYECCIONES
-app.use(mongoSanitize()); // Previene NoSQL injection
-app.use(xss()); // Previene XSS attacks
-app.use(hpp()); // Previene HTTP Parameter Pollution
+app.use(mongoSanitize());
+app.use(xss());
+app.use(hpp());
 
 // E. MIDDLEWARES BÁSICOS CON SEGURIDAD
 app.use(morgan('combined', {
@@ -120,7 +119,7 @@ app.use(morgan('combined', {
 
 // Limitar tamaño de requests
 app.use(express.json({
-  limit: '10kb', // Máximo 10kb por request
+  limit: '10kb',
   verify: (req, res, buf) => {
     try {
       JSON.parse(buf);
@@ -143,7 +142,6 @@ app.use((req, res, next) => {
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
   
-  // No cache para endpoints sensibles
   if (req.path.includes('/api/auth') || req.path.includes('/api/users')) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     res.setHeader('Pragma', 'no-cache');
@@ -154,7 +152,7 @@ app.use((req, res, next) => {
 });
 
 // ============================================
-// 2. SWAGGER (SIN BUSCADOR)
+// 2. SWAGGER
 // ============================================
 console.log('\n🔧 Configurando Swagger...');
 
@@ -257,7 +255,6 @@ app.use((req, res, next) => {
       userAgent: req.get('user-agent'),
     };
     
-    // Log detallado para endpoints sensibles o errores
     if (req.path.includes('/api/auth') || res.statusCode >= 400) {
       console.log('🔐 AUDIT:', logData);
     }
@@ -290,7 +287,6 @@ app.use((err, req, res, next) => {
     timestamp: new Date().toISOString(),
   });
   
-  // Clasificar errores
   let statusCode = 500;
   let message = 'Error interno del servidor';
   
@@ -332,13 +328,13 @@ const startServer = async () => {
     const connectDB = require('./config/database');
     await connectDB();
     
-    // Iniciar servidor - ✅ MODIFICADO: Escuchar en 0.0.0.0 para aceptar conexiones externas
+    // Iniciar servidor
     app.listen(PORT, '0.0.0.0', () => {
       console.log('\n' + '═'.repeat(60));
       console.log('✅ SERVIDOR SEGURO INICIADO');
       console.log('═'.repeat(60));
       console.log(`🚀 URL Local:    http://localhost:${PORT}`);
-      console.log(`🌐 URL Red:      http://10.0.0.20:${PORT}`); // Ajusta según tu IP
+      console.log(`🌐 URL Red:      http://10.0.0.20:${PORT}`);
       console.log(`📚 Documentación: http://localhost:${PORT}/api/docs`);
       console.log(`🔍 Health Check:  http://localhost:${PORT}/api/health`);
       console.log('═'.repeat(60));

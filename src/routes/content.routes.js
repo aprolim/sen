@@ -1,3 +1,4 @@
+// src/routes/content.routes.js
 const express = require('express');
 const router = express.Router();
 const contentController = require('../controllers/content.controller');
@@ -12,6 +13,7 @@ router.get('/slug/:slug', contentController.getContentBySlug);
 router.get('/:id', contentController.getContentById);
 router.get('/:id/related', contentController.getRelatedContent);
 router.get('/', contentController.getContents);
+router.get('/stats', contentController.getStats);
 
 // Rutas protegidas (requieren autenticación)
 router.use(authenticate);
