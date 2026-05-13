@@ -1,7 +1,7 @@
+// src/models/Content.js
 const mongoose = require('mongoose');
 
 const contentSchema = new mongoose.Schema({
-  // Información básica
   title: {
     type: String,
     required: [true, 'El título es requerido'],
@@ -14,7 +14,6 @@ const contentSchema = new mongoose.Schema({
     unique: true,
     lowercase: true,
     trim: true,
-    match: [/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug inválido. Use solo letras, números y guiones.'],
   },
   content: {
     type: String,
@@ -25,26 +24,14 @@ const contentSchema = new mongoose.Schema({
     trim: true,
     maxlength: [300, 'El extracto no puede exceder 300 caracteres'],
   },
-  
-  // Categorización
   type: {
     type: String,
     enum: ['page', 'news', 'article', 'announcement'],
-    default: 'page',
-    required: true,
+    default: 'news',
   },
   category: {
     type: String,
-    enum: [
-      'institucional', 
-      'historia', 
-      'directiva', 
-      'noticias', 
-      'eventos', 
-      'transparencia',
-      'participacion',
-      'legislacion'
-    ],
+    enum: ['institucional', 'historia', 'directiva', 'noticias', 'eventos', 'transparencia', 'participacion', 'legislacion'],
     default: 'noticias',
   },
   tags: [{
@@ -52,8 +39,6 @@ const contentSchema = new mongoose.Schema({
     trim: true,
     lowercase: true,
   }],
-  
-  // Metadatos
   author: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -64,13 +49,6 @@ const contentSchema = new mongoose.Schema({
     enum: ['draft', 'published', 'archived', 'scheduled'],
     default: 'draft',
   },
-  language: {
-    type: String,
-    enum: ['es', 'qu', 'ay'],
-    default: 'es',
-  },
-  
-  // Imágenes y multimedia
   featuredImage: {
     url: String,
     alt: String,
@@ -89,24 +67,12 @@ const contentSchema = new mongoose.Schema({
     size: Number,
     type: String,
   }],
-  
-  // SEO
   seo: {
-    title: {
-      type: String,
-      trim: true,
-      maxlength: [60, 'El título SEO no puede exceder 60 caracteres'],
-    },
-    description: {
-      type: String,
-      trim: true,
-      maxlength: [160, 'La descripción SEO no puede exceder 160 caracteres'],
-    },
+    title: String,
+    description: String,
     keywords: [String],
     canonicalUrl: String,
   },
-  
-  // Fechas
   publishedAt: {
     type: Date,
   },
@@ -116,20 +82,14 @@ const contentSchema = new mongoose.Schema({
   expiresAt: {
     type: Date,
   },
-  
-  // Estadísticas
   views: {
     type: Number,
     default: 0,
   },
-  
-  // Relaciones
   relatedContent: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Content',
   }],
-  
-  // Metadata del sistema
   lastModifiedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -140,34 +100,27 @@ const contentSchema = new mongoose.Schema({
   },
   versionHistory: [{
     content: String,
-    modifiedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-    },
+    modifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     modifiedAt: Date,
     revision: Number,
     comment: String,
   }],
 }, {
   timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true },
 });
 
-// Índices para búsqueda eficiente
+// Índices
 contentSchema.index({ slug: 1 }, { unique: true });
 contentSchema.index({ title: 'text', content: 'text', excerpt: 'text' });
 contentSchema.index({ type: 1, status: 1, publishedAt: -1 });
 contentSchema.index({ category: 1, tags: 1 });
-contentSchema.index({ scheduledFor: 1 });
-contentSchema.index({ author: 1 });
 
 // Middleware para generar slug automáticamente
 contentSchema.pre('validate', function(next) {
   if (!this.slug && this.title) {
     this.slug = this.title
       .toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remover acentos
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
   }
@@ -179,25 +132,10 @@ contentSchema.pre('save', function(next) {
   if (this.status === 'published' && !this.publishedAt) {
     this.publishedAt = new Date();
   }
-  
   if (this.status === 'scheduled' && !this.scheduledFor) {
     this.scheduledFor = new Date();
   }
-  
   next();
-});
-
-// Virtual para URL amigable
-contentSchema.virtual('url').get(function() {
-  const baseUrl = '/contenido';
-  const typePaths = {
-    page: '/paginas',
-    news: '/noticias',
-    article: '/articulos',
-    announcement: '/anuncios',
-  };
-  
-  return `${baseUrl}${typePaths[this.type] || ''}/${this.slug}`;
 });
 
 // Método para incrementar vistas
@@ -207,5 +145,4 @@ contentSchema.methods.incrementViews = async function() {
 };
 
 const Content = mongoose.model('Content', contentSchema);
-
 module.exports = Content;

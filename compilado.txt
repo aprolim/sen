@@ -1020,6 +1020,16 @@ const generarNoticiasAdicionales = () => {
 
 const todasLasNoticias = [...noticiasSimuladas, ...generarNoticiasAdicionales()]
 
+// ==================== LOG DE DEPURACIÓN ====================
+console.log('\n' + '═'.repeat(60));
+console.log('📊 CONTENT CONTROLLER - INICIALIZADO');
+console.log('═'.repeat(60));
+console.log(`📰 Total noticias simuladas: ${todasLasNoticias.length}`);
+console.log(`⭐ Noticias importantes: ${noticiasSimuladas.length}`);
+console.log(`📅 Rango de fechas: ${todasLasNoticias[todasLasNoticias.length-1]?.fechaFormateada} - ${todasLasNoticias[0]?.fechaFormateada}`);
+console.log(`📝 Primera noticia: ${todasLasNoticias[0]?.titulo.substring(0, 60)}...`);
+console.log('═'.repeat(60) + '\n');
+
 // Variable para controlar modo simulación
 let usarDatosSimulados = true
 
@@ -1039,16 +1049,29 @@ class ContentController {
       const queryLimit = parseInt(req.query.limit) || 12;
       const { type, status } = req.query;
       
+      // ==================== LOG DE DEPURACIÓN ====================
+      console.log('\n🔍 [getContents] SOLICITUD RECIBIDA');
+      console.log(`   📄 Página: ${queryPage}, Límite: ${queryLimit}`);
+      console.log(`   🏷️ Type: ${type || 'no filtro'}, Status: ${status || 'no filtro'}`);
+      console.log(`   🎮 Modo simulación: ${usarDatosSimulados ? 'ACTIVADO' : 'DESACTIVADO'}`);
+      console.log(`   📊 Total noticias disponibles: ${todasLasNoticias.length}`);
+      
       // MODO SIMULACIÓN
       if (usarDatosSimulados) {
+        console.log('\n📡 [MODO SIMULACIÓN] Procesando solicitud...');
+        
         let filtradas = [...todasLasNoticias]
         
         if (type && type !== 'all') {
+          const antes = filtradas.length;
           filtradas = filtradas.filter(n => n.type === type)
+          console.log(`   🔍 Filtradas por type=${type}: ${antes} → ${filtradas.length}`);
         }
         
         if (status && status !== 'all') {
+          const antes = filtradas.length;
           filtradas = filtradas.filter(n => n.status === status)
+          console.log(`   🔍 Filtradas por status=${status}: ${antes} → ${filtradas.length}`);
         }
         
         const ordenadas = filtradas.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
@@ -1058,7 +1081,16 @@ class ContentController {
         const end = start + queryLimit
         const contents = ordenadas.slice(start, end)
         
-        console.log(`📡 [SIMULADO] getContents: ${contents.length} noticias, total: ${total}`)
+        console.log(`\n✅ [MODO SIMULACIÓN] Resultado:`);
+        console.log(`   📦 Enviando ${contents.length} noticias de ${total} totales`);
+        console.log(`   📍 Rango: ${start + 1} - ${Math.min(end, total)}`);
+        if (contents.length > 0) {
+          console.log(`   📰 Primera noticia: ${contents[0].titulo.substring(0, 80)}...`);
+          console.log(`   ⭐ ¿Es importante?: ${contents[0].importante ? 'SÍ' : 'NO'}`);
+        } else {
+          console.log(`   ⚠️ No hay noticias para mostrar`);
+        }
+        console.log('═'.repeat(40) + '\n');
         
         return res.json({
           success: true,
@@ -1073,11 +1105,15 @@ class ContentController {
       }
       
       // MODO REAL (base de datos)
+      console.log('\n📡 [MODO REAL] Conectando a base de datos...');
       const filters = {};
       if (type) filters.type = type;
       if (status) filters.status = status;
 
       const result = await contentService.getContents(queryPage, queryLimit, filters);
+      
+      console.log(`✅ [MODO REAL] Enviando ${result.contents?.length || 0} noticias`);
+      console.log('═'.repeat(40) + '\n');
 
       res.json({
         success: true,
@@ -1099,11 +1135,14 @@ class ContentController {
     try {
       const { slug } = req.params
       
+      console.log(`\n🔍 [getContentBySlug] Buscando slug: ${slug}`);
+      
       // MODO SIMULACIÓN
       if (usarDatosSimulados) {
         const content = todasLasNoticias.find(n => n.slug === slug)
         
         if (!content) {
+          console.log(`❌ [getContentBySlug] No encontrado: ${slug}`);
           return res.status(404).json({
             success: false,
             message: 'Contenido no encontrado',
@@ -1112,7 +1151,7 @@ class ContentController {
         
         content.views += 1
         
-        console.log(`📡 [SIMULADO] getContentBySlug: ${slug} encontrado`)
+        console.log(`✅ [getContentBySlug] Encontrado: ${content.titulo.substring(0, 60)}...`);
         
         return res.json({
           success: true,
@@ -1122,12 +1161,15 @@ class ContentController {
       
       // MODO REAL
       const content = await contentService.getContentBySlug(slug);
-
+      
+      console.log(`✅ [getContentBySlug] Encontrado desde DB: ${content?.title}`);
+      
       res.json({
         success: true,
         data: content,
       });
     } catch (error) {
+      console.error('❌ Error en getContentBySlug:', error);
       res.status(404).json({
         success: false,
         message: error.message,
@@ -1142,16 +1184,21 @@ class ContentController {
     try {
       const { id } = req.params
       
+      console.log(`\n🔍 [getContentById] Buscando ID: ${id}`);
+      
       // MODO SIMULACIÓN
       if (usarDatosSimulados) {
         const content = todasLasNoticias.find(n => n.id == id)
         
         if (!content) {
+          console.log(`❌ [getContentById] No encontrado: ${id}`);
           return res.status(404).json({
             success: false,
             message: 'Contenido no encontrado',
           })
         }
+        
+        console.log(`✅ [getContentById] Encontrado: ${content.titulo.substring(0, 60)}...`);
         
         return res.json({
           success: true,
@@ -1161,12 +1208,13 @@ class ContentController {
       
       // MODO REAL
       const content = await contentService.getContentById(id);
-
+      
       res.json({
         success: true,
         data: content,
       });
     } catch (error) {
+      console.error('❌ Error en getContentById:', error);
       res.status(404).json({
         success: false,
         message: error.message,
@@ -1265,6 +1313,11 @@ class ContentController {
     try {
       // MODO SIMULACIÓN
       if (usarDatosSimulados) {
+        console.log('\n📊 [getStats] Modo simulación');
+        console.log(`   Total: ${todasLasNoticias.length}`);
+        console.log(`   Importantes: ${noticiasSimuladas.length}`);
+        console.log(`   Publicadas: ${todasLasNoticias.filter(n => n.status === 'published').length}`);
+        
         return res.json({
           success: true,
           data: {
@@ -1311,6 +1364,8 @@ class ContentController {
           item.titulo.toLowerCase().includes(termino) ||
           (item.descripcion && item.descripcion.toLowerCase().includes(termino))
         ).slice(0, parseInt(limit));
+        
+        console.log(`\n🔍 [searchContent] "${q}" → ${results.length} resultados`);
         
         return res.json({
           success: true,
