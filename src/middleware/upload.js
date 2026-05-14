@@ -1,7 +1,7 @@
+// backend/src/middleware/upload.js
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const sharp = require('sharp');
 
 // Crear directorios si no existen
 const uploadDirs = {
@@ -14,24 +14,29 @@ const uploadDirs = {
 Object.values(uploadDirs).forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
+    console.log(`📁 Directorio creado: ${dir}`);
   }
 });
 
 // Configuración de almacenamiento
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    let folder = 'uploads/';
+    console.log('📂 Destination - req.baseUrl:', req.baseUrl);
+    console.log('📂 Destination - file.mimetype:', file.mimetype);
+    
+    let folder = 'uploads/images';
     
     if (file.mimetype.startsWith('image/')) {
       folder = uploadDirs.images;
     } else if (file.mimetype === 'application/pdf') {
       folder = uploadDirs.documents;
-    } else if (req.baseUrl.includes('legisladores')) {
+    } else if (req.baseUrl && req.baseUrl.includes('legisladores')) {
       folder = uploadDirs.legisladores;
-    } else if (req.baseUrl.includes('content')) {
+    } else if (req.baseUrl && req.baseUrl.includes('content')) {
       folder = uploadDirs.content;
     }
     
+    console.log('📂 Guardando en:', folder);
     cb(null, folder);
   },
   filename: function (req, file, cb) {
@@ -42,27 +47,28 @@ const storage = multer.diskStorage({
       .replace(/[^a-z0-9]/g, '-')
       .substring(0, 50);
     
-    cb(null, name + '-' + uniqueSuffix + ext);
+    const filename = name + '-' + uniqueSuffix + ext;
+    console.log('📄 Nombre de archivo:', filename);
+    cb(null, filename);
   }
 });
 
 // Filtrar tipos de archivo
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = {
-    'image/jpeg': true,
-    'image/jpg': true,
-    'image/png': true,
-    'image/webp': true,
-    'image/gif': true,
-    'application/pdf': true,
-    'application/msword': true,
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': true,
-  };
+  const allowedTypes = [
+    'image/jpeg',
+    'image/jpg', 
+    'image/png',
+    'image/webp',
+    'image/gif'
+  ];
   
-  if (allowedTypes[file.mimetype]) {
+  console.log('🔍 FileFilter - tipo:', file.mimetype);
+  
+  if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Tipo de archivo no permitido. Solo se permiten imágenes y documentos PDF/DOC.'), false);
+    cb(new Error('Tipo de archivo no permitido. Solo se permiten imágenes (JPEG, PNG, WEBP, GIF).'), false);
   }
 };
 
@@ -75,83 +81,7 @@ const upload = multer({
   },
 });
 
-// Procesador de imágenes
-const processImage = async (filePath, options = {}) => {
-  try {
-    const {
-      width = 1200,
-      height,
-      quality = 80,
-      format = 'webp'
-    } = options;
-    
-    const outputPath = filePath.replace(/\.[^/.]+$/, '') + `.${format}`;
-    
-    let processor = sharp(filePath);
-    
-    if (width || height) {
-      processor = processor.resize(width, height, {
-        fit: 'inside',
-        withoutEnlargement: true,
-      });
-    }
-    
-    if (format === 'webp') {
-      processor = processor.webp({ quality });
-    } else if (format === 'jpeg') {
-      processor = processor.jpeg({ quality });
-    } else if (format === 'png') {
-      processor = processor.png({ quality });
-    }
-    
-    await processor.toFile(outputPath);
-    
-    // Eliminar archivo original si se convirtió
-    if (format !== path.extname(filePath).replace('.', '')) {
-      fs.unlinkSync(filePath);
-    }
-    
-    return path.basename(outputPath);
-  } catch (error) {
-    console.error('Error procesando imagen:', error);
-    return path.basename(filePath);
-  }
-};
-
-// Generar thumbnails
-const generateThumbnails = async (filePath) => {
-  const baseName = path.basename(filePath, path.extname(filePath));
-  const dirName = path.dirname(filePath);
-  
-  const sizes = [
-    { name: 'thumbnail', width: 150, height: 150 },
-    { name: 'small', width: 300 },
-    { name: 'medium', width: 600 },
-    { name: 'large', width: 1200 },
-  ];
-  
-  const thumbnails = {};
-  
-  for (const size of sizes) {
-    const outputPath = path.join(dirName, `${baseName}-${size.name}.webp`);
-    
-    await sharp(filePath)
-      .resize(size.width, size.height, {
-        fit: 'cover',
-        position: 'center',
-      })
-      .webp({ quality: 80 })
-      .toFile(outputPath);
-    
-    thumbnails[size.name] = path.basename(outputPath);
-  }
-  
-  return thumbnails;
-};
-
 module.exports = {
   upload,
-  processImage,
-  generateThumbnails,
   uploadDirs,
 };

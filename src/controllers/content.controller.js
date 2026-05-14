@@ -1,4 +1,4 @@
-// src/controllers/content.controller.js - VERSIÓN MONGODB REAL
+// src/controllers/content.controller.js
 const Content = require('../models/Content');
 const path = require('path');
 const fs = require('fs');
@@ -10,10 +10,9 @@ class ContentController {
   async getContents(req, res) {
     try {
       const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 12;
+      const limit = parseInt(req.query.limit) || 100;
       const { type, status, category, search } = req.query;
       
-      // Construir filtros
       const filters = {};
       if (type && type !== 'all') filters.type = type;
       if (category) filters.category = category;
@@ -21,11 +20,9 @@ class ContentController {
         filters.$text = { $search: search };
       }
       
-      // Si es usuario público (no autenticado), solo ver publicados
       if (!req.user) {
         filters.status = 'published';
       } else if (status && status !== 'all') {
-        // Si es admin y filtra por estado
         filters.status = status;
       }
       
@@ -40,8 +37,6 @@ class ContentController {
           .populate('lastModifiedBy', 'email profile'),
         Content.countDocuments(filters)
       ]);
-      
-      console.log(`📊 getContents: ${contents.length} de ${total} documentos`);
       
       res.json({
         success: true,
@@ -69,15 +64,12 @@ class ContentController {
     try {
       const { slug } = req.params;
       
-      console.log(`🔍 Buscando contenido por slug: ${slug}`);
-      
       const content = await Content.findOne({ 
         slug, 
         status: 'published' 
       })
       .populate('author', 'email profile')
-      .populate('lastModifiedBy', 'email profile')
-      .populate('relatedContent', 'title slug type');
+      .populate('lastModifiedBy', 'email profile');
       
       if (!content) {
         return res.status(404).json({
@@ -86,10 +78,8 @@ class ContentController {
         });
       }
       
-      // Incrementar vistas
-      await content.incrementViews();
-      
-      console.log(`✅ Contenido encontrado: ${content.title}`);
+      content.views += 1;
+      await content.save();
       
       res.json({
         success: true,
@@ -113,8 +103,7 @@ class ContentController {
       
       const content = await Content.findById(id)
         .populate('author', 'email profile')
-        .populate('lastModifiedBy', 'email profile')
-        .populate('relatedContent', 'title slug type');
+        .populate('lastModifiedBy', 'email profile');
       
       if (!content) {
         return res.status(404).json({
@@ -148,12 +137,8 @@ class ContentController {
         publishedAt: req.body.status === 'published' ? new Date() : null
       };
       
-      console.log('📝 Creando nuevo contenido:', contentData.title);
-      
       const content = new Content(contentData);
       await content.save();
-      
-      console.log(`✅ Contenido creado: ${content._id}`);
       
       res.status(201).json({
         success: true,
@@ -176,8 +161,6 @@ class ContentController {
     try {
       const { id } = req.params;
       
-      console.log(`📝 Actualizando contenido: ${id}`);
-      
       const content = await Content.findById(id);
       
       if (!content) {
@@ -187,7 +170,6 @@ class ContentController {
         });
       }
       
-      // Guardar versión anterior en historial
       content.versionHistory.push({
         content: content.content,
         modifiedBy: content.lastModifiedBy,
@@ -196,7 +178,6 @@ class ContentController {
         comment: req.body.versionComment || 'Actualización'
       });
       
-      // Actualizar campos permitidos
       const allowedFields = ['title', 'slug', 'content', 'excerpt', 'type', 'category', 'tags', 'status', 'featuredImage', 'gallery', 'seo', 'scheduledFor'];
       
       allowedFields.forEach(field => {
@@ -208,14 +189,11 @@ class ContentController {
       content.lastModifiedBy = req.user._id;
       content.revision += 1;
       
-      // Si cambia a publicado y no tenía fecha
       if (req.body.status === 'published' && !content.publishedAt) {
         content.publishedAt = new Date();
       }
       
       await content.save();
-      
-      console.log(`✅ Contenido actualizado: ${content.title}`);
       
       res.json({
         success: true,
@@ -238,8 +216,6 @@ class ContentController {
     try {
       const { id } = req.params;
       
-      console.log(`🗑️ Eliminando contenido: ${id}`);
-      
       const content = await Content.findByIdAndDelete(id);
       
       if (!content) {
@@ -248,8 +224,6 @@ class ContentController {
           message: 'Contenido no encontrado'
         });
       }
-      
-      console.log(`✅ Contenido eliminado: ${content.title}`);
       
       res.json({
         success: true,
@@ -271,8 +245,6 @@ class ContentController {
     try {
       const { id } = req.params;
       const { status } = req.body;
-      
-      console.log(`🔄 Cambiando estado de ${id} a ${status}`);
       
       const content = await Content.findById(id);
       
@@ -311,32 +283,18 @@ class ContentController {
    */
   async getStats(req, res) {
     try {
-      const stats = await Content.aggregate([
-        {
-          $group: {
-            _id: '$status',
-            count: { $sum: 1 },
-            totalViews: { $sum: '$views' }
-          }
-        }
-      ]);
-      
       const total = await Content.countDocuments();
-      const byType = await Content.aggregate([
-        {
-          $group: {
-            _id: '$type',
-            count: { $sum: 1 }
-          }
-        }
-      ]);
+      const published = await Content.countDocuments({ status: 'published' });
+      const drafts = await Content.countDocuments({ status: 'draft' });
+      const archived = await Content.countDocuments({ status: 'archived' });
       
       res.json({
         success: true,
         data: {
           total,
-          byStatus: stats,
-          byType
+          published,
+          drafts,
+          archived
         }
       });
     } catch (error) {
@@ -370,8 +328,7 @@ class ContentController {
         { score: { $meta: 'textScore' } }
       )
       .sort({ score: { $meta: 'textScore' } })
-      .limit(parseInt(limit))
-      .select('title slug excerpt type category publishedAt featuredImage');
+      .limit(parseInt(limit));
       
       res.json({
         success: true,
@@ -409,8 +366,7 @@ class ContentController {
           { type: current.type }
         ]
       })
-      .limit(limit)
-      .select('title slug excerpt type category publishedAt featuredImage');
+      .limit(limit);
       
       res.json({
         success: true,
@@ -466,10 +422,13 @@ class ContentController {
   }
 
   /**
-   * Subir imagen para contenido
+   * Subir imagen para contenido (CORREGIDO)
    */
   async uploadImage(req, res) {
     try {
+      console.log('📸 [uploadImage] Llamado');
+      console.log('📁 req.file:', req.file);
+      
       if (!req.file) {
         return res.status(400).json({
           success: false,
@@ -477,7 +436,11 @@ class ContentController {
         });
       }
       
-      const imageUrl = `/uploads/images/${req.file.filename}`;
+      // Construir URL pública de la imagen
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const imageUrl = `${baseUrl}/uploads/images/${req.file.filename}`;
+      
+      console.log('✅ Imagen subida exitosamente:', imageUrl);
       
       res.json({
         success: true,
@@ -491,10 +454,11 @@ class ContentController {
         }
       });
     } catch (error) {
-      console.error('Error subiendo imagen:', error);
+      console.error('❌ Error subiendo imagen:', error);
       res.status(500).json({
         success: false,
-        message: 'Error al subir la imagen'
+        message: 'Error al subir la imagen',
+        error: error.message
       });
     }
   }
@@ -511,7 +475,8 @@ class ContentController {
         });
       }
       
-      const documentUrl = `/uploads/documents/${req.file.filename}`;
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const documentUrl = `${baseUrl}/uploads/documents/${req.file.filename}`;
       
       res.json({
         success: true,
@@ -525,6 +490,7 @@ class ContentController {
         }
       });
     } catch (error) {
+      console.error('❌ Error subiendo documento:', error);
       res.status(500).json({
         success: false,
         message: 'Error al subir el documento'

@@ -27,7 +27,19 @@ router.put('/:id', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentControlle
 router.patch('/:id/status', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.changeStatus);
 router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN'), contentController.deleteContent);
 
-router.post('/upload/image', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), upload.single('image'), contentController.uploadImage);
-router.post('/upload/document', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), upload.single('document'), contentController.uploadDocument);
+// ⚠️ IMPORTANTE: La ruta de upload debe ir ANTES de las rutas con parámetros
+router.post(
+  '/upload/image',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  upload.single('image'),
+  contentController.uploadImage
+);
+
+router.post(
+  '/upload/document',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  upload.single('document'),
+  contentController.uploadDocument
+);
 
 module.exports = router;

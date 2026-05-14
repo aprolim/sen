@@ -28,7 +28,7 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:"],
+      imgSrc: ["'self'", "data:", "https:", "http:"],
       fontSrc: ["'self'"],
       connectSrc: ["'self'"],
       frameSrc: ["'none'"],
@@ -55,6 +55,7 @@ const corsOptions = {
       'http://10.0.0.21',
       'http://demopanel.senado.gob.bo',
       'http://demoap.senado.gob.bo',
+      'http://demoback.senado.gob.bo',
     ];
     
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
@@ -134,6 +135,9 @@ app.use(express.urlencoded({
   limit: '10kb' 
 }));
 
+// Servir archivos estáticos (imágenes subidas)
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+
 // F. HEADERS ADICIONALES
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -179,7 +183,6 @@ const swaggerOptions = {
 };
 
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   docExpansion: 'none',
   swaggerOptions: {
