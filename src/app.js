@@ -21,20 +21,21 @@ const app = express();
 // 1. SEGURIDAD: CONFIGURACIÓN COMPLETA
 // ============================================
 
-// A. HELMET - Headers de seguridad
+// A. HELMET - Headers de seguridad (MODIFICADO para permitir imágenes)
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:", "http:"],
+      imgSrc: ["'self'", "data:", "https:", "http:", "*"],  // Permitir imágenes de cualquier origen
       fontSrc: ["'self'"],
       connectSrc: ["'self'"],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],
     },
   },
+  crossOriginResourcePolicy: { policy: "cross-origin" }, // Permitir cross-origin para recursos
   hsts: {
     maxAge: 31536000,
     includeSubDomains: true,
@@ -56,11 +57,13 @@ const corsOptions = {
       'http://demopanel.senado.gob.bo',
       'http://demoap.senado.gob.bo',
       'http://demoback.senado.gob.bo',
+      'https://demoap.senado.gob.bo',  // Agregar HTTPS si aplica
     ];
     
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
+      console.log('❌ Origen bloqueado por CORS:', origin);
       callback(new Error('Origen no permitido por CORS'));
     }
   },
@@ -135,8 +138,30 @@ app.use(express.urlencoded({
   limit: '10kb' 
 }));
 
-// Servir archivos estáticos (imágenes subidas)
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+// ============================================
+// SERVIR ARCHIVOS ESTÁTICOS CON CORS (CORREGIDO)
+// ============================================
+app.use('/uploads', (req, res, next) => {
+  // Headers específicos para imágenes
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.header('Cross-Origin-Embedder-Policy', 'credentialless');
+  
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+}, express.static(path.join(__dirname, '..', 'uploads'), {
+  setHeaders: (res, filepath) => {
+    // Para imágenes, permitir caché y CORS
+    if (filepath.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    }
+  }
+}));
 
 // F. HEADERS ADICIONALES
 app.use((req, res, next) => {
@@ -168,7 +193,7 @@ const swaggerOptions = {
       version: '1.0.0',
       description: 'API Segura para el portal del Senado de Bolivia',
     },
-    servers: [{ url: `http://localhost:${process.env.PORT || 3000}` }],
+    servers: [{ url: `http://${process.env.HOST || 'localhost'}:${process.env.PORT || 3000}` }],
     components: {
       securitySchemes: {
         bearerAuth: {
