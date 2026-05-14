@@ -13,20 +13,44 @@ class ContentController {
       const limit = parseInt(req.query.limit) || 100;
       const { type, status, category, search } = req.query;
       
+      console.log('🔍 [getContents] Parámetros recibidos:', { page, limit, type, status, category, search });
+      console.log('🔍 [getContents] Usuario autenticado:', req.user ? req.user.email : 'NO (público)');
+      
       const filters = {};
-      if (type && type !== 'all') filters.type = type;
-      if (category) filters.category = category;
-      if (search) {
-        filters.$text = { $search: search };
+      
+      // Filtrar por tipo
+      if (type && type !== 'all') {
+        filters.type = type;
+        console.log('   ✅ Filtro type:', type);
       }
       
+      // Filtrar por categoría
+      if (category) {
+        filters.category = category;
+        console.log('   ✅ Filtro category:', category);
+      }
+      
+      // Filtrar por estado (CORREGIDO)
+      if (status && status !== 'all') {
+        filters.status = status;
+        console.log('   ✅ Filtro status:', status);
+      }
+      
+      // Búsqueda por texto
+      if (search) {
+        filters.$text = { $search: search };
+        console.log('   ✅ Filtro search:', search);
+      }
+      
+      // Si es usuario público (no autenticado), solo ver publicados
       if (!req.user) {
         filters.status = 'published';
-      } else if (status && status !== 'all') {
-        filters.status = status;
+        console.log('   🔒 Usuario público, forzando status: published');
       }
       
       const skip = (page - 1) * limit;
+      
+      console.log('🔍 [getContents] Filtros finales:', JSON.stringify(filters, null, 2));
       
       const [contents, total] = await Promise.all([
         Content.find(filters)
@@ -37,6 +61,8 @@ class ContentController {
           .populate('lastModifiedBy', 'email profile'),
         Content.countDocuments(filters)
       ]);
+      
+      console.log(`📊 [getContents] Resultado: ${contents.length} de ${total} documentos`);
       
       res.json({
         success: true,
@@ -64,6 +90,8 @@ class ContentController {
     try {
       const { slug } = req.params;
       
+      console.log(`🔍 [getContentBySlug] Buscando slug: ${slug}`);
+      
       const content = await Content.findOne({ 
         slug, 
         status: 'published' 
@@ -78,8 +106,11 @@ class ContentController {
         });
       }
       
+      // Incrementar vistas
       content.views += 1;
       await content.save();
+      
+      console.log(`✅ [getContentBySlug] Encontrado: ${content.title}`);
       
       res.json({
         success: true,
@@ -100,6 +131,8 @@ class ContentController {
   async getContentById(req, res) {
     try {
       const { id } = req.params;
+      
+      console.log(`🔍 [getContentById] Buscando ID: ${id}`);
       
       const content = await Content.findById(id)
         .populate('author', 'email profile')
@@ -137,8 +170,12 @@ class ContentController {
         publishedAt: req.body.status === 'published' ? new Date() : null
       };
       
+      console.log(`📝 [createContent] Creando: ${contentData.title}`);
+      
       const content = new Content(contentData);
       await content.save();
+      
+      console.log(`✅ [createContent] Creado: ${content._id}`);
       
       res.status(201).json({
         success: true,
@@ -161,6 +198,8 @@ class ContentController {
     try {
       const { id } = req.params;
       
+      console.log(`📝 [updateContent] Actualizando ID: ${id}`);
+      
       const content = await Content.findById(id);
       
       if (!content) {
@@ -170,6 +209,7 @@ class ContentController {
         });
       }
       
+      // Guardar versión anterior en historial
       content.versionHistory.push({
         content: content.content,
         modifiedBy: content.lastModifiedBy,
@@ -178,6 +218,7 @@ class ContentController {
         comment: req.body.versionComment || 'Actualización'
       });
       
+      // Actualizar campos permitidos
       const allowedFields = ['title', 'slug', 'content', 'excerpt', 'type', 'category', 'tags', 'status', 'featuredImage', 'gallery', 'seo', 'scheduledFor'];
       
       allowedFields.forEach(field => {
@@ -194,6 +235,8 @@ class ContentController {
       }
       
       await content.save();
+      
+      console.log(`✅ [updateContent] Actualizado: ${content.title}`);
       
       res.json({
         success: true,
@@ -216,6 +259,8 @@ class ContentController {
     try {
       const { id } = req.params;
       
+      console.log(`🗑️ [deleteContent] Eliminando ID: ${id}`);
+      
       const content = await Content.findByIdAndDelete(id);
       
       if (!content) {
@@ -224,6 +269,8 @@ class ContentController {
           message: 'Contenido no encontrado'
         });
       }
+      
+      console.log(`✅ [deleteContent] Eliminado: ${content.title}`);
       
       res.json({
         success: true,
@@ -246,6 +293,8 @@ class ContentController {
       const { id } = req.params;
       const { status } = req.body;
       
+      console.log(`🔄 [changeStatus] Cambiando estado de ${id} a ${status}`);
+      
       const content = await Content.findById(id);
       
       if (!content) {
@@ -263,6 +312,8 @@ class ContentController {
       }
       
       await content.save();
+      
+      console.log(`✅ [changeStatus] Estado cambiado a ${status}`);
       
       res.json({
         success: true,
@@ -287,6 +338,8 @@ class ContentController {
       const published = await Content.countDocuments({ status: 'published' });
       const drafts = await Content.countDocuments({ status: 'draft' });
       const archived = await Content.countDocuments({ status: 'archived' });
+      
+      console.log(`📊 [getStats] Total: ${total}, Publicadas: ${published}, Borradores: ${drafts}, Archivadas: ${archived}`);
       
       res.json({
         success: true,
@@ -319,6 +372,8 @@ class ContentController {
           message: 'Término de búsqueda requerido'
         });
       }
+      
+      console.log(`🔍 [searchContent] Buscando: ${q}`);
       
       const results = await Content.find(
         { 
@@ -422,7 +477,7 @@ class ContentController {
   }
 
   /**
-   * Subir imagen para contenido (CORREGIDO)
+   * Subir imagen para contenido
    */
   async uploadImage(req, res) {
     try {
