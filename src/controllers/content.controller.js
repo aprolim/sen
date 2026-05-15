@@ -16,45 +16,51 @@ class ContentController {
       
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 100;
-      const { type, status, category, search } = req.query;
+      const type = req.query.type;
+      const status = req.query.status;
+      const category = req.query.category;
+      const search = req.query.search;
       
-      console.log('🔍 [getContents] ========== INICIO ==========');
-      console.log('🔍 [getContents] Parámetros recibidos:', { 
-        page, 
-        limit, 
-        type: type || 'no', 
-        status: status || 'no', 
-        category: category || 'no', 
-        search: search || 'no' 
-      });
-      console.log('🔍 [getContents] Usuario autenticado:', req.user ? req.user.email : 'NO (público)');
+      console.log('\n' + '='.repeat(60));
+      console.log('🔍 [getContents] SOLICITUD RECIBIDA');
+      console.log('   URL completa:', req.url);
+      console.log('   QUERY PARAMS:', req.query);
+      console.log('   page:', page);
+      console.log('   limit:', limit);
+      console.log('   type:', type);
+      console.log('   status:', status);
+      console.log('   category:', category);
+      console.log('   search:', search);
+      console.log('   Usuario autenticado:', req.user ? req.user.email : 'NO');
       
       const filters = {};
       
       // Filtrar por tipo
-      if (type && type !== 'all' && type !== 'undefined') {
+      if (type && type !== 'all' && type !== 'undefined' && type !== '') {
         filters.type = type;
-        console.log('   ✅ Filtro type aplicado:', type);
+        console.log('   ✅ Aplicando filtro type:', type);
       }
       
       // Filtrar por categoría
-      if (category && category !== 'undefined') {
+      if (category && category !== 'undefined' && category !== '') {
         filters.category = category;
-        console.log('   ✅ Filtro category aplicado:', category);
+        console.log('   ✅ Aplicando filtro category:', category);
       }
       
-      // FILTRO POR ESTADO - CORREGIDO
-      if (status && status !== 'all' && status !== 'undefined') {
+      // 🔥 FILTRO POR ESTADO - CORREGIDO
+      if (status && status !== 'all' && status !== 'undefined' && status !== '') {
         filters.status = status;
-        console.log('   ✅ Filtro status aplicado:', status);
+        console.log('   ✅ Aplicando filtro status:', status);
       } else if (status === 'all') {
-        console.log('   ⏭️ Status = "all", no se aplica filtro de estado');
+        console.log('   ⏭️ Status = "all", sin filtro de estado');
+      } else {
+        console.log('   ⚠️ No se aplica filtro de estado');
       }
       
       // Búsqueda por texto
-      if (search && search !== 'undefined') {
+      if (search && search !== 'undefined' && search !== '') {
         filters.$text = { $search: search };
-        console.log('   ✅ Filtro search aplicado:', search);
+        console.log('   ✅ Aplicando filtro search:', search);
       }
       
       // Si es usuario público (no autenticado), solo ver publicados
@@ -65,7 +71,19 @@ class ContentController {
       
       const skip = (page - 1) * limit;
       
-      console.log('🔍 [getContents] Filtros finales aplicados:', JSON.stringify(filters, null, 2));
+      console.log('\n📋 FILTROS FINALES:', JSON.stringify(filters, null, 2));
+      
+      // Verificar cuántos documentos hay por estado
+      const totalPublished = await Content.countDocuments({ status: 'published' });
+      const totalDrafts = await Content.countDocuments({ status: 'draft' });
+      const totalArchived = await Content.countDocuments({ status: 'archived' });
+      const totalAll = await Content.countDocuments();
+      
+      console.log('\n📊 ESTADÍSTICAS BASE DE DATOS:');
+      console.log('   Total documentos:', totalAll);
+      console.log('   Publicados (published):', totalPublished);
+      console.log('   Borradores (draft):', totalDrafts);
+      console.log('   Archivados (archived):', totalArchived);
       
       const [contents, total] = await Promise.all([
         Content.find(filters)
@@ -78,9 +96,12 @@ class ContentController {
         Content.countDocuments(filters)
       ]);
       
-      console.log(`📊 [getContents] RESULTADO: ${contents.length} documentos de ${total} totales`);
-      console.log(`📊 [getContents] Filtro usado: status=${status || 'ninguno'}`);
-      console.log('🔍 [getContents] ========== FIN ==========\n');
+      console.log('\n✅ RESULTADO FINAL:');
+      console.log('   Documentos devueltos:', contents.length);
+      console.log('   Total en filtro:', total);
+      console.log('   Página:', page);
+      console.log('   Páginas totales:', Math.ceil(total / limit));
+      console.log('='.repeat(60) + '\n');
       
       res.json({
         success: true,
@@ -99,6 +120,76 @@ class ContentController {
         message: error.message
       });
     }
+  }
+
+  /**
+   * Crear nuevo contenido (ADMIN)
+   */
+  async createContent(req, res) {
+    try {
+      console.log('\n' + '='.repeat(60));
+      console.log('📝 [createContent] CREANDO NUEVO CONTENIDO');
+      console.log('   Body recibido:', req.body);
+      console.log('   Usuario:', req.user ? req.user.email : 'NO');
+      
+      // Asegurar que el status se guarda correctamente
+      const status = req.body.status || 'draft';
+      console.log('   Estado a guardar:', status);
+      
+      const contentData = {
+        title: req.body.title,
+        slug: req.body.slug || this.generateSlug(req.body.title),
+        content: req.body.content,
+        excerpt: req.body.excerpt || '',
+        type: req.body.type || 'news',
+        category: req.body.category || 'noticias',
+        tags: req.body.tags || [],
+        status: status,
+        featuredImage: req.body.featuredImage || { url: '', alt: '' },
+        author: req.user._id,
+        lastModifiedBy: req.user._id,
+        publishedAt: status === 'published' ? new Date() : null
+      };
+      
+      console.log('   Datos a guardar:', {
+        title: contentData.title,
+        slug: contentData.slug,
+        status: contentData.status,
+        publishedAt: contentData.publishedAt
+      });
+      
+      const content = new Content(contentData);
+      await content.save();
+      
+      console.log('✅ [createContent] Contenido creado exitosamente');
+      console.log('   ID:', content._id);
+      console.log('   Status guardado:', content.status);
+      console.log('='.repeat(60) + '\n');
+      
+      res.status(201).json({
+        success: true,
+        message: 'Contenido creado exitosamente',
+        data: content
+      });
+    } catch (error) {
+      console.error('❌ Error en createContent:', error);
+      res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Generar slug a partir del título
+   */
+  generateSlug(title) {
+    if (!title) return 'sin-titulo-' + Date.now();
+    return title
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') + '-' + Date.now();
   }
 
   /**
@@ -177,39 +268,6 @@ class ContentController {
   }
 
   /**
-   * Crear nuevo contenido (ADMIN)
-   */
-  async createContent(req, res) {
-    try {
-      const contentData = {
-        ...req.body,
-        author: req.user._id,
-        lastModifiedBy: req.user._id,
-        publishedAt: req.body.status === 'published' ? new Date() : null
-      };
-      
-      console.log(`📝 [createContent] Creando: ${contentData.title}`);
-      
-      const content = new Content(contentData);
-      await content.save();
-      
-      console.log(`✅ [createContent] Creado: ${content._id}`);
-      
-      res.status(201).json({
-        success: true,
-        message: 'Contenido creado exitosamente',
-        data: content
-      });
-    } catch (error) {
-      console.error('❌ Error en createContent:', error);
-      res.status(400).json({
-        success: false,
-        message: error.message
-      });
-    }
-  }
-
-  /**
    * Actualizar contenido (ADMIN)
    */
   async updateContent(req, res) {
@@ -217,6 +275,7 @@ class ContentController {
       const { id } = req.params;
       
       console.log(`📝 [updateContent] Actualizando ID: ${id}`);
+      console.log('   Body:', req.body);
       
       const content = await Content.findById(id);
       
@@ -255,6 +314,7 @@ class ContentController {
       await content.save();
       
       console.log(`✅ [updateContent] Actualizado: ${content.title}`);
+      console.log('   Nuevo status:', content.status);
       
       res.json({
         success: true,
