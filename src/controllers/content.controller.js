@@ -5,135 +5,51 @@ const fs = require('fs');
 
 class ContentController {
   /**
-   * Obtener lista de contenido paginada (PUBLICO + ADMIN)
+   * ============================================
+   * FRONTEND PÚBLICO - Solo noticias publicadas
+   * ============================================
    */
-  async getContents(req, res) {
+  async getContentsPublic(req, res) {
     try {
-      // 🔥 LOG #1 - Ver qué llega al backend
-      console.log('\n' + '='.repeat(80));
-      console.log('🔥🔥🔥 [GETCONTENTS] LLAMADA RECIBIDA 🔥🔥🔥');
-      console.log('📅 Fecha/Hora:', new Date().toISOString());
-      console.log('🔗 URL completa:', req.url);
-      console.log('📊 QUERY STRING:', req.query);
-      console.log('📊 req.query.status:', req.query.status);
-      console.log('📊 req.query.type:', req.query.type);
-      console.log('📊 req.query.category:', req.query.category);
-      console.log('📊 req.query.search:', req.query.search);
-      console.log('📊 req.query.page:', req.query.page);
-      console.log('📊 req.query.limit:', req.query.limit);
-      console.log('👤 Usuario autenticado:', req.user ? req.user.email : 'NO');
-      console.log('👤 ID Usuario:', req.user ? req.user._id : 'NO');
-      console.log('👤 Rol Usuario:', req.user ? req.user.role : 'NO');
-      console.log('='.repeat(80));
-      
-      // HEADERS ANTI-CACHÉ
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
-      
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 100;
-      const type = req.query.type;
-      const status = req.query.status;
-      const category = req.query.category;
-      const search = req.query.search;
+      const { type, category, search } = req.query;
       
-      console.log(`\n📋 PARÁMETROS PROCESADOS:`);
-      console.log(`   page: ${page}`);
-      console.log(`   limit: ${limit}`);
-      console.log(`   type: ${type || 'no definido'}`);
-      console.log(`   status: ${status || 'no definido'}`);
-      console.log(`   category: ${category || 'no definido'}`);
-      console.log(`   search: ${search || 'no definido'}`);
+      console.log('\n🌐 [PUBLICO] ========== LISTANDO NOTICIAS PARA FRONTEND ==========');
+      console.log(`   Página: ${page}, Límite: ${limit}`);
+      console.log(`   Filtros: type=${type || 'ninguno'}, category=${category || 'ninguno'}, search=${search || 'ninguno'}`);
       
-      const filters = {};
+      const filters = { status: 'published' };
       
-      // Filtrar por tipo
-      if (type && type !== 'all' && type !== 'undefined' && type !== '') {
+      if (type && type !== 'all' && type !== 'undefined') {
         filters.type = type;
-        console.log(`   ✅ Aplicando filtro type: ${type}`);
-      } else {
-        console.log(`   ⏭️ No aplica filtro type`);
+        console.log(`   ✅ Filtro type: ${type}`);
       }
       
-      // Filtrar por categoría
-      if (category && category !== 'undefined' && category !== '') {
+      if (category && category !== 'undefined') {
         filters.category = category;
-        console.log(`   ✅ Aplicando filtro category: ${category}`);
-      } else {
-        console.log(`   ⏭️ No aplica filtro category`);
+        console.log(`   ✅ Filtro category: ${category}`);
       }
       
-      // 🔥 FILTRO POR ESTADO - EL MÁS IMPORTANTE
-      if (status && status !== 'all' && status !== 'undefined' && status !== '') {
-        filters.status = status;
-        console.log(`   ✅✅✅ APLICANDO FILTRO status: ${status} ✅✅✅`);
-      } else {
-        console.log(`   ⚠️⚠️⚠️ NO SE APLICA FILTRO status ⚠️⚠️⚠️`);
-        console.log(`   status recibido: "${status}"`);
-        console.log(`   status === 'all': ${status === 'all'}`);
-      }
-      
-      // Búsqueda por texto
-      if (search && search !== 'undefined' && search !== '') {
+      if (search && search !== 'undefined') {
         filters.$text = { $search: search };
-        console.log(`   ✅ Aplicando filtro search: ${search}`);
-      }
-      
-      // Si es usuario público (no autenticado), solo ver publicados
-      if (!req.user) {
-        filters.status = 'published';
-        console.log(`   🔒 Usuario público, forzando status: published`);
+        console.log(`   ✅ Filtro search: ${search}`);
       }
       
       const skip = (page - 1) * limit;
       
-      console.log(`\n📋 FILTROS FINALES a aplicar:`);
-      console.log(JSON.stringify(filters, null, 2));
-      console.log(`\n📄 Paginación: skip=${skip}, limit=${limit}`);
-      
-      // 🔥 ESTADÍSTICAS PARA DIAGNÓSTICO
-      console.log(`\n📈 ESTADÍSTICAS DE LA BASE DE DATOS:`);
-      const totalAll = await Content.countDocuments();
-      const totalPublished = await Content.countDocuments({ status: 'published' });
-      const totalDrafts = await Content.countDocuments({ status: 'draft' });
-      const totalArchived = await Content.countDocuments({ status: 'archived' });
-      
-      console.log(`   📚 Total documentos: ${totalAll}`);
-      console.log(`   ✅ Publicados (published): ${totalPublished}`);
-      console.log(`   📝 Borradores (draft): ${totalDrafts}`);
-      console.log(`   📦 Archivados (archived): ${totalArchived}`);
-      
-      // EJECUTAR CONSULTA
-      console.log(`\n🔍 Ejecutando consulta en MongoDB...`);
       const [contents, total] = await Promise.all([
         Content.find(filters)
           .sort({ publishedAt: -1, createdAt: -1 })
           .skip(skip)
           .limit(limit)
           .populate('author', 'email profile')
-          .populate('lastModifiedBy', 'email profile')
           .lean(),
         Content.countDocuments(filters)
       ]);
       
-      console.log(`\n✅ RESULTADO DE LA CONSULTA:`);
-      console.log(`   📦 Documentos devueltos: ${contents.length}`);
-      console.log(`   📊 Total en filtro: ${total}`);
-      console.log(`   📄 Página actual: ${page}`);
-      console.log(`   📑 Páginas totales: ${Math.ceil(total / limit)}`);
-      
-      if (contents.length > 0) {
-        console.log(`\n📰 PRIMERA NOTICIA DEVUELTA:`);
-        console.log(`   Título: ${contents[0].title}`);
-        console.log(`   Status: ${contents[0].status}`);
-        console.log(`   ID: ${contents[0]._id}`);
-      } else {
-        console.log(`\n⚠️ No se encontraron noticias con los filtros aplicados`);
-      }
-      
-      console.log(`\n🏁 [getContents] ========== FIN ==========`);
-      console.log('='.repeat(80) + '\n');
+      console.log(`   📊 Resultado: ${contents.length} de ${total} noticias publicadas`);
+      console.log('🌐 ==============================================================\n');
       
       res.json({
         success: true,
@@ -146,11 +62,7 @@ class ContentController {
         }
       });
     } catch (error) {
-      console.error(`\n❌❌❌ ERROR EN getContents ❌❌❌`);
-      console.error(`   Mensaje: ${error.message}`);
-      console.error(`   Stack: ${error.stack}`);
-      console.error('='.repeat(80) + '\n');
-      
+      console.error('❌ Error en getContentsPublic:', error);
       res.status(500).json({
         success: false,
         message: error.message
@@ -159,72 +71,78 @@ class ContentController {
   }
 
   /**
-   * Crear nuevo contenido (ADMIN)
+   * ============================================
+   * ADMIN DASHBOARD - Todas las noticias (con filtros)
+   * ============================================
    */
-  async createContent(req, res) {
+  async getContentsAdmin(req, res) {
     try {
-      console.log('\n' + '='.repeat(80));
-      console.log('📝 [createContent] CREANDO NUEVO CONTENIDO');
-      console.log(`📅 Fecha/Hora: ${new Date().toISOString()}`);
-      console.log(`👤 Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
-      console.log(`📦 Body recibido:`, JSON.stringify(req.body, null, 2));
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 100;
+      const { type, status, category, search } = req.query;
       
-      const status = req.body.status || 'draft';
-      console.log(`\n🎯 Estado a guardar: ${status}`);
+      console.log('\n🔐 [ADMIN] ========== LISTANDO NOTICIAS PARA DASHBOARD ==========');
+      console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
+      console.log(`   Página: ${page}, Límite: ${limit}`);
+      console.log(`   Filtros: type=${type || 'ninguno'}, status=${status || 'ninguno'}, category=${category || 'ninguno'}, search=${search || 'ninguno'}`);
       
-      const contentData = {
-        title: req.body.title,
-        slug: req.body.slug || this.generateSlug(req.body.title),
-        content: req.body.content,
-        excerpt: req.body.excerpt || '',
-        type: req.body.type || 'news',
-        category: req.body.category || 'noticias',
-        tags: req.body.tags || [],
-        status: status,
-        featuredImage: req.body.featuredImage || { url: '', alt: '' },
-        author: req.user._id,
-        lastModifiedBy: req.user._id,
-        publishedAt: status === 'published' ? new Date() : null
-      };
+      const filters = {};
       
-      console.log(`\n📋 Datos a guardar:`);
-      console.log(`   title: ${contentData.title}`);
-      console.log(`   slug: ${contentData.slug}`);
-      console.log(`   status: ${contentData.status}`);
-      console.log(`   publishedAt: ${contentData.publishedAt || 'null'}`);
+      if (type && type !== 'all' && type !== 'undefined') {
+        filters.type = type;
+        console.log(`   ✅ Filtro type: ${type}`);
+      }
       
-      const content = new Content(contentData);
-      await content.save();
+      if (category && category !== 'undefined') {
+        filters.category = category;
+        console.log(`   ✅ Filtro category: ${category}`);
+      }
       
-      console.log(`\n✅ [createContent] Contenido creado exitosamente`);
-      console.log(`   ID: ${content._id}`);
-      console.log(`   Status guardado: ${content.status}`);
-      console.log('='.repeat(80) + '\n');
+      if (status && status !== 'all' && status !== 'undefined') {
+        filters.status = status;
+        console.log(`   ✅ Filtro status: ${status}`);
+      } else {
+        console.log(`   ⏭️ Sin filtro de estado - mostrando TODOS`);
+      }
       
-      res.status(201).json({
+      if (search && search !== 'undefined') {
+        filters.$text = { $search: search };
+        console.log(`   ✅ Filtro search: ${search}`);
+      }
+      
+      const skip = (page - 1) * limit;
+      
+      const [contents, total] = await Promise.all([
+        Content.find(filters)
+          .sort({ publishedAt: -1, createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .populate('author', 'email profile')
+          .populate('lastModifiedBy', 'email profile')
+          .lean(),
+        Content.countDocuments(filters)
+      ]);
+      
+      console.log(`   📊 Resultado: ${contents.length} de ${total} documentos`);
+      console.log('🔐 ==============================================================\n');
+      
+      res.json({
         success: true,
-        message: 'Contenido creado exitosamente',
-        data: content
+        data: {
+          contents,
+          total,
+          page,
+          limit,
+          pages: Math.ceil(total / limit)
+        }
       });
     } catch (error) {
-      console.error(`\n❌ Error en createContent: ${error.message}`);
-      res.status(400).json({
+      console.error('❌ Error en getContentsAdmin:', error);
+      res.status(500).json({
         success: false,
         message: error.message
       });
     }
-  }
-
-  /**
-   * Generar slug a partir del título
-   */
-  generateSlug(title) {
-    if (!title) return 'sin-titulo-' + Date.now();
-    return title
-      .toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '') + '-' + Date.now();
   }
 
   /**
@@ -233,14 +151,18 @@ class ContentController {
   async getContentBySlug(req, res) {
     try {
       const { slug } = req.params;
-      console.log(`\n🔍 [getContentBySlug] Buscando slug: ${slug}`);
       
-      const content = await Content.findOne({ slug, status: 'published' })
-        .populate('author', 'email profile')
-        .populate('lastModifiedBy', 'email profile');
+      console.log(`\n🔍 [PUBLICO] Buscando noticia por slug: ${slug}`);
+      
+      const content = await Content.findOne({ 
+        slug, 
+        status: 'published' 
+      })
+      .populate('author', 'email profile')
+      .populate('lastModifiedBy', 'email profile');
       
       if (!content) {
-        console.log(`❌ No encontrado: ${slug}`);
+        console.log(`❌ No encontrada: ${slug}`);
         return res.status(404).json({
           success: false,
           message: 'Contenido no encontrado'
@@ -250,7 +172,7 @@ class ContentController {
       content.views += 1;
       await content.save();
       
-      console.log(`✅ Encontrado: ${content.title}`);
+      console.log(`✅ Encontrada: ${content.title}`);
       
       res.json({
         success: true,
@@ -271,21 +193,22 @@ class ContentController {
   async getContentById(req, res) {
     try {
       const { id } = req.params;
-      console.log(`\n🔍 [getContentById] Buscando ID: ${id}`);
+      
+      console.log(`\n🔍 [ADMIN] Buscando noticia por ID: ${id}`);
       
       const content = await Content.findById(id)
         .populate('author', 'email profile')
         .populate('lastModifiedBy', 'email profile');
       
       if (!content) {
-        console.log(`❌ No encontrado: ${id}`);
+        console.log(`❌ No encontrada: ${id}`);
         return res.status(404).json({
           success: false,
           message: 'Contenido no encontrado'
         });
       }
       
-      console.log(`✅ Encontrado: ${content.title}`);
+      console.log(`✅ Encontrada: ${content.title}`);
       
       res.json({
         success: true,
@@ -301,15 +224,77 @@ class ContentController {
   }
 
   /**
+   * Crear nuevo contenido (ADMIN)
+   */
+  async createContent(req, res) {
+    try {
+      console.log('\n' + '='.repeat(80));
+      console.log('📝 [createContent] CREANDO NUEVO CONTENIDO');
+      console.log(`👤 Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
+      console.log(`📦 Título: ${req.body.title}`);
+      console.log(`📦 Estado: ${req.body.status || 'draft'}`);
+      
+      const status = req.body.status || 'draft';
+      
+      const contentData = {
+        title: req.body.title,
+        slug: req.body.slug || this.generateSlug(req.body.title),
+        content: req.body.content,
+        excerpt: req.body.excerpt || '',
+        type: req.body.type || 'news',
+        category: req.body.category || 'noticias',
+        tags: req.body.tags || [],
+        status: status,
+        featuredImage: req.body.featuredImage || { url: '', alt: '' },
+        author: req.user._id,
+        lastModifiedBy: req.user._id,
+        publishedAt: status === 'published' ? new Date() : null
+      };
+      
+      const content = new Content(contentData);
+      await content.save();
+      
+      console.log(`✅ Contenido creado - ID: ${content._id}, Status: ${content.status}`);
+      console.log('='.repeat(80) + '\n');
+      
+      res.status(201).json({
+        success: true,
+        message: 'Contenido creado exitosamente',
+        data: content
+      });
+    } catch (error) {
+      console.error(`❌ Error en createContent: ${error.message}`);
+      res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Generar slug a partir del título
+   */
+  generateSlug(title) {
+    if (!title) return 'sin-titulo-' + Date.now();
+    return title
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') + '-' + Date.now();
+  }
+
+  /**
    * Actualizar contenido (ADMIN)
    */
   async updateContent(req, res) {
     try {
       const { id } = req.params;
+      
       console.log(`\n📝 [updateContent] Actualizando ID: ${id}`);
-      console.log(`👤 Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
+      console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
       
       const content = await Content.findById(id);
+      
       if (!content) {
         console.log(`❌ No encontrado: ${id}`);
         return res.status(404).json({
@@ -318,9 +303,11 @@ class ContentController {
         });
       }
       
-      console.log(`   Estado anterior: ${content.status}`);
+      console.log(`   Título original: ${content.title}`);
+      console.log(`   Estado original: ${content.status}`);
       console.log(`   Nuevo estado: ${req.body.status || 'sin cambio'}`);
       
+      // Guardar versión anterior en historial
       content.versionHistory.push({
         content: content.content,
         modifiedBy: content.lastModifiedBy,
@@ -346,7 +333,7 @@ class ContentController {
       
       await content.save();
       
-      console.log(`✅ Actualizado - Nuevo status: ${content.status}`);
+      console.log(`✅ Actualizado - Nuevo estado: ${content.status}`);
       
       res.json({
         success: true,
@@ -368,9 +355,12 @@ class ContentController {
   async deleteContent(req, res) {
     try {
       const { id } = req.params;
+      
       console.log(`\n🗑️ [deleteContent] Eliminando ID: ${id}`);
+      console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
       
       const content = await Content.findByIdAndDelete(id);
+      
       if (!content) {
         console.log(`❌ No encontrado: ${id}`);
         return res.status(404).json({
@@ -402,9 +392,13 @@ class ContentController {
       const { id } = req.params;
       const { status } = req.body;
       
-      console.log(`\n🔄 [changeStatus] Cambiando estado de ${id} a ${status}`);
+      console.log(`\n🔄 [changeStatus] Cambiando estado`);
+      console.log(`   ID: ${id}`);
+      console.log(`   Nuevo estado: ${status}`);
+      console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
       
       const content = await Content.findById(id);
+      
       if (!content) {
         console.log(`❌ No encontrado: ${id}`);
         return res.status(404).json({
@@ -414,6 +408,7 @@ class ContentController {
       }
       
       console.log(`   Estado anterior: ${content.status}`);
+      
       content.status = status;
       content.lastModifiedBy = req.user._id;
       
@@ -422,6 +417,7 @@ class ContentController {
       }
       
       await content.save();
+      
       console.log(`✅ Estado cambiado a ${status}`);
       
       res.json({
@@ -439,7 +435,7 @@ class ContentController {
   }
 
   /**
-   * Obtener estadísticas de contenido (ADMIN)
+   * Obtener estadísticas de contenido
    */
   async getStats(req, res) {
     try {
@@ -469,6 +465,7 @@ class ContentController {
   async searchContent(req, res) {
     try {
       const { q, limit = 20 } = req.query;
+      
       if (!q) {
         return res.status(400).json({
           success: false,
@@ -509,6 +506,7 @@ class ContentController {
       const limit = parseInt(req.query.limit) || 5;
       
       const current = await Content.findById(id);
+      
       if (!current) {
         return res.json({ success: true, data: [] });
       }
@@ -573,6 +571,8 @@ class ContentController {
   async uploadImage(req, res) {
     try {
       console.log(`\n📸 [uploadImage] Subiendo imagen`);
+      console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
+      
       if (!req.file) {
         return res.status(400).json({
           success: false,

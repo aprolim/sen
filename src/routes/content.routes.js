@@ -6,24 +6,10 @@ const { authenticate, authorize } = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
 
 // ============================================
-// MIDDLEWARE DE DIAGNÓSTICO - LOG DE TODAS LAS PETICIONES
-// ============================================
-router.use((req, res, next) => {
-  console.log('\n🚦 [ROUTES] ========== PETICIÓN RECIBIDA ==========');
-  console.log(`   📌 Método: ${req.method}`);
-  console.log(`   📌 Ruta: ${req.path}`);
-  console.log(`   📌 URL completa: ${req.url}`);
-  console.log(`   📌 Query params:`, req.query);
-  console.log(`   📌 Headers Authorization: ${req.headers.authorization ? 'PRESENTE' : 'AUSENTE'}`);
-  console.log('🚦 ================================================\n');
-  next();
-});
-
-// ============================================
 // RUTAS PÚBLICAS - NO REQUIEREN AUTENTICACIÓN
 // ============================================
-console.log('📌 Configurando ruta pública: GET /');
-router.get('/', contentController.getContents);
+// 🔥 Para el frontend público (centro de noticias)
+router.get('/', contentController.getContentsPublic);
 router.get('/types', contentController.getContentTypes);
 router.get('/categories', contentController.getCategories);
 router.get('/search', contentController.searchContent);
@@ -35,9 +21,10 @@ router.get('/:id', contentController.getContentById);
 // ============================================
 // RUTAS PROTEGIDAS - REQUIEREN AUTENTICACIÓN
 // ============================================
-console.log('🔐 Activando middleware de autenticación para rutas protegidas');
 router.use(authenticate);
 
+// 🔥 Para el dashboard admin (requiere token)
+router.get('/admin', contentController.getContentsAdmin);
 router.post('/', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.createContent);
 router.put('/:id', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.updateContent);
 router.patch('/:id/status', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.changeStatus);
@@ -56,7 +43,5 @@ router.post(
   upload.single('document'),
   contentController.uploadDocument
 );
-
-console.log('✅ Rutas de contenido configuradas correctamente');
 
 module.exports = router;
