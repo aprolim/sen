@@ -8,6 +8,8 @@ const { upload } = require('../middleware/upload');
 // ============================================
 // RUTAS PÚBLICAS - NO REQUIEREN AUTENTICACIÓN
 // ============================================
+// 🔥 IMPORTANTE: getContents DEBE SER PÚBLICA para que el frontend público vea las noticias
+router.get('/', contentController.getContents);
 router.get('/types', contentController.getContentTypes);
 router.get('/categories', contentController.getCategories);
 router.get('/search', contentController.searchContent);
@@ -21,14 +23,13 @@ router.get('/:id', contentController.getContentById);
 // ============================================
 router.use(authenticate);
 
-// 🔥 IMPORTANTE: getContents debe estar DESPUÉS del middleware de autenticación
-router.get('/', contentController.getContents);
-
+// Estas rutas requieren token (crear, editar, eliminar, subir imágenes)
 router.post('/', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.createContent);
 router.put('/:id', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.updateContent);
 router.patch('/:id/status', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.changeStatus);
 router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN'), contentController.deleteContent);
 
+// Subida de imágenes (requiere autenticación)
 router.post(
   '/upload/image',
   authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
