@@ -98,30 +98,28 @@ app.use((req, res, next) => {
 
 // C. RATE LIMITING - Protección DDoS/Brute Force
 const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 1000,
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 1000, // máximo 1000 peticiones por ventana
   message: {
     success: false,
-    message: 'Demasiadas peticiones desde esta IP'
+    message: 'Demasiadas peticiones desde esta IP. Intenta más tarde.'
   },
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => {
-    return req.ip || req.connection.remoteAddress;
-  }
+  standardHeaders: true, // Retorna rate limit info en headers `RateLimit-*`
+  legacyHeaders: false, // Deshabilita headers `X-RateLimit-*`
+  validate: { trustProxy: true } // 🔥 Confiar en proxy para IP
 });
 
 const authLimiter = rateLimit({
-  windowMs: 3 * 60 * 1000,
-  max: 5,
+  windowMs: 3 * 60 * 1000, // 3 minutos
+  max: 5, // máximo 5 intentos
   message: {
     success: false,
     message: 'Demasiados intentos de login. Intenta más tarde.'
   },
-  skipSuccessfulRequests: true,
-  keyGenerator: (req) => {
-    return req.ip || req.connection.remoteAddress;
-  }
+  skipSuccessfulRequests: true, // No contar peticiones exitosas
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { trustProxy: true }
 });
 
 app.use(generalLimiter);
