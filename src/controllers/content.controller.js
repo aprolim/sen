@@ -9,7 +9,7 @@ class ContentController {
    */
   async getContents(req, res) {
     try {
-      // 🔥 HEADERS ANTI-CACHÉ
+      // HEADERS ANTI-CACHÉ
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
@@ -18,33 +18,43 @@ class ContentController {
       const limit = parseInt(req.query.limit) || 100;
       const { type, status, category, search } = req.query;
       
-      console.log('🔍 [getContents] Parámetros recibidos:', { page, limit, type, status, category, search });
+      console.log('🔍 [getContents] ========== INICIO ==========');
+      console.log('🔍 [getContents] Parámetros recibidos:', { 
+        page, 
+        limit, 
+        type: type || 'no', 
+        status: status || 'no', 
+        category: category || 'no', 
+        search: search || 'no' 
+      });
       console.log('🔍 [getContents] Usuario autenticado:', req.user ? req.user.email : 'NO (público)');
       
       const filters = {};
       
       // Filtrar por tipo
-      if (type && type !== 'all') {
+      if (type && type !== 'all' && type !== 'undefined') {
         filters.type = type;
-        console.log('   ✅ Filtro type:', type);
+        console.log('   ✅ Filtro type aplicado:', type);
       }
       
       // Filtrar por categoría
-      if (category) {
+      if (category && category !== 'undefined') {
         filters.category = category;
-        console.log('   ✅ Filtro category:', category);
+        console.log('   ✅ Filtro category aplicado:', category);
       }
       
-      // 🔥 FILTRO POR ESTADO - CORREGIDO
-      if (status && status !== 'all') {
+      // FILTRO POR ESTADO - CORREGIDO
+      if (status && status !== 'all' && status !== 'undefined') {
         filters.status = status;
-        console.log('   ✅ Filtro status:', status);
+        console.log('   ✅ Filtro status aplicado:', status);
+      } else if (status === 'all') {
+        console.log('   ⏭️ Status = "all", no se aplica filtro de estado');
       }
       
       // Búsqueda por texto
-      if (search) {
+      if (search && search !== 'undefined') {
         filters.$text = { $search: search };
-        console.log('   ✅ Filtro search:', search);
+        console.log('   ✅ Filtro search aplicado:', search);
       }
       
       // Si es usuario público (no autenticado), solo ver publicados
@@ -55,7 +65,7 @@ class ContentController {
       
       const skip = (page - 1) * limit;
       
-      console.log('🔍 [getContents] Filtros finales:', JSON.stringify(filters, null, 2));
+      console.log('🔍 [getContents] Filtros finales aplicados:', JSON.stringify(filters, null, 2));
       
       const [contents, total] = await Promise.all([
         Content.find(filters)
@@ -68,7 +78,9 @@ class ContentController {
         Content.countDocuments(filters)
       ]);
       
-      console.log(`📊 [getContents] Resultado: ${contents.length} de ${total} documentos (filtro status: ${status || 'ninguno'})`);
+      console.log(`📊 [getContents] RESULTADO: ${contents.length} documentos de ${total} totales`);
+      console.log(`📊 [getContents] Filtro usado: status=${status || 'ninguno'}`);
+      console.log('🔍 [getContents] ========== FIN ==========\n');
       
       res.json({
         success: true,
