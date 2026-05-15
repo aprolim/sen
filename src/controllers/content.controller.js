@@ -9,6 +9,11 @@ class ContentController {
    */
   async getContents(req, res) {
     try {
+      // 🔥 HEADERS ANTI-CACHÉ
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 100;
       const { type, status, category, search } = req.query;
@@ -30,7 +35,7 @@ class ContentController {
         console.log('   ✅ Filtro category:', category);
       }
       
-      // Filtrar por estado (CORREGIDO)
+      // 🔥 FILTRO POR ESTADO - CORREGIDO
       if (status && status !== 'all') {
         filters.status = status;
         console.log('   ✅ Filtro status:', status);
@@ -58,11 +63,12 @@ class ContentController {
           .skip(skip)
           .limit(limit)
           .populate('author', 'email profile')
-          .populate('lastModifiedBy', 'email profile'),
+          .populate('lastModifiedBy', 'email profile')
+          .lean(),
         Content.countDocuments(filters)
       ]);
       
-      console.log(`📊 [getContents] Resultado: ${contents.length} de ${total} documentos`);
+      console.log(`📊 [getContents] Resultado: ${contents.length} de ${total} documentos (filtro status: ${status || 'ninguno'})`);
       
       res.json({
         success: true,
@@ -491,7 +497,6 @@ class ContentController {
         });
       }
       
-      // Construir URL pública de la imagen
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const imageUrl = `${baseUrl}/uploads/images/${req.file.filename}`;
       

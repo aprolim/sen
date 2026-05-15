@@ -18,24 +18,33 @@ dotenv.config();
 const app = express();
 
 // ============================================
+// TRUST PROXY - Para rate limiting detrás de proxy
+// ============================================
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+} else {
+  app.set('trust proxy', true);
+}
+
+// ============================================
 // 1. SEGURIDAD: CONFIGURACIÓN COMPLETA
 // ============================================
 
-// A. HELMET - Headers de seguridad (MODIFICADO para permitir imágenes)
+// A. HELMET - Headers de seguridad
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:", "http:", "*"],  // Permitir imágenes de cualquier origen
+      imgSrc: ["'self'", "data:", "https:", "http:", "*"],
       fontSrc: ["'self'"],
       connectSrc: ["'self'"],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],
     },
   },
-  crossOriginResourcePolicy: { policy: "cross-origin" }, // Permitir cross-origin para recursos
+  crossOriginResourcePolicy: { policy: "cross-origin" },
   hsts: {
     maxAge: 31536000,
     includeSubDomains: true,
@@ -57,7 +66,7 @@ const corsOptions = {
       'http://demopanel.senado.gob.bo',
       'http://demoap.senado.gob.bo',
       'http://demoback.senado.gob.bo',
-      'https://demoap.senado.gob.bo',  // Agregar HTTPS si aplica
+      'https://demoap.senado.gob.bo',
     ];
     
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
@@ -96,7 +105,10 @@ const generalLimiter = rateLimit({
     message: 'Demasiadas peticiones desde esta IP'
   },
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    return req.ip || req.connection.remoteAddress;
+  }
 });
 
 const authLimiter = rateLimit({
@@ -106,7 +118,10 @@ const authLimiter = rateLimit({
     success: false,
     message: 'Demasiados intentos de login. Intenta más tarde.'
   },
-  skipSuccessfulRequests: true
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => {
+    return req.ip || req.connection.remoteAddress;
+  }
 });
 
 app.use(generalLimiter);
@@ -139,10 +154,9 @@ app.use(express.urlencoded({
 }));
 
 // ============================================
-// SERVIR ARCHIVOS ESTÁTICOS CON CORS (CORREGIDO)
+// SERVIR ARCHIVOS ESTÁTICOS CON CORS
 // ============================================
 app.use('/uploads', (req, res, next) => {
-  // Headers específicos para imágenes
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
@@ -155,7 +169,6 @@ app.use('/uploads', (req, res, next) => {
   next();
 }, express.static(path.join(__dirname, '..', 'uploads'), {
   setHeaders: (res, filepath) => {
-    // Para imágenes, permitir caché y CORS
     if (filepath.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
       res.setHeader('Cache-Control', 'public, max-age=31536000');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
