@@ -14,12 +14,6 @@ class ContentController {
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
       
-      console.log('\n' + '='.repeat(80));
-      console.log('📥 [getContents] ========== INICIO ==========');
-      console.log(`📅 Fecha/Hora: ${new Date().toISOString()}`);
-      console.log(`🔗 URL completa: ${req.method} ${req.originalUrl}`);
-      console.log(`📊 Query params recibidos:`, JSON.stringify(req.query, null, 2));
-      
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 100;
       const type = req.query.type;
@@ -27,85 +21,50 @@ class ContentController {
       const category = req.query.category;
       const search = req.query.search;
       
-      console.log(`\n📋 PARÁMETROS PROCESADOS:`);
-      console.log(`   page: ${page}`);
-      console.log(`   limit: ${limit}`);
-      console.log(`   type: ${type || 'no definido'}`);
-      console.log(`   status: ${status || 'no definido'}`);
-      console.log(`   category: ${category || 'no definido'}`);
-      console.log(`   search: ${search || 'no definido'}`);
-      
-      // VERIFICAR AUTENTICACIÓN
-      console.log(`\n🔐 ESTADO DE AUTENTICACIÓN:`);
-      if (req.user) {
-        console.log(`   ✅ Usuario autenticado: ${req.user.email}`);
-        console.log(`   📛 Rol: ${req.user.role}`);
-        console.log(`   🆔 ID: ${req.user._id}`);
-      } else {
-        console.log(`   ❌ NO HAY USUARIO AUTENTICADO (público)`);
-      }
+      console.log('\n' + '='.repeat(80));
+      console.log('📥 [getContents] SOLICITUD RECIBIDA');
+      console.log(`   status recibido: ${status || 'no enviado'}`);
+      console.log(`   Usuario autenticado: ${req.user ? req.user.email : 'NO'}`);
       
       const filters = {};
       
       // Filtrar por tipo
       if (type && type !== 'all' && type !== 'undefined' && type !== '') {
         filters.type = type;
-        console.log(`\n🎯 FILTRO APLICADO - type: ${type}`);
-      } else {
-        console.log(`\n⏭️ No se aplica filtro type (valor: ${type || 'vacío'})`);
       }
       
       // Filtrar por categoría
       if (category && category !== 'undefined' && category !== '') {
         filters.category = category;
-        console.log(`🎯 FILTRO APLICADO - category: ${category}`);
       }
       
-      // 🔥 FILTRO POR ESTADO - EL MÁS IMPORTANTE
+      // 🔥 FILTRO POR ESTADO - CORREGIDO
       if (status && status !== 'all' && status !== 'undefined' && status !== '') {
         filters.status = status;
-        console.log(`🎯 ✅✅✅ FILTRO APLICADO - status: ${status} ✅✅✅`);
+        console.log(`   ✅ Aplicando filtro status: ${status}`);
+      } else if (status === 'all') {
+        console.log(`   ⏭️ status = "all", no se filtra por estado`);
       } else {
-        console.log(`⚠️⚠️⚠️ NO se aplica filtro de estado - valor recibido: "${status}" ⚠️⚠️⚠️`);
-        if (status === 'all') {
-          console.log(`   (el cliente envió "all", no se filtra por estado)`);
-        } else if (!status) {
-          console.log(`   (no se recibió parámetro status)`);
+        // 🔥 IMPORTANTE: Si NO hay filtro de estado Y el usuario es admin, mostrar TODOS
+        if (req.user) {
+          console.log(`   🔓 Usuario ADMIN sin filtro de estado - mostrando TODOS los estados`);
+          // No agregamos filtro de status - mostrará todos
+        } else {
+          // Usuario público: solo publicados
+          filters.status = 'published';
+          console.log(`   🔒 Usuario público - forzando status: published`);
         }
       }
       
       // Búsqueda por texto
       if (search && search !== 'undefined' && search !== '') {
         filters.$text = { $search: search };
-        console.log(`🎯 FILTRO APLICADO - search: ${search}`);
-      }
-      
-      // 🔥 IMPORTANTE: Si es usuario público (no autenticado), forzar solo publicados
-      if (!req.user) {
-        filters.status = 'published';
-        console.log(`\n🔒 USUARIO PÚBLICO - Forzando status: published`);
       }
       
       const skip = (page - 1) * limit;
       
-      console.log(`\n📊 FILTROS FINALES a aplicar:`);
-      console.log(JSON.stringify(filters, null, 2));
-      console.log(`\n📄 Paginación: skip=${skip}, limit=${limit}`);
+      console.log(`\n📋 FILTROS FINALES:`, JSON.stringify(filters, null, 2));
       
-      // 🔥 ESTADÍSTICAS PARA DIAGNÓSTICO
-      console.log(`\n📈 ESTADÍSTICAS DE LA BASE DE DATOS:`);
-      const totalAll = await Content.countDocuments();
-      const totalPublished = await Content.countDocuments({ status: 'published' });
-      const totalDrafts = await Content.countDocuments({ status: 'draft' });
-      const totalArchived = await Content.countDocuments({ status: 'archived' });
-      
-      console.log(`   📚 Total documentos: ${totalAll}`);
-      console.log(`   ✅ Publicados (published): ${totalPublished}`);
-      console.log(`   📝 Borradores (draft): ${totalDrafts}`);
-      console.log(`   📦 Archivados (archived): ${totalArchived}`);
-      
-      // EJECUTAR CONSULTA
-      console.log(`\n🔍 Ejecutando consulta en MongoDB...`);
       const [contents, total] = await Promise.all([
         Content.find(filters)
           .sort({ publishedAt: -1, createdAt: -1 })
@@ -117,23 +76,7 @@ class ContentController {
         Content.countDocuments(filters)
       ]);
       
-      console.log(`\n✅ RESULTADO DE LA CONSULTA:`);
-      console.log(`   📦 Documentos devueltos: ${contents.length}`);
-      console.log(`   📊 Total en filtro: ${total}`);
-      console.log(`   📄 Página actual: ${page}`);
-      console.log(`   📑 Páginas totales: ${Math.ceil(total / limit)}`);
-      
-      if (contents.length > 0) {
-        console.log(`\n📰 PRIMERA NOTICIA DEVUELTA:`);
-        console.log(`   Título: ${contents[0].title}`);
-        console.log(`   Status: ${contents[0].status}`);
-        console.log(`   ID: ${contents[0]._id}`);
-      } else {
-        console.log(`\n⚠️ No se encontraron noticias con los filtros aplicados`);
-      }
-      
-      console.log(`\n🏁 [getContents] ========== FIN ==========`);
-      console.log('='.repeat(80) + '\n');
+      console.log(`\n✅ RESULTADO: ${contents.length} de ${total} documentos`);
       
       res.json({
         success: true,
@@ -146,11 +89,7 @@ class ContentController {
         }
       });
     } catch (error) {
-      console.error(`\n❌❌❌ ERROR EN getContents ❌❌❌`);
-      console.error(`   Mensaje: ${error.message}`);
-      console.error(`   Stack: ${error.stack}`);
-      console.error('='.repeat(80) + '\n');
-      
+      console.error('❌ Error en getContents:', error);
       res.status(500).json({
         success: false,
         message: error.message
