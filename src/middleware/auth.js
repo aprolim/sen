@@ -4,23 +4,22 @@ const User = require('../models/User');
 
 /**
  * Middleware para verificar token JWT
- * MODIFICADO: Permite peticiones OPTIONS (preflight CORS) sin autenticación
  */
 const authenticate = async (req, res, next) => {
   console.log('\n🔐 ========== AUTH MIDDLEWARE INICIADO ==========');
+  console.log('📌 Método:', req.method);
+  console.log('📌 Ruta:', req.path);
   
-  // ✅ NUEVO: Permitir peticiones OPTIONS (preflight CORS)
+  // Permitir peticiones OPTIONS (preflight CORS) sin autenticación
   if (req.method === 'OPTIONS') {
     console.log('📡 OPTIONS request - permitiendo sin autenticación');
     return next();
   }
   
   try {
-    // Obtener token del header
     const authHeader = req.header('Authorization');
     
-    console.log('📌 Headers completos:', req.headers);
-    console.log('📌 Authorization header:', authHeader);
+    console.log('📌 Authorization header:', authHeader ? authHeader.substring(0, 50) + '...' : 'NO');
     
     if (!authHeader) {
       console.log('❌ No hay header Authorization');
@@ -31,7 +30,7 @@ const authenticate = async (req, res, next) => {
     }
 
     const token = authHeader.replace('Bearer ', '');
-    console.log('🔑 Token extraído (primeros 50 chars):', token.substring(0, 50) + '...');
+    console.log('🔑 Token extraído (primeros 30 chars):', token.substring(0, 30) + '...');
     
     if (!token) {
       console.log('❌ Token vacío después de replace');
@@ -41,17 +40,12 @@ const authenticate = async (req, res, next) => {
       });
     }
     
-    // Verificar token
-    console.log('🔐 JWT_SECRET usado:', process.env.JWT_SECRET.substring(0, 20) + '...');
-    
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
-      console.log('✅ Token verificado. Payload:', decoded);
+      console.log('✅ Token verificado. userId:', decoded.userId);
     } catch (jwtError) {
       console.log('❌ Error verificando token:', jwtError.message);
-      console.log('🔍 Tipo de error:', jwtError.name);
-      
       if (jwtError.name === 'JsonWebTokenError') {
         return res.status(401).json({
           success: false,
@@ -67,7 +61,6 @@ const authenticate = async (req, res, next) => {
       throw jwtError;
     }
     
-    // Buscar usuario
     console.log('🔍 Buscando usuario con ID:', decoded.userId);
     const user = await User.findById(decoded.userId);
     
@@ -89,10 +82,9 @@ const authenticate = async (req, res, next) => {
       });
     }
     
-    // Adjuntar usuario a la request
     req.user = user;
     req.token = token;
-    console.log('✅ Usuario autenticado correctamente. req.user asignado:', !!req.user);
+    console.log('✅ req.user asignado correctamente');
     console.log('🔚 ========== AUTH MIDDLEWARE FINALIZADO ==========\n');
     
     next();

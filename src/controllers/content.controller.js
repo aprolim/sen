@@ -9,6 +9,23 @@ class ContentController {
    */
   async getContents(req, res) {
     try {
+      // 🔥 LOG #1 - Ver qué llega al backend
+      console.log('\n' + '='.repeat(80));
+      console.log('🔥🔥🔥 [GETCONTENTS] LLAMADA RECIBIDA 🔥🔥🔥');
+      console.log('📅 Fecha/Hora:', new Date().toISOString());
+      console.log('🔗 URL completa:', req.url);
+      console.log('📊 QUERY STRING:', req.query);
+      console.log('📊 req.query.status:', req.query.status);
+      console.log('📊 req.query.type:', req.query.type);
+      console.log('📊 req.query.category:', req.query.category);
+      console.log('📊 req.query.search:', req.query.search);
+      console.log('📊 req.query.page:', req.query.page);
+      console.log('📊 req.query.limit:', req.query.limit);
+      console.log('👤 Usuario autenticado:', req.user ? req.user.email : 'NO');
+      console.log('👤 ID Usuario:', req.user ? req.user._id : 'NO');
+      console.log('👤 Rol Usuario:', req.user ? req.user.role : 'NO');
+      console.log('='.repeat(80));
+      
       // HEADERS ANTI-CACHÉ
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Pragma', 'no-cache');
@@ -21,50 +38,74 @@ class ContentController {
       const category = req.query.category;
       const search = req.query.search;
       
-      console.log('\n' + '='.repeat(80));
-      console.log('📥 [getContents] SOLICITUD RECIBIDA');
-      console.log(`   status recibido: ${status || 'no enviado'}`);
-      console.log(`   Usuario autenticado: ${req.user ? req.user.email : 'NO'}`);
+      console.log(`\n📋 PARÁMETROS PROCESADOS:`);
+      console.log(`   page: ${page}`);
+      console.log(`   limit: ${limit}`);
+      console.log(`   type: ${type || 'no definido'}`);
+      console.log(`   status: ${status || 'no definido'}`);
+      console.log(`   category: ${category || 'no definido'}`);
+      console.log(`   search: ${search || 'no definido'}`);
       
       const filters = {};
       
       // Filtrar por tipo
       if (type && type !== 'all' && type !== 'undefined' && type !== '') {
         filters.type = type;
+        console.log(`   ✅ Aplicando filtro type: ${type}`);
+      } else {
+        console.log(`   ⏭️ No aplica filtro type`);
       }
       
       // Filtrar por categoría
       if (category && category !== 'undefined' && category !== '') {
         filters.category = category;
+        console.log(`   ✅ Aplicando filtro category: ${category}`);
+      } else {
+        console.log(`   ⏭️ No aplica filtro category`);
       }
       
-      // 🔥 FILTRO POR ESTADO - CORREGIDO
+      // 🔥 FILTRO POR ESTADO - EL MÁS IMPORTANTE
       if (status && status !== 'all' && status !== 'undefined' && status !== '') {
         filters.status = status;
-        console.log(`   ✅ Aplicando filtro status: ${status}`);
-      } else if (status === 'all') {
-        console.log(`   ⏭️ status = "all", no se filtra por estado`);
+        console.log(`   ✅✅✅ APLICANDO FILTRO status: ${status} ✅✅✅`);
       } else {
-        // 🔥 IMPORTANTE: Si NO hay filtro de estado Y el usuario es admin, mostrar TODOS
-        if (req.user) {
-          console.log(`   🔓 Usuario ADMIN sin filtro de estado - mostrando TODOS los estados`);
-          // No agregamos filtro de status - mostrará todos
-        } else {
-          // Usuario público: solo publicados
-          filters.status = 'published';
-          console.log(`   🔒 Usuario público - forzando status: published`);
-        }
+        console.log(`   ⚠️⚠️⚠️ NO SE APLICA FILTRO status ⚠️⚠️⚠️`);
+        console.log(`   status recibido: "${status}"`);
+        console.log(`   status === 'all': ${status === 'all'}`);
       }
       
       // Búsqueda por texto
       if (search && search !== 'undefined' && search !== '') {
         filters.$text = { $search: search };
+        console.log(`   ✅ Aplicando filtro search: ${search}`);
+      }
+      
+      // Si es usuario público (no autenticado), solo ver publicados
+      if (!req.user) {
+        filters.status = 'published';
+        console.log(`   🔒 Usuario público, forzando status: published`);
       }
       
       const skip = (page - 1) * limit;
       
-      console.log(`\n📋 FILTROS FINALES:`, JSON.stringify(filters, null, 2));
+      console.log(`\n📋 FILTROS FINALES a aplicar:`);
+      console.log(JSON.stringify(filters, null, 2));
+      console.log(`\n📄 Paginación: skip=${skip}, limit=${limit}`);
       
+      // 🔥 ESTADÍSTICAS PARA DIAGNÓSTICO
+      console.log(`\n📈 ESTADÍSTICAS DE LA BASE DE DATOS:`);
+      const totalAll = await Content.countDocuments();
+      const totalPublished = await Content.countDocuments({ status: 'published' });
+      const totalDrafts = await Content.countDocuments({ status: 'draft' });
+      const totalArchived = await Content.countDocuments({ status: 'archived' });
+      
+      console.log(`   📚 Total documentos: ${totalAll}`);
+      console.log(`   ✅ Publicados (published): ${totalPublished}`);
+      console.log(`   📝 Borradores (draft): ${totalDrafts}`);
+      console.log(`   📦 Archivados (archived): ${totalArchived}`);
+      
+      // EJECUTAR CONSULTA
+      console.log(`\n🔍 Ejecutando consulta en MongoDB...`);
       const [contents, total] = await Promise.all([
         Content.find(filters)
           .sort({ publishedAt: -1, createdAt: -1 })
@@ -76,7 +117,23 @@ class ContentController {
         Content.countDocuments(filters)
       ]);
       
-      console.log(`\n✅ RESULTADO: ${contents.length} de ${total} documentos`);
+      console.log(`\n✅ RESULTADO DE LA CONSULTA:`);
+      console.log(`   📦 Documentos devueltos: ${contents.length}`);
+      console.log(`   📊 Total en filtro: ${total}`);
+      console.log(`   📄 Página actual: ${page}`);
+      console.log(`   📑 Páginas totales: ${Math.ceil(total / limit)}`);
+      
+      if (contents.length > 0) {
+        console.log(`\n📰 PRIMERA NOTICIA DEVUELTA:`);
+        console.log(`   Título: ${contents[0].title}`);
+        console.log(`   Status: ${contents[0].status}`);
+        console.log(`   ID: ${contents[0]._id}`);
+      } else {
+        console.log(`\n⚠️ No se encontraron noticias con los filtros aplicados`);
+      }
+      
+      console.log(`\n🏁 [getContents] ========== FIN ==========`);
+      console.log('='.repeat(80) + '\n');
       
       res.json({
         success: true,
@@ -89,7 +146,11 @@ class ContentController {
         }
       });
     } catch (error) {
-      console.error('❌ Error en getContents:', error);
+      console.error(`\n❌❌❌ ERROR EN getContents ❌❌❌`);
+      console.error(`   Mensaje: ${error.message}`);
+      console.error(`   Stack: ${error.stack}`);
+      console.error('='.repeat(80) + '\n');
+      
       res.status(500).json({
         success: false,
         message: error.message
@@ -108,7 +169,6 @@ class ContentController {
       console.log(`👤 Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
       console.log(`📦 Body recibido:`, JSON.stringify(req.body, null, 2));
       
-      // Asegurar que el status se guarda correctamente
       const status = req.body.status || 'draft';
       console.log(`\n🎯 Estado a guardar: ${status}`);
       
@@ -132,7 +192,6 @@ class ContentController {
       console.log(`   slug: ${contentData.slug}`);
       console.log(`   status: ${contentData.status}`);
       console.log(`   publishedAt: ${contentData.publishedAt || 'null'}`);
-      console.log(`   category: ${contentData.category}`);
       
       const content = new Content(contentData);
       await content.save();
@@ -140,7 +199,6 @@ class ContentController {
       console.log(`\n✅ [createContent] Contenido creado exitosamente`);
       console.log(`   ID: ${content._id}`);
       console.log(`   Status guardado: ${content.status}`);
-      console.log(`   Título: ${content.title}`);
       console.log('='.repeat(80) + '\n');
       
       res.status(201).json({
@@ -149,11 +207,7 @@ class ContentController {
         data: content
       });
     } catch (error) {
-      console.error(`\n❌❌❌ ERROR EN createContent ❌❌❌`);
-      console.error(`   Mensaje: ${error.message}`);
-      console.error(`   Stack: ${error.stack}`);
-      console.error('='.repeat(80) + '\n');
-      
+      console.error(`\n❌ Error en createContent: ${error.message}`);
       res.status(400).json({
         success: false,
         message: error.message
@@ -179,31 +233,24 @@ class ContentController {
   async getContentBySlug(req, res) {
     try {
       const { slug } = req.params;
-      
       console.log(`\n🔍 [getContentBySlug] Buscando slug: ${slug}`);
-      console.log(`📅 Fecha/Hora: ${new Date().toISOString()}`);
       
-      const content = await Content.findOne({ 
-        slug, 
-        status: 'published' 
-      })
-      .populate('author', 'email profile')
-      .populate('lastModifiedBy', 'email profile');
+      const content = await Content.findOne({ slug, status: 'published' })
+        .populate('author', 'email profile')
+        .populate('lastModifiedBy', 'email profile');
       
       if (!content) {
-        console.log(`❌ [getContentBySlug] No encontrado: ${slug}`);
+        console.log(`❌ No encontrado: ${slug}`);
         return res.status(404).json({
           success: false,
           message: 'Contenido no encontrado'
         });
       }
       
-      // Incrementar vistas
       content.views += 1;
       await content.save();
       
-      console.log(`✅ [getContentBySlug] Encontrado: ${content.title}`);
-      console.log(`   Vistas: ${content.views}`);
+      console.log(`✅ Encontrado: ${content.title}`);
       
       res.json({
         success: true,
@@ -224,7 +271,6 @@ class ContentController {
   async getContentById(req, res) {
     try {
       const { id } = req.params;
-      
       console.log(`\n🔍 [getContentById] Buscando ID: ${id}`);
       
       const content = await Content.findById(id)
@@ -232,14 +278,14 @@ class ContentController {
         .populate('lastModifiedBy', 'email profile');
       
       if (!content) {
-        console.log(`❌ [getContentById] No encontrado: ${id}`);
+        console.log(`❌ No encontrado: ${id}`);
         return res.status(404).json({
           success: false,
           message: 'Contenido no encontrado'
         });
       }
       
-      console.log(`✅ [getContentById] Encontrado: ${content.title}`);
+      console.log(`✅ Encontrado: ${content.title}`);
       
       res.json({
         success: true,
@@ -260,27 +306,21 @@ class ContentController {
   async updateContent(req, res) {
     try {
       const { id } = req.params;
-      
       console.log(`\n📝 [updateContent] Actualizando ID: ${id}`);
-      console.log(`📅 Fecha/Hora: ${new Date().toISOString()}`);
       console.log(`👤 Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
-      console.log(`📦 Body:`, JSON.stringify(req.body, null, 2));
       
       const content = await Content.findById(id);
-      
       if (!content) {
-        console.log(`❌ [updateContent] No encontrado: ${id}`);
+        console.log(`❌ No encontrado: ${id}`);
         return res.status(404).json({
           success: false,
           message: 'Contenido no encontrado'
         });
       }
       
-      console.log(`📰 Contenido original:`);
-      console.log(`   title: ${content.title}`);
-      console.log(`   status: ${content.status}`);
+      console.log(`   Estado anterior: ${content.status}`);
+      console.log(`   Nuevo estado: ${req.body.status || 'sin cambio'}`);
       
-      // Guardar versión anterior en historial
       content.versionHistory.push({
         content: content.content,
         modifiedBy: content.lastModifiedBy,
@@ -289,13 +329,11 @@ class ContentController {
         comment: req.body.versionComment || 'Actualización'
       });
       
-      // Actualizar campos permitidos
       const allowedFields = ['title', 'slug', 'content', 'excerpt', 'type', 'category', 'tags', 'status', 'featuredImage', 'gallery', 'seo', 'scheduledFor'];
       
       allowedFields.forEach(field => {
         if (req.body[field] !== undefined) {
           content[field] = req.body[field];
-          console.log(`   ✏️ Actualizando ${field}`);
         }
       });
       
@@ -304,14 +342,11 @@ class ContentController {
       
       if (req.body.status === 'published' && !content.publishedAt) {
         content.publishedAt = new Date();
-        console.log(`   📅 Estableciendo publishedAt: ${content.publishedAt}`);
       }
       
       await content.save();
       
-      console.log(`\n✅ [updateContent] Actualizado exitosamente`);
-      console.log(`   Nuevo status: ${content.status}`);
-      console.log(`   Nueva revisión: ${content.revision}`);
+      console.log(`✅ Actualizado - Nuevo status: ${content.status}`);
       
       res.json({
         success: true,
@@ -333,21 +368,18 @@ class ContentController {
   async deleteContent(req, res) {
     try {
       const { id } = req.params;
-      
       console.log(`\n🗑️ [deleteContent] Eliminando ID: ${id}`);
-      console.log(`👤 Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
       
       const content = await Content.findByIdAndDelete(id);
-      
       if (!content) {
-        console.log(`❌ [deleteContent] No encontrado: ${id}`);
+        console.log(`❌ No encontrado: ${id}`);
         return res.status(404).json({
           success: false,
           message: 'Contenido no encontrado'
         });
       }
       
-      console.log(`✅ [deleteContent] Eliminado: ${content.title}`);
+      console.log(`✅ Eliminado: ${content.title}`);
       
       res.json({
         success: true,
@@ -370,15 +402,11 @@ class ContentController {
       const { id } = req.params;
       const { status } = req.body;
       
-      console.log(`\n🔄 [changeStatus] Cambiando estado`);
-      console.log(`   ID: ${id}`);
-      console.log(`   Nuevo estado: ${status}`);
-      console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
+      console.log(`\n🔄 [changeStatus] Cambiando estado de ${id} a ${status}`);
       
       const content = await Content.findById(id);
-      
       if (!content) {
-        console.log(`❌ [changeStatus] No encontrado: ${id}`);
+        console.log(`❌ No encontrado: ${id}`);
         return res.status(404).json({
           success: false,
           message: 'Contenido no encontrado'
@@ -386,18 +414,15 @@ class ContentController {
       }
       
       console.log(`   Estado anterior: ${content.status}`);
-      
       content.status = status;
       content.lastModifiedBy = req.user._id;
       
       if (status === 'published' && !content.publishedAt) {
         content.publishedAt = new Date();
-        console.log(`   📅 Estableciendo publishedAt: ${content.publishedAt}`);
       }
       
       await content.save();
-      
-      console.log(`✅ [changeStatus] Estado cambiado a ${status}`);
+      console.log(`✅ Estado cambiado a ${status}`);
       
       res.json({
         success: true,
@@ -423,20 +448,11 @@ class ContentController {
       const drafts = await Content.countDocuments({ status: 'draft' });
       const archived = await Content.countDocuments({ status: 'archived' });
       
-      console.log(`\n📊 [getStats] ESTADÍSTICAS:`);
-      console.log(`   Total: ${total}`);
-      console.log(`   Publicadas: ${published}`);
-      console.log(`   Borradores: ${drafts}`);
-      console.log(`   Archivadas: ${archived}`);
+      console.log(`\n📊 [getStats] Total: ${total}, Publicadas: ${published}, Borradores: ${drafts}, Archivadas: ${archived}`);
       
       res.json({
         success: true,
-        data: {
-          total,
-          published,
-          drafts,
-          archived
-        }
+        data: { total, published, drafts, archived }
       });
     } catch (error) {
       console.error(`❌ Error en getStats: ${error.message}`);
@@ -453,7 +469,6 @@ class ContentController {
   async searchContent(req, res) {
     try {
       const { q, limit = 20 } = req.query;
-      
       if (!q) {
         return res.status(400).json({
           success: false,
@@ -464,16 +479,13 @@ class ContentController {
       console.log(`\n🔍 [searchContent] Buscando: ${q}`);
       
       const results = await Content.find(
-        { 
-          $text: { $search: q },
-          status: 'published'
-        },
+        { $text: { $search: q }, status: 'published' },
         { score: { $meta: 'textScore' } }
       )
       .sort({ score: { $meta: 'textScore' } })
       .limit(parseInt(limit));
       
-      console.log(`✅ [searchContent] Encontrados: ${results.length}`);
+      console.log(`✅ Encontrados: ${results.length}`);
       
       res.json({
         success: true,
@@ -497,7 +509,6 @@ class ContentController {
       const limit = parseInt(req.query.limit) || 5;
       
       const current = await Content.findById(id);
-      
       if (!current) {
         return res.json({ success: true, data: [] });
       }
@@ -530,40 +541,30 @@ class ContentController {
    * Obtener tipos de contenido disponibles
    */
   async getContentTypes(req, res) {
-    try {
-      const types = [
-        { value: 'page', label: 'Página', description: 'Páginas estáticas' },
-        { value: 'news', label: 'Noticia', description: 'Noticias y anuncios' },
-        { value: 'article', label: 'Artículo', description: 'Artículos de opinión' },
-        { value: 'announcement', label: 'Anuncio', description: 'Comunicados oficiales' },
-      ];
-      
-      res.json({ success: true, data: types });
-    } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
-    }
+    const types = [
+      { value: 'page', label: 'Página', description: 'Páginas estáticas' },
+      { value: 'news', label: 'Noticia', description: 'Noticias y anuncios' },
+      { value: 'article', label: 'Artículo', description: 'Artículos de opinión' },
+      { value: 'announcement', label: 'Anuncio', description: 'Comunicados oficiales' },
+    ];
+    res.json({ success: true, data: types });
   }
 
   /**
    * Obtener categorías disponibles
    */
   async getCategories(req, res) {
-    try {
-      const categories = [
-        { value: 'institucional', label: 'Institucional', color: 'blue' },
-        { value: 'historia', label: 'Historia', color: 'green' },
-        { value: 'directiva', label: 'Directiva', color: 'purple' },
-        { value: 'noticias', label: 'Noticias', color: 'orange' },
-        { value: 'eventos', label: 'Eventos', color: 'red' },
-        { value: 'transparencia', label: 'Transparencia', color: 'teal' },
-        { value: 'participacion', label: 'Participación', color: 'cyan' },
-        { value: 'legislacion', label: 'Legislación', color: 'indigo' },
-      ];
-      
-      res.json({ success: true, data: categories });
-    } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
-    }
+    const categories = [
+      { value: 'institucional', label: 'Institucional', color: 'blue' },
+      { value: 'historia', label: 'Historia', color: 'green' },
+      { value: 'directiva', label: 'Directiva', color: 'purple' },
+      { value: 'noticias', label: 'Noticias', color: 'orange' },
+      { value: 'eventos', label: 'Eventos', color: 'red' },
+      { value: 'transparencia', label: 'Transparencia', color: 'teal' },
+      { value: 'participacion', label: 'Participación', color: 'cyan' },
+      { value: 'legislacion', label: 'Legislación', color: 'indigo' },
+    ];
+    res.json({ success: true, data: categories });
   }
 
   /**
@@ -572,11 +573,7 @@ class ContentController {
   async uploadImage(req, res) {
     try {
       console.log(`\n📸 [uploadImage] Subiendo imagen`);
-      console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
-      console.log(`   Archivo:`, req.file);
-      
       if (!req.file) {
-        console.log(`❌ No se subió ninguna imagen`);
         return res.status(400).json({
           success: false,
           message: 'No se subió ninguna imagen'
@@ -586,7 +583,7 @@ class ContentController {
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const imageUrl = `${baseUrl}/uploads/images/${req.file.filename}`;
       
-      console.log(`✅ Imagen subida exitosamente: ${imageUrl}`);
+      console.log(`✅ Imagen subida: ${imageUrl}`);
       
       res.json({
         success: true,
@@ -603,8 +600,7 @@ class ContentController {
       console.error(`❌ Error subiendo imagen: ${error.message}`);
       res.status(500).json({
         success: false,
-        message: 'Error al subir la imagen',
-        error: error.message
+        message: 'Error al subir la imagen'
       });
     }
   }

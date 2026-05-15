@@ -6,9 +6,23 @@ const { authenticate, authorize } = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
 
 // ============================================
+// MIDDLEWARE DE DIAGNÓSTICO - LOG DE TODAS LAS PETICIONES
+// ============================================
+router.use((req, res, next) => {
+  console.log('\n🚦 [ROUTES] ========== PETICIÓN RECIBIDA ==========');
+  console.log(`   📌 Método: ${req.method}`);
+  console.log(`   📌 Ruta: ${req.path}`);
+  console.log(`   📌 URL completa: ${req.url}`);
+  console.log(`   📌 Query params:`, req.query);
+  console.log(`   📌 Headers Authorization: ${req.headers.authorization ? 'PRESENTE' : 'AUSENTE'}`);
+  console.log('🚦 ================================================\n');
+  next();
+});
+
+// ============================================
 // RUTAS PÚBLICAS - NO REQUIEREN AUTENTICACIÓN
 // ============================================
-// 🔥 IMPORTANTE: getContents DEBE SER PÚBLICA para que el frontend público vea las noticias
+console.log('📌 Configurando ruta pública: GET /');
 router.get('/', contentController.getContents);
 router.get('/types', contentController.getContentTypes);
 router.get('/categories', contentController.getCategories);
@@ -21,15 +35,14 @@ router.get('/:id', contentController.getContentById);
 // ============================================
 // RUTAS PROTEGIDAS - REQUIEREN AUTENTICACIÓN
 // ============================================
+console.log('🔐 Activando middleware de autenticación para rutas protegidas');
 router.use(authenticate);
 
-// Estas rutas requieren token (crear, editar, eliminar, subir imágenes)
 router.post('/', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.createContent);
 router.put('/:id', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.updateContent);
 router.patch('/:id/status', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.changeStatus);
 router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN'), contentController.deleteContent);
 
-// Subida de imágenes (requiere autenticación)
 router.post(
   '/upload/image',
   authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
@@ -43,5 +56,7 @@ router.post(
   upload.single('document'),
   contentController.uploadDocument
 );
+
+console.log('✅ Rutas de contenido configuradas correctamente');
 
 module.exports = router;
