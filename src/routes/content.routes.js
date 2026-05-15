@@ -13,7 +13,6 @@ router.get('/categories', contentController.getCategories);
 router.get('/search', contentController.searchContent);
 router.get('/slug/:slug', contentController.getContentBySlug);
 router.get('/:id/related', contentController.getRelatedContent);
-router.get('/', contentController.getContents);
 router.get('/stats', contentController.getStats);
 router.get('/:id', contentController.getContentById);
 
@@ -22,12 +21,14 @@ router.get('/:id', contentController.getContentById);
 // ============================================
 router.use(authenticate);
 
+// 🔥 IMPORTANTE: getContents debe estar DESPUÉS del middleware de autenticación
+router.get('/', contentController.getContents);
+
 router.post('/', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.createContent);
 router.put('/:id', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.updateContent);
 router.patch('/:id/status', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.changeStatus);
 router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN'), contentController.deleteContent);
 
-// ⚠️ IMPORTANTE: La ruta de upload debe ir ANTES de las rutas con parámetros
 router.post(
   '/upload/image',
   authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),

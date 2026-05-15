@@ -58,6 +58,7 @@ package.json
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
     "test": "echo \"Error: no test specified\" && exit 1",
+    "seed:content": "node src/scripts/seedContent.js",
     "seed:tabs": "node src/scripts/seedTabs.js"
   },
   "dependencies": {
@@ -117,6 +118,15 @@ dotenv.config();
 const app = express();
 
 // ============================================
+// TRUST PROXY - Para rate limiting detrás de proxy
+// ============================================
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+} else {
+  app.set('trust proxy', true);
+}
+
+// ============================================
 // 1. SEGURIDAD: CONFIGURACIÓN COMPLETA
 // ============================================
 
@@ -127,13 +137,14 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:"],
+      imgSrc: ["'self'", "data:", "https:", "http:", "*"],
       fontSrc: ["'self'"],
       connectSrc: ["'self'"],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],
     },
   },
+  crossOriginResourcePolicy: { policy: "cross-origin" },
   hsts: {
     maxAge: 31536000,
     includeSubDomains: true,
@@ -154,11 +165,14 @@ const corsOptions = {
       'http://10.0.0.21',
       'http://demopanel.senado.gob.bo',
       'http://demoap.senado.gob.bo',
+      'http://demoback.senado.gob.bo',
+      'https://demoap.senado.gob.bo',
     ];
     
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
+      console.log('❌ Origen bloqueado por CORS:', origin);
       callback(new Error('Origen no permitido por CORS'));
     }
   },
@@ -184,24 +198,28 @@ app.use((req, res, next) => {
 
 // C. RATE LIMITING - Protección DDoS/Brute Force
 const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 1000,
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 1000, // máximo 1000 peticiones por ventana
   message: {
     success: false,
-    message: 'Demasiadas peticiones desde esta IP'
+    message: 'Demasiadas peticiones desde esta IP. Intenta más tarde.'
   },
-  standardHeaders: true,
-  legacyHeaders: false
+  standardHeaders: true, // Retorna rate limit info en headers `RateLimit-*`
+  legacyHeaders: false, // Deshabilita headers `X-RateLimit-*`
+  validate: { trustProxy: true } // 🔥 Confiar en proxy para IP
 });
 
 const authLimiter = rateLimit({
-  windowMs: 3 * 60 * 1000,
-  max: 5,
+  windowMs: 3 * 60 * 1000, // 3 minutos
+  max: 5, // máximo 5 intentos
   message: {
     success: false,
     message: 'Demasiados intentos de login. Intenta más tarde.'
   },
-  skipSuccessfulRequests: true
+  skipSuccessfulRequests: true, // No contar peticiones exitosas
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { trustProxy: true }
 });
 
 app.use(generalLimiter);
@@ -231,6 +249,29 @@ app.use(express.json({
 app.use(express.urlencoded({ 
   extended: true, 
   limit: '10kb' 
+}));
+
+// ============================================
+// SERVIR ARCHIVOS ESTÁTICOS CON CORS
+// ============================================
+app.use('/uploads', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.header('Cross-Origin-Embedder-Policy', 'credentialless');
+  
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+}, express.static(path.join(__dirname, '..', 'uploads'), {
+  setHeaders: (res, filepath) => {
+    if (filepath.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    }
+  }
 }));
 
 // F. HEADERS ADICIONALES
@@ -263,7 +304,7 @@ const swaggerOptions = {
       version: '1.0.0',
       description: 'API Segura para el portal del Senado de Bolivia',
     },
-    servers: [{ url: `http://localhost:${process.env.PORT || 3000}` }],
+    servers: [{ url: `http://${process.env.HOST || 'localhost'}:${process.env.PORT || 3000}` }],
     components: {
       securitySchemes: {
         bearerAuth: {
@@ -278,7 +319,6 @@ const swaggerOptions = {
 };
 
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   docExpansion: 'none',
   swaggerOptions: {
@@ -882,469 +922,446 @@ src\controllers\content.controller.js
 ================================= 
  
 // src/controllers/content.controller.js
-const contentService = require('../services/content.service');
-const { processImage, generateThumbnails } = require('../middleware/upload');
+const Content = require('../models/Content');
 const path = require('path');
 const fs = require('fs');
 
-// ==================== DATOS SIMULADOS PARA PRUEBA ====================
-const imagenes = [
-  'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800&h=500&fit=crop',
-  'https://images.unsplash.com/photo-1548839140-29a749e1cf4d?w=800&h=500&fit=crop',
-  'https://images.unsplash.com/photo-1529101091764-c3526daf3e28?w=800&h=500&fit=crop',
-  'https://images.unsplash.com/photo-1541872703-74c5e44368f9?w=800&h=500&fit=crop'
-]
-
-// 4 NOTICIAS IMPORTANTES
-const noticiasSimuladas = [
-  {
-    id: 1,
-    slug: 'tarija-en-su-aniversario',
-    titulo: 'Tarija en su aniversario: Leyes, inversión y agenda nacional en una sesión que proyecta desarrollo para Bolivia',
-    descripcion: 'En el marco del aniversario del departamento de Tarija, la Cámara de Senadores realizó una sesión especial donde se aprobaron importantes leyes que beneficiarán al desarrollo productivo de la región. Se destinaron más de Bs 500 millones para proyectos de infraestructura vial y energética.',
-    descripcion2: 'El presidente del Senado destacó el compromiso del gobierno nacional con el desarrollo equitativo de todos los departamentos, anunciando la construcción de la planta procesadora de uva y la ampliación del aeropuerto Capitán Oriel Lea Plaza.',
-    content: `<p>En una sesión histórica realizada en la ciudad de Tarija, la Cámara de Senadores rindió homenaje al departamento en su aniversario. Durante la jornada legislativa, se aprobaron por unanimidad tres proyectos de ley clave para el desarrollo productivo de la región.</p>
-    <p>El primero de ellos destina más de Bs 500 millones para proyectos de infraestructura vial, incluyendo la ampliación de la carretera Tarija-Yacuiba y la construcción del puente sobre el río Pilcomayo. El segundo proyecto crea un fondo de desarrollo productivo para pequeños agricultores de la región, con énfasis en la producción vitivinícola.</p>
-    <p>El presidente del Senado destacó durante su discurso la importancia de la inversión en infraestructura como motor del desarrollo económico.</p>
-    <p>Los senadores de Tarija expresaron su satisfacción por los logros alcanzados y reiteraron su compromiso de seguir trabajando por el desarrollo del departamento.</p>
-    <p>Finalmente, se aprobó una declaración camaral que reconoce los méritos del pueblo tarijeño y su contribución al desarrollo nacional.</p>`,
-    excerpt: 'La Cámara de Senadores realizó una sesión especial en Tarija aprobando importantes leyes',
-    publishedAt: '2026-04-15T00:00:00.000Z',
-    fechaFormateada: '15 de abril de 2026',
-    featuredImage: { url: imagenes[0], alt: 'Sesión en Tarija' },
-    categoria: 'Sesión Especial',
-    type: 'news',
-    status: 'published',
-    importante: true,
-    views: 1250
-  },
-  {
-    id: 2,
-    slug: 'ley-general-de-aguas',
-    titulo: 'Senado aprueba Ley General de Aguas para garantizar el acceso al agua potable en todo el territorio nacional',
-    descripcion: 'Por unanimidad, la Cámara Alta aprobó la nueva Ley General de Aguas que garantiza el acceso al agua potable como derecho fundamental. La normativa establece mecanismos de distribución equitativa y protección de fuentes hídricas.',
-    descripcion2: 'La ley contempla la creación de un fondo de inversión de Bs 1.200 millones para proyectos de riego tecnificado y plantas de tratamiento en áreas rurales y periurbanas.',
-    content: `<p>Por unanimidad, la Cámara de Senadores aprobó la nueva Ley General de Aguas, que garantiza el acceso al agua potable como derecho fundamental.</p>
-    <p>La ley contempla la creación de un fondo de inversión de Bs 1.200 millones para proyectos de riego tecnificado y plantas de tratamiento en áreas rurales y periurbanas.</p>
-    <p>Durante el debate, senadores de diferentes regiones destacaron la importancia de esta norma para garantizar el acceso al agua en comunidades rurales.</p>
-    <p>La comisión de Medio Ambiente será la encargada de dar seguimiento a la implementación de esta ley.</p>
-    <p>Organizaciones sociales y gremiales manifestaron su respaldo a la iniciativa, destacando el trabajo conjunto entre el Legislativo y la sociedad civil.</p>`,
-    excerpt: 'La Cámara Alta aprueba por unanimidad la nueva Ley General de Aguas',
-    publishedAt: '2026-04-10T00:00:00.000Z',
-    fechaFormateada: '10 de abril de 2026',
-    featuredImage: { url: imagenes[1], alt: 'Agua potable' },
-    categoria: 'Medio Ambiente',
-    type: 'news',
-    status: 'published',
-    importante: true,
-    views: 980
-  },
-  {
-    id: 3,
-    slug: 'reforma-sistema-judicial',
-    titulo: 'Comisión de Constitución aprueba dictamen de reforma parcial del sistema judicial',
-    descripcion: 'La Comisión de Constitución, Derechos Humanos y Legislación aprobó el proyecto de ley de reforma parcial del Órgano Judicial, que incluye la renovación de altas cortes y mecanismos de transparencia.',
-    descripcion2: 'El senador presidente de la comisión señaló que la reforma busca fortalecer la independencia judicial y agilizar los procesos.',
-    content: `<p>La Comisión de Constitución, Derechos Humanos y Legislación aprobó el proyecto de ley de reforma parcial del Órgano Judicial.</p>
-    <p>El senador presidente de la comisión señaló que la reforma busca fortalecer la independencia judicial y agilizar los procesos.</p>
-    <p>La iniciativa fue trabajada durante varios meses, recibiendo aportes de expertos en derecho constitucional.</p>
-    <p>Entre los puntos clave de la reforma se incluye la renovación escalonada de magistrados.</p>
-    <p>Organizaciones de derechos humanos manifestaron su respaldo a la iniciativa.</p>`,
-    excerpt: 'Comisión de Constitución aprueba proyecto de reforma judicial',
-    publishedAt: '2026-04-05T00:00:00.000Z',
-    fechaFormateada: '5 de abril de 2026',
-    featuredImage: { url: imagenes[2], alt: 'Reforma judicial' },
-    categoria: 'Justicia',
-    type: 'news',
-    status: 'published',
-    importante: true,
-    views: 750
-  },
-  {
-    id: 4,
-    slug: 'dialogo-bilateral-bolivia-chile',
-    titulo: 'Bolivia y Chile retoman diálogo bilateral en mesa técnica convocada por el Senado',
-    descripcion: 'Representantes del Senado boliviano y del Congreso chileno se reunieron en una mesa técnica para abordar temas de integración fronteriza, comercio bilateral y cooperación en materia hídrica.',
-    descripcion2: 'El encuentro, realizado en la ciudad de La Paz, contó con la participación de senadores de ambas naciones.',
-    content: `<p>Representantes del Senado boliviano y del Congreso chileno se reunieron en una mesa técnica para abordar temas de integración fronteriza.</p>
-    <p>Se acordó establecer una agenda de trabajo conjunta y próximos encuentros en la ciudad de Antofagasta.</p>
-    <p>El presidente del Senado boliviano destacó la importancia del diálogo como herramienta para fortalecer las relaciones entre ambos países.</p>
-    <p>Los senadores chilenos expresaron su interés en profundizar la relación bilateral.</p>
-    <p>Este diálogo representa un paso importante en las relaciones entre Bolivia y Chile.</p>`,
-    excerpt: 'Senado boliviano y Congreso chileno retoman diálogo bilateral',
-    publishedAt: '2026-04-01T00:00:00.000Z',
-    fechaFormateada: '1 de abril de 2026',
-    featuredImage: { url: imagenes[3], alt: 'Diálogo bilateral' },
-    categoria: 'Relaciones Internacionales',
-    type: 'news',
-    status: 'published',
-    importante: true,
-    views: 620
-  }
-]
-
-// Generar 96 noticias adicionales
-const generarNoticiasAdicionales = () => {
-  const categorias = ['Seguridad', 'Economía', 'Educación', 'Salud', 'Infraestructura', 'Energía', 'Cultura', 'Deporte', 'Tecnología', 'Turismo', 'Agricultura', 'Minería']
-  const noticias = []
-  
-  for (let i = 5; i <= 100; i++) {
-    const categoria = categorias[i % categorias.length]
-    const dia = 30 - Math.floor(i / 8)
-    const fecha = new Date(2026, 2, dia)
-    
-    noticias.push({
-      id: i,
-      slug: `noticia-${i}`,
-      titulo: `Senado impulsa proyecto de ley sobre ${categoria.toLowerCase()} para beneficio del país`,
-      descripcion: `La Cámara de Senadores continúa trabajando en iniciativas legislativas que promuevan el desarrollo del país. En esta oportunidad, se presentó un proyecto de ley relacionado con ${categoria.toLowerCase()}.`,
-      content: `<p>La Cámara de Senadores continúa trabajando en iniciativas legislativas que promuevan el desarrollo del país.</p>
-      <p>La iniciativa fue presentada por senadores de diferentes fuerzas políticas y recibió amplio respaldo.</p>
-      <p>Durante el debate, legisladores de distintos departamentos destacaron la importancia de esta norma.</p>
-      <p>La comisión correspondiente será la encargada de dar seguimiento a la implementación.</p>
-      <p>Organizaciones sociales manifestaron su respaldo a la iniciativa.</p>`,
-      excerpt: `Senado impulsa proyecto de ley sobre ${categoria.toLowerCase()}`,
-      publishedAt: fecha.toISOString(),
-      fechaFormateada: fecha.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }),
-      featuredImage: { url: imagenes[i % imagenes.length], alt: `Noticia ${i}` },
-      categoria: categoria,
-      type: 'news',
-      status: 'published',
-      importante: false,
-      views: Math.floor(Math.random() * 1000)
-    })
-  }
-  
-  return noticias
-}
-
-const todasLasNoticias = [...noticiasSimuladas, ...generarNoticiasAdicionales()]
-
-// ==================== LOG DE DEPURACIÓN ====================
-console.log('\n' + '═'.repeat(60));
-console.log('📊 CONTENT CONTROLLER - INICIALIZADO');
-console.log('═'.repeat(60));
-console.log(`📰 Total noticias simuladas: ${todasLasNoticias.length}`);
-console.log(`⭐ Noticias importantes: ${noticiasSimuladas.length}`);
-console.log(`📅 Rango de fechas: ${todasLasNoticias[todasLasNoticias.length-1]?.fechaFormateada} - ${todasLasNoticias[0]?.fechaFormateada}`);
-console.log(`📝 Primera noticia: ${todasLasNoticias[0]?.titulo.substring(0, 60)}...`);
-console.log('═'.repeat(60) + '\n');
-
-// Variable para controlar modo simulación
-let usarDatosSimulados = true
-
-/**
- * @swagger
- * tags:
- *   name: Content
- *   description: Gestión de contenido
- */
 class ContentController {
   /**
-   * Obtener lista de contenido paginada
+   * Obtener lista de contenido paginada (PUBLICO + ADMIN)
    */
   async getContents(req, res) {
     try {
-      const queryPage = parseInt(req.query.page) || 1;
-      const queryLimit = parseInt(req.query.limit) || 12;
-      const { type, status } = req.query;
+      // HEADERS ANTI-CACHÉ
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
       
-      // ==================== LOG DE DEPURACIÓN ====================
-      console.log('\n🔍 [getContents] SOLICITUD RECIBIDA');
-      console.log(`   📄 Página: ${queryPage}, Límite: ${queryLimit}`);
-      console.log(`   🏷️ Type: ${type || 'no filtro'}, Status: ${status || 'no filtro'}`);
-      console.log(`   🎮 Modo simulación: ${usarDatosSimulados ? 'ACTIVADO' : 'DESACTIVADO'}`);
-      console.log(`   📊 Total noticias disponibles: ${todasLasNoticias.length}`);
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 100;
+      const type = req.query.type;
+      const status = req.query.status;
+      const category = req.query.category;
+      const search = req.query.search;
       
-      // MODO SIMULACIÓN
-      if (usarDatosSimulados) {
-        console.log('\n📡 [MODO SIMULACIÓN] Procesando solicitud...');
-        
-        let filtradas = [...todasLasNoticias]
-        
-        if (type && type !== 'all') {
-          const antes = filtradas.length;
-          filtradas = filtradas.filter(n => n.type === type)
-          console.log(`   🔍 Filtradas por type=${type}: ${antes} → ${filtradas.length}`);
-        }
-        
-        if (status && status !== 'all') {
-          const antes = filtradas.length;
-          filtradas = filtradas.filter(n => n.status === status)
-          console.log(`   🔍 Filtradas por status=${status}: ${antes} → ${filtradas.length}`);
-        }
-        
-        const ordenadas = filtradas.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
-        
-        const total = ordenadas.length
-        const start = (queryPage - 1) * queryLimit
-        const end = start + queryLimit
-        const contents = ordenadas.slice(start, end)
-        
-        console.log(`\n✅ [MODO SIMULACIÓN] Resultado:`);
-        console.log(`   📦 Enviando ${contents.length} noticias de ${total} totales`);
-        console.log(`   📍 Rango: ${start + 1} - ${Math.min(end, total)}`);
-        if (contents.length > 0) {
-          console.log(`   📰 Primera noticia: ${contents[0].titulo.substring(0, 80)}...`);
-          console.log(`   ⭐ ¿Es importante?: ${contents[0].importante ? 'SÍ' : 'NO'}`);
-        } else {
-          console.log(`   ⚠️ No hay noticias para mostrar`);
-        }
-        console.log('═'.repeat(40) + '\n');
-        
-        return res.json({
-          success: true,
-          data: {
-            contents,
-            total,
-            page: queryPage,
-            limit: queryLimit,
-            pages: Math.ceil(total / queryLimit)
-          }
-        })
+      console.log('\n' + '='.repeat(60));
+      console.log('🔍 [getContents] SOLICITUD RECIBIDA');
+      console.log('   URL completa:', req.url);
+      console.log('   QUERY PARAMS:', req.query);
+      console.log('   page:', page);
+      console.log('   limit:', limit);
+      console.log('   type:', type);
+      console.log('   status:', status);
+      console.log('   category:', category);
+      console.log('   search:', search);
+      console.log('   Usuario autenticado:', req.user ? req.user.email : 'NO');
+      
+      const filters = {};
+      
+      // Filtrar por tipo
+      if (type && type !== 'all' && type !== 'undefined' && type !== '') {
+        filters.type = type;
+        console.log('   ✅ Aplicando filtro type:', type);
       }
       
-      // MODO REAL (base de datos)
-      console.log('\n📡 [MODO REAL] Conectando a base de datos...');
-      const filters = {};
-      if (type) filters.type = type;
-      if (status) filters.status = status;
-
-      const result = await contentService.getContents(queryPage, queryLimit, filters);
+      // Filtrar por categoría
+      if (category && category !== 'undefined' && category !== '') {
+        filters.category = category;
+        console.log('   ✅ Aplicando filtro category:', category);
+      }
       
-      console.log(`✅ [MODO REAL] Enviando ${result.contents?.length || 0} noticias`);
-      console.log('═'.repeat(40) + '\n');
-
+      // 🔥 FILTRO POR ESTADO - CORREGIDO
+      if (status && status !== 'all' && status !== 'undefined' && status !== '') {
+        filters.status = status;
+        console.log('   ✅ Aplicando filtro status:', status);
+      } else if (status === 'all') {
+        console.log('   ⏭️ Status = "all", sin filtro de estado');
+      } else {
+        console.log('   ⚠️ No se aplica filtro de estado');
+      }
+      
+      // Búsqueda por texto
+      if (search && search !== 'undefined' && search !== '') {
+        filters.$text = { $search: search };
+        console.log('   ✅ Aplicando filtro search:', search);
+      }
+      
+      // Si es usuario público (no autenticado), solo ver publicados
+      if (!req.user) {
+        filters.status = 'published';
+        console.log('   🔒 Usuario público, forzando status: published');
+      }
+      
+      const skip = (page - 1) * limit;
+      
+      console.log('\n📋 FILTROS FINALES:', JSON.stringify(filters, null, 2));
+      
+      // Verificar cuántos documentos hay por estado
+      const totalPublished = await Content.countDocuments({ status: 'published' });
+      const totalDrafts = await Content.countDocuments({ status: 'draft' });
+      const totalArchived = await Content.countDocuments({ status: 'archived' });
+      const totalAll = await Content.countDocuments();
+      
+      console.log('\n📊 ESTADÍSTICAS BASE DE DATOS:');
+      console.log('   Total documentos:', totalAll);
+      console.log('   Publicados (published):', totalPublished);
+      console.log('   Borradores (draft):', totalDrafts);
+      console.log('   Archivados (archived):', totalArchived);
+      
+      const [contents, total] = await Promise.all([
+        Content.find(filters)
+          .sort({ publishedAt: -1, createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .populate('author', 'email profile')
+          .populate('lastModifiedBy', 'email profile')
+          .lean(),
+        Content.countDocuments(filters)
+      ]);
+      
+      console.log('\n✅ RESULTADO FINAL:');
+      console.log('   Documentos devueltos:', contents.length);
+      console.log('   Total en filtro:', total);
+      console.log('   Página:', page);
+      console.log('   Páginas totales:', Math.ceil(total / limit));
+      console.log('='.repeat(60) + '\n');
+      
       res.json({
         success: true,
-        data: result,
+        data: {
+          contents,
+          total,
+          page,
+          limit,
+          pages: Math.ceil(total / limit)
+        }
       });
     } catch (error) {
       console.error('❌ Error en getContents:', error);
-      res.status(400).json({
+      res.status(500).json({
         success: false,
-        message: error.message,
+        message: error.message
       });
     }
   }
 
   /**
-   * Obtener contenido por slug
-   */
-  async getContentBySlug(req, res) {
-    try {
-      const { slug } = req.params
-      
-      console.log(`\n🔍 [getContentBySlug] Buscando slug: ${slug}`);
-      
-      // MODO SIMULACIÓN
-      if (usarDatosSimulados) {
-        const content = todasLasNoticias.find(n => n.slug === slug)
-        
-        if (!content) {
-          console.log(`❌ [getContentBySlug] No encontrado: ${slug}`);
-          return res.status(404).json({
-            success: false,
-            message: 'Contenido no encontrado',
-          })
-        }
-        
-        content.views += 1
-        
-        console.log(`✅ [getContentBySlug] Encontrado: ${content.titulo.substring(0, 60)}...`);
-        
-        return res.json({
-          success: true,
-          data: content,
-        })
-      }
-      
-      // MODO REAL
-      const content = await contentService.getContentBySlug(slug);
-      
-      console.log(`✅ [getContentBySlug] Encontrado desde DB: ${content?.title}`);
-      
-      res.json({
-        success: true,
-        data: content,
-      });
-    } catch (error) {
-      console.error('❌ Error en getContentBySlug:', error);
-      res.status(404).json({
-        success: false,
-        message: error.message,
-      });
-    }
-  }
-
-  /**
-   * Obtener contenido por ID
-   */
-  async getContentById(req, res) {
-    try {
-      const { id } = req.params
-      
-      console.log(`\n🔍 [getContentById] Buscando ID: ${id}`);
-      
-      // MODO SIMULACIÓN
-      if (usarDatosSimulados) {
-        const content = todasLasNoticias.find(n => n.id == id)
-        
-        if (!content) {
-          console.log(`❌ [getContentById] No encontrado: ${id}`);
-          return res.status(404).json({
-            success: false,
-            message: 'Contenido no encontrado',
-          })
-        }
-        
-        console.log(`✅ [getContentById] Encontrado: ${content.titulo.substring(0, 60)}...`);
-        
-        return res.json({
-          success: true,
-          data: content,
-        })
-      }
-      
-      // MODO REAL
-      const content = await contentService.getContentById(id);
-      
-      res.json({
-        success: true,
-        data: content,
-      });
-    } catch (error) {
-      console.error('❌ Error en getContentById:', error);
-      res.status(404).json({
-        success: false,
-        message: error.message,
-      });
-    }
-  }
-
-  /**
-   * Crear nuevo contenido
+   * Crear nuevo contenido (ADMIN)
    */
   async createContent(req, res) {
     try {
-      const content = await contentService.createContent(req.body, req.user._id);
+      console.log('\n' + '='.repeat(60));
+      console.log('📝 [createContent] CREANDO NUEVO CONTENIDO');
+      console.log('   Body recibido:', req.body);
+      console.log('   Usuario:', req.user ? req.user.email : 'NO');
+      
+      // Asegurar que el status se guarda correctamente
+      const status = req.body.status || 'draft';
+      console.log('   Estado a guardar:', status);
+      
+      const contentData = {
+        title: req.body.title,
+        slug: req.body.slug || this.generateSlug(req.body.title),
+        content: req.body.content,
+        excerpt: req.body.excerpt || '',
+        type: req.body.type || 'news',
+        category: req.body.category || 'noticias',
+        tags: req.body.tags || [],
+        status: status,
+        featuredImage: req.body.featuredImage || { url: '', alt: '' },
+        author: req.user._id,
+        lastModifiedBy: req.user._id,
+        publishedAt: status === 'published' ? new Date() : null
+      };
+      
+      console.log('   Datos a guardar:', {
+        title: contentData.title,
+        slug: contentData.slug,
+        status: contentData.status,
+        publishedAt: contentData.publishedAt
+      });
+      
+      const content = new Content(contentData);
+      await content.save();
+      
+      console.log('✅ [createContent] Contenido creado exitosamente');
+      console.log('   ID:', content._id);
+      console.log('   Status guardado:', content.status);
+      console.log('='.repeat(60) + '\n');
       
       res.status(201).json({
         success: true,
         message: 'Contenido creado exitosamente',
-        data: content,
+        data: content
       });
     } catch (error) {
+      console.error('❌ Error en createContent:', error);
       res.status(400).json({
         success: false,
-        message: error.message,
+        message: error.message
       });
     }
   }
 
   /**
-   * Actualizar contenido
+   * Generar slug a partir del título
+   */
+  generateSlug(title) {
+    if (!title) return 'sin-titulo-' + Date.now();
+    return title
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') + '-' + Date.now();
+  }
+
+  /**
+   * Obtener contenido por slug (PÚBLICO)
+   */
+  async getContentBySlug(req, res) {
+    try {
+      const { slug } = req.params;
+      
+      console.log(`🔍 [getContentBySlug] Buscando slug: ${slug}`);
+      
+      const content = await Content.findOne({ 
+        slug, 
+        status: 'published' 
+      })
+      .populate('author', 'email profile')
+      .populate('lastModifiedBy', 'email profile');
+      
+      if (!content) {
+        return res.status(404).json({
+          success: false,
+          message: 'Contenido no encontrado'
+        });
+      }
+      
+      // Incrementar vistas
+      content.views += 1;
+      await content.save();
+      
+      console.log(`✅ [getContentBySlug] Encontrado: ${content.title}`);
+      
+      res.json({
+        success: true,
+        data: content
+      });
+    } catch (error) {
+      console.error('❌ Error en getContentBySlug:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Obtener contenido por ID (ADMIN)
+   */
+  async getContentById(req, res) {
+    try {
+      const { id } = req.params;
+      
+      console.log(`🔍 [getContentById] Buscando ID: ${id}`);
+      
+      const content = await Content.findById(id)
+        .populate('author', 'email profile')
+        .populate('lastModifiedBy', 'email profile');
+      
+      if (!content) {
+        return res.status(404).json({
+          success: false,
+          message: 'Contenido no encontrado'
+        });
+      }
+      
+      res.json({
+        success: true,
+        data: content
+      });
+    } catch (error) {
+      console.error('❌ Error en getContentById:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Actualizar contenido (ADMIN)
    */
   async updateContent(req, res) {
     try {
       const { id } = req.params;
-      const content = await contentService.updateContent(id, req.body, req.user._id);
-
+      
+      console.log(`📝 [updateContent] Actualizando ID: ${id}`);
+      console.log('   Body:', req.body);
+      
+      const content = await Content.findById(id);
+      
+      if (!content) {
+        return res.status(404).json({
+          success: false,
+          message: 'Contenido no encontrado'
+        });
+      }
+      
+      // Guardar versión anterior en historial
+      content.versionHistory.push({
+        content: content.content,
+        modifiedBy: content.lastModifiedBy,
+        modifiedAt: content.updatedAt || new Date(),
+        revision: content.revision,
+        comment: req.body.versionComment || 'Actualización'
+      });
+      
+      // Actualizar campos permitidos
+      const allowedFields = ['title', 'slug', 'content', 'excerpt', 'type', 'category', 'tags', 'status', 'featuredImage', 'gallery', 'seo', 'scheduledFor'];
+      
+      allowedFields.forEach(field => {
+        if (req.body[field] !== undefined) {
+          content[field] = req.body[field];
+        }
+      });
+      
+      content.lastModifiedBy = req.user._id;
+      content.revision += 1;
+      
+      if (req.body.status === 'published' && !content.publishedAt) {
+        content.publishedAt = new Date();
+      }
+      
+      await content.save();
+      
+      console.log(`✅ [updateContent] Actualizado: ${content.title}`);
+      console.log('   Nuevo status:', content.status);
+      
       res.json({
         success: true,
         message: 'Contenido actualizado exitosamente',
-        data: content,
+        data: content
       });
     } catch (error) {
+      console.error('❌ Error en updateContent:', error);
       res.status(400).json({
         success: false,
-        message: error.message,
+        message: error.message
       });
     }
   }
 
   /**
-   * Eliminar contenido
+   * Eliminar contenido (ADMIN)
    */
   async deleteContent(req, res) {
     try {
       const { id } = req.params;
-      const result = await contentService.deleteContent(id);
-
+      
+      console.log(`🗑️ [deleteContent] Eliminando ID: ${id}`);
+      
+      const content = await Content.findByIdAndDelete(id);
+      
+      if (!content) {
+        return res.status(404).json({
+          success: false,
+          message: 'Contenido no encontrado'
+        });
+      }
+      
+      console.log(`✅ [deleteContent] Eliminado: ${content.title}`);
+      
       res.json({
         success: true,
-        message: result.message,
+        message: 'Contenido eliminado exitosamente'
       });
     } catch (error) {
-      res.status(400).json({
+      console.error('❌ Error en deleteContent:', error);
+      res.status(500).json({
         success: false,
-        message: error.message,
+        message: error.message
       });
     }
   }
 
   /**
-   * Cambiar estado del contenido
+   * Cambiar estado del contenido (ADMIN)
    */
   async changeStatus(req, res) {
     try {
       const { id } = req.params;
       const { status } = req.body;
       
-      const content = await contentService.changeContentStatus(id, status, req.user._id);
-
-      res.json({
-        success: true,
-        message: `Estado cambiado a ${status}`,
-        data: content,
-      });
-    } catch (error) {
-      res.status(400).json({
-        success: false,
-        message: error.message,
-      });
-    }
-  }
-
-  /**
-   * Obtener estadísticas de contenido
-   */
-  async getStats(req, res) {
-    try {
-      // MODO SIMULACIÓN
-      if (usarDatosSimulados) {
-        console.log('\n📊 [getStats] Modo simulación');
-        console.log(`   Total: ${todasLasNoticias.length}`);
-        console.log(`   Importantes: ${noticiasSimuladas.length}`);
-        console.log(`   Publicadas: ${todasLasNoticias.filter(n => n.status === 'published').length}`);
-        
-        return res.json({
-          success: true,
-          data: {
-            total: todasLasNoticias.length,
-            importantes: noticiasSimuladas.length,
-            publicadas: todasLasNoticias.filter(n => n.status === 'published').length
-          },
+      console.log(`🔄 [changeStatus] Cambiando estado de ${id} a ${status}`);
+      
+      const content = await Content.findById(id);
+      
+      if (!content) {
+        return res.status(404).json({
+          success: false,
+          message: 'Contenido no encontrado'
         });
       }
       
-      // MODO REAL
-      const stats = await contentService.getContentStats();
-
+      content.status = status;
+      content.lastModifiedBy = req.user._id;
+      
+      if (status === 'published' && !content.publishedAt) {
+        content.publishedAt = new Date();
+      }
+      
+      await content.save();
+      
+      console.log(`✅ [changeStatus] Estado cambiado a ${status}`);
+      
       res.json({
         success: true,
-        data: stats,
+        message: `Estado cambiado a ${status}`,
+        data: content
       });
     } catch (error) {
+      console.error('❌ Error en changeStatus:', error);
       res.status(400).json({
         success: false,
-        message: error.message,
+        message: error.message
       });
     }
   }
 
   /**
-   * Buscar contenido
+   * Obtener estadísticas de contenido (ADMIN)
+   */
+  async getStats(req, res) {
+    try {
+      const total = await Content.countDocuments();
+      const published = await Content.countDocuments({ status: 'published' });
+      const drafts = await Content.countDocuments({ status: 'draft' });
+      const archived = await Content.countDocuments({ status: 'archived' });
+      
+      console.log(`📊 [getStats] Total: ${total}, Publicadas: ${published}, Borradores: ${drafts}, Archivadas: ${archived}`);
+      
+      res.json({
+        success: true,
+        data: {
+          total,
+          published,
+          drafts,
+          archived
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error en getStats:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Buscar contenido (PÚBLICO)
    */
   async searchContent(req, res) {
     try {
@@ -1353,76 +1370,69 @@ class ContentController {
       if (!q) {
         return res.status(400).json({
           success: false,
-          message: 'Término de búsqueda requerido',
+          message: 'Término de búsqueda requerido'
         });
       }
-
-      // MODO SIMULACIÓN
-      if (usarDatosSimulados) {
-        const termino = q.toLowerCase();
-        const results = todasLasNoticias.filter(item => 
-          item.titulo.toLowerCase().includes(termino) ||
-          (item.descripcion && item.descripcion.toLowerCase().includes(termino))
-        ).slice(0, parseInt(limit));
-        
-        console.log(`\n🔍 [searchContent] "${q}" → ${results.length} resultados`);
-        
-        return res.json({
-          success: true,
-          data: results,
-        });
-      }
-
-      const results = await contentService.searchContent(q, parseInt(limit));
-
+      
+      console.log(`🔍 [searchContent] Buscando: ${q}`);
+      
+      const results = await Content.find(
+        { 
+          $text: { $search: q },
+          status: 'published'
+        },
+        { score: { $meta: 'textScore' } }
+      )
+      .sort({ score: { $meta: 'textScore' } })
+      .limit(parseInt(limit));
+      
       res.json({
         success: true,
-        data: results,
+        data: results
       });
     } catch (error) {
-      res.status(400).json({
+      console.error('❌ Error en searchContent:', error);
+      res.status(500).json({
         success: false,
-        message: error.message,
+        message: error.message
       });
     }
   }
 
   /**
-   * Obtener contenido relacionado
+   * Obtener contenido relacionado (PÚBLICO)
    */
   async getRelatedContent(req, res) {
     try {
       const { id } = req.params;
       const limit = parseInt(req.query.limit) || 5;
-
-      // MODO SIMULACIÓN
-      if (usarDatosSimulados) {
-        const current = todasLasNoticias.find(n => n.id == id);
-        
-        if (!current) {
-          return res.json({ success: true, data: [] });
-        }
-        
-        const related = todasLasNoticias
-          .filter(n => n.id != id && n.type === current.type)
-          .slice(0, limit);
-        
-        return res.json({
-          success: true,
-          data: related,
-        });
+      
+      const current = await Content.findById(id);
+      
+      if (!current) {
+        return res.json({ success: true, data: [] });
       }
-
-      const related = await contentService.getRelatedContent(id, limit);
-
+      
+      const related = await Content.find({
+        _id: { $ne: id },
+        status: 'published',
+        $or: [
+          { category: current.category },
+          { tags: { $in: current.tags } },
+          { type: current.type }
+        ]
+      })
+      .limit(limit);
+      
       res.json({
         success: true,
-        data: related,
+        data: related
       });
     } catch (error) {
-      res.status(400).json({
+      console.error('❌ Error en getRelatedContent:', error);
+      res.status(500).json({
         success: false,
-        message: error.message,
+        message: error.message
       });
     }
   }
@@ -1433,21 +1443,15 @@ class ContentController {
   async getContentTypes(req, res) {
     try {
       const types = [
-        { value: 'page', label: 'Página', description: 'Páginas estáticas como institucional, historia, etc.' },
-        { value: 'news', label: 'Noticia', description: 'Noticias y anuncios de actualidad' },
-        { value: 'article', label: 'Artículo', description: 'Artículos de opinión o análisis' },
+        { value: 'page', label: 'Página', description: 'Páginas estáticas' },
+        { value: 'news', label: 'Noticia', description: 'Noticias y anuncios' },
+        { value: 'article', label: 'Artículo', description: 'Artículos de opinión' },
         { value: 'announcement', label: 'Anuncio', description: 'Comunicados oficiales' },
       ];
-
-      res.json({
-        success: true,
-        data: types,
-      });
+      
+      res.json({ success: true, data: types });
     } catch (error) {
-      res.status(400).json({
-        success: false,
-        message: error.message,
-      });
+      res.status(500).json({ success: false, message: error.message });
     }
   }
 
@@ -1466,16 +1470,10 @@ class ContentController {
         { value: 'participacion', label: 'Participación', color: 'cyan' },
         { value: 'legislacion', label: 'Legislación', color: 'indigo' },
       ];
-
-      res.json({
-        success: true,
-        data: categories,
-      });
+      
+      res.json({ success: true, data: categories });
     } catch (error) {
-      res.status(400).json({
-        success: false,
-        message: error.message,
-      });
+      res.status(500).json({ success: false, message: error.message });
     }
   }
 
@@ -1484,45 +1482,38 @@ class ContentController {
    */
   async uploadImage(req, res) {
     try {
+      console.log('📸 [uploadImage] Llamado');
+      console.log('📁 req.file:', req.file);
+      
       if (!req.file) {
         return res.status(400).json({
           success: false,
-          message: 'No se subió ninguna imagen',
+          message: 'No se subió ninguna imagen'
         });
       }
-
-      const imagePath = path.join(req.file.destination, req.file.filename);
-      const processedFilename = await processImage(imagePath, {
-        width: 1200,
-        quality: 80,
-        format: 'webp',
-      });
-
-      const thumbnails = await generateThumbnails(
-        path.join(req.file.destination, processedFilename)
-      );
-
-      const imageUrl = `/uploads/images/${processedFilename}`;
-
+      
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const imageUrl = `${baseUrl}/uploads/images/${req.file.filename}`;
+      
+      console.log('✅ Imagen subida exitosamente:', imageUrl);
+      
       res.json({
         success: true,
         message: 'Imagen subida exitosamente',
         data: {
           url: imageUrl,
-          filename: processedFilename,
+          filename: req.file.filename,
           originalName: req.file.originalname,
           size: req.file.size,
-          mimetype: req.file.mimetype,
-          thumbnails,
-          alt: req.body.alt || '',
-          caption: req.body.caption || '',
-        },
+          mimetype: req.file.mimetype
+        }
       });
     } catch (error) {
-      console.error('Error subiendo imagen:', error);
+      console.error('❌ Error subiendo imagen:', error);
       res.status(500).json({
         success: false,
         message: 'Error al subir la imagen',
+        error: error.message
       });
     }
   }
@@ -1535,12 +1526,13 @@ class ContentController {
       if (!req.file) {
         return res.status(400).json({
           success: false,
-          message: 'No se subió ningún documento',
+          message: 'No se subió ningún documento'
         });
       }
-
-      const documentUrl = `/uploads/documents/${req.file.filename}`;
-
+      
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const documentUrl = `${baseUrl}/uploads/documents/${req.file.filename}`;
+      
       res.json({
         success: true,
         message: 'Documento subido exitosamente',
@@ -1549,13 +1541,14 @@ class ContentController {
           filename: req.file.filename,
           originalName: req.file.originalname,
           size: req.file.size,
-          mimetype: req.file.mimetype,
-        },
+          mimetype: req.file.mimetype
+        }
       });
     } catch (error) {
+      console.error('❌ Error subiendo documento:', error);
       res.status(500).json({
         success: false,
-        message: 'Error al subir el documento',
+        message: 'Error al subir el documento'
       });
     }
   }
@@ -3728,10 +3721,10 @@ module.exports = {
 src\middleware\upload.js 
 ================================= 
  
+// backend/src/middleware/upload.js
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const sharp = require('sharp');
 
 // Crear directorios si no existen
 const uploadDirs = {
@@ -3744,24 +3737,29 @@ const uploadDirs = {
 Object.values(uploadDirs).forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
+    console.log(`📁 Directorio creado: ${dir}`);
   }
 });
 
 // Configuración de almacenamiento
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    let folder = 'uploads/';
+    console.log('📂 Destination - req.baseUrl:', req.baseUrl);
+    console.log('📂 Destination - file.mimetype:', file.mimetype);
+    
+    let folder = 'uploads/images';
     
     if (file.mimetype.startsWith('image/')) {
       folder = uploadDirs.images;
     } else if (file.mimetype === 'application/pdf') {
       folder = uploadDirs.documents;
-    } else if (req.baseUrl.includes('legisladores')) {
+    } else if (req.baseUrl && req.baseUrl.includes('legisladores')) {
       folder = uploadDirs.legisladores;
-    } else if (req.baseUrl.includes('content')) {
+    } else if (req.baseUrl && req.baseUrl.includes('content')) {
       folder = uploadDirs.content;
     }
     
+    console.log('📂 Guardando en:', folder);
     cb(null, folder);
   },
   filename: function (req, file, cb) {
@@ -3772,27 +3770,28 @@ const storage = multer.diskStorage({
       .replace(/[^a-z0-9]/g, '-')
       .substring(0, 50);
     
-    cb(null, name + '-' + uniqueSuffix + ext);
+    const filename = name + '-' + uniqueSuffix + ext;
+    console.log('📄 Nombre de archivo:', filename);
+    cb(null, filename);
   }
 });
 
 // Filtrar tipos de archivo
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = {
-    'image/jpeg': true,
-    'image/jpg': true,
-    'image/png': true,
-    'image/webp': true,
-    'image/gif': true,
-    'application/pdf': true,
-    'application/msword': true,
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': true,
-  };
+  const allowedTypes = [
+    'image/jpeg',
+    'image/jpg', 
+    'image/png',
+    'image/webp',
+    'image/gif'
+  ];
   
-  if (allowedTypes[file.mimetype]) {
+  console.log('🔍 FileFilter - tipo:', file.mimetype);
+  
+  if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Tipo de archivo no permitido. Solo se permiten imágenes y documentos PDF/DOC.'), false);
+    cb(new Error('Tipo de archivo no permitido. Solo se permiten imágenes (JPEG, PNG, WEBP, GIF).'), false);
   }
 };
 
@@ -3805,84 +3804,8 @@ const upload = multer({
   },
 });
 
-// Procesador de imágenes
-const processImage = async (filePath, options = {}) => {
-  try {
-    const {
-      width = 1200,
-      height,
-      quality = 80,
-      format = 'webp'
-    } = options;
-    
-    const outputPath = filePath.replace(/\.[^/.]+$/, '') + `.${format}`;
-    
-    let processor = sharp(filePath);
-    
-    if (width || height) {
-      processor = processor.resize(width, height, {
-        fit: 'inside',
-        withoutEnlargement: true,
-      });
-    }
-    
-    if (format === 'webp') {
-      processor = processor.webp({ quality });
-    } else if (format === 'jpeg') {
-      processor = processor.jpeg({ quality });
-    } else if (format === 'png') {
-      processor = processor.png({ quality });
-    }
-    
-    await processor.toFile(outputPath);
-    
-    // Eliminar archivo original si se convirtió
-    if (format !== path.extname(filePath).replace('.', '')) {
-      fs.unlinkSync(filePath);
-    }
-    
-    return path.basename(outputPath);
-  } catch (error) {
-    console.error('Error procesando imagen:', error);
-    return path.basename(filePath);
-  }
-};
-
-// Generar thumbnails
-const generateThumbnails = async (filePath) => {
-  const baseName = path.basename(filePath, path.extname(filePath));
-  const dirName = path.dirname(filePath);
-  
-  const sizes = [
-    { name: 'thumbnail', width: 150, height: 150 },
-    { name: 'small', width: 300 },
-    { name: 'medium', width: 600 },
-    { name: 'large', width: 1200 },
-  ];
-  
-  const thumbnails = {};
-  
-  for (const size of sizes) {
-    const outputPath = path.join(dirName, `${baseName}-${size.name}.webp`);
-    
-    await sharp(filePath)
-      .resize(size.width, size.height, {
-        fit: 'cover',
-        position: 'center',
-      })
-      .webp({ quality: 80 })
-      .toFile(outputPath);
-    
-    thumbnails[size.name] = path.basename(outputPath);
-  }
-  
-  return thumbnails;
-};
-
 module.exports = {
   upload,
-  processImage,
-  generateThumbnails,
   uploadDirs,
 }; 
 ================================= 
@@ -3915,10 +3838,10 @@ module.exports = validate;
 src\models\Content.js 
 ================================= 
  
+// src/models/Content.js
 const mongoose = require('mongoose');
 
 const contentSchema = new mongoose.Schema({
-  // Información básica
   title: {
     type: String,
     required: [true, 'El título es requerido'],
@@ -3931,7 +3854,6 @@ const contentSchema = new mongoose.Schema({
     unique: true,
     lowercase: true,
     trim: true,
-    match: [/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug inválido. Use solo letras, números y guiones.'],
   },
   content: {
     type: String,
@@ -3942,26 +3864,14 @@ const contentSchema = new mongoose.Schema({
     trim: true,
     maxlength: [300, 'El extracto no puede exceder 300 caracteres'],
   },
-  
-  // Categorización
   type: {
     type: String,
     enum: ['page', 'news', 'article', 'announcement'],
-    default: 'page',
-    required: true,
+    default: 'news',
   },
   category: {
     type: String,
-    enum: [
-      'institucional', 
-      'historia', 
-      'directiva', 
-      'noticias', 
-      'eventos', 
-      'transparencia',
-      'participacion',
-      'legislacion'
-    ],
+    enum: ['institucional', 'historia', 'directiva', 'noticias', 'eventos', 'transparencia', 'participacion', 'legislacion'],
     default: 'noticias',
   },
   tags: [{
@@ -3969,8 +3879,6 @@ const contentSchema = new mongoose.Schema({
     trim: true,
     lowercase: true,
   }],
-  
-  // Metadatos
   author: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -3981,13 +3889,6 @@ const contentSchema = new mongoose.Schema({
     enum: ['draft', 'published', 'archived', 'scheduled'],
     default: 'draft',
   },
-  language: {
-    type: String,
-    enum: ['es', 'qu', 'ay'],
-    default: 'es',
-  },
-  
-  // Imágenes y multimedia
   featuredImage: {
     url: String,
     alt: String,
@@ -4006,24 +3907,12 @@ const contentSchema = new mongoose.Schema({
     size: Number,
     type: String,
   }],
-  
-  // SEO
   seo: {
-    title: {
-      type: String,
-      trim: true,
-      maxlength: [60, 'El título SEO no puede exceder 60 caracteres'],
-    },
-    description: {
-      type: String,
-      trim: true,
-      maxlength: [160, 'La descripción SEO no puede exceder 160 caracteres'],
-    },
+    title: String,
+    description: String,
     keywords: [String],
     canonicalUrl: String,
   },
-  
-  // Fechas
   publishedAt: {
     type: Date,
   },
@@ -4033,20 +3922,14 @@ const contentSchema = new mongoose.Schema({
   expiresAt: {
     type: Date,
   },
-  
-  // Estadísticas
   views: {
     type: Number,
     default: 0,
   },
-  
-  // Relaciones
   relatedContent: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Content',
   }],
-  
-  // Metadata del sistema
   lastModifiedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -4057,34 +3940,27 @@ const contentSchema = new mongoose.Schema({
   },
   versionHistory: [{
     content: String,
-    modifiedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-    },
+    modifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     modifiedAt: Date,
     revision: Number,
     comment: String,
   }],
 }, {
   timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true },
 });
 
-// Índices para búsqueda eficiente
+// Índices
 contentSchema.index({ slug: 1 }, { unique: true });
 contentSchema.index({ title: 'text', content: 'text', excerpt: 'text' });
 contentSchema.index({ type: 1, status: 1, publishedAt: -1 });
 contentSchema.index({ category: 1, tags: 1 });
-contentSchema.index({ scheduledFor: 1 });
-contentSchema.index({ author: 1 });
 
 // Middleware para generar slug automáticamente
 contentSchema.pre('validate', function(next) {
   if (!this.slug && this.title) {
     this.slug = this.title
       .toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remover acentos
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
   }
@@ -4096,25 +3972,10 @@ contentSchema.pre('save', function(next) {
   if (this.status === 'published' && !this.publishedAt) {
     this.publishedAt = new Date();
   }
-  
   if (this.status === 'scheduled' && !this.scheduledFor) {
     this.scheduledFor = new Date();
   }
-  
   next();
-});
-
-// Virtual para URL amigable
-contentSchema.virtual('url').get(function() {
-  const baseUrl = '/contenido';
-  const typePaths = {
-    page: '/paginas',
-    news: '/noticias',
-    article: '/articulos',
-    announcement: '/anuncios',
-  };
-  
-  return `${baseUrl}${typePaths[this.type] || ''}/${this.slug}`;
 });
 
 // Método para incrementar vistas
@@ -4124,7 +3985,6 @@ contentSchema.methods.incrementViews = async function() {
 };
 
 const Content = mongoose.model('Content', contentSchema);
-
 module.exports = Content; 
 ================================= 
 src\models\Legislador.js 
@@ -4721,50 +4581,26 @@ const { upload } = require('../middleware/upload');
 // ============================================
 // RUTAS PÚBLICAS - NO REQUIEREN AUTENTICACIÓN
 // ============================================
-// Estas son las rutas que consume el frontend público
 router.get('/types', contentController.getContentTypes);
 router.get('/categories', contentController.getCategories);
 router.get('/search', contentController.searchContent);
 router.get('/slug/:slug', contentController.getContentBySlug);
 router.get('/:id/related', contentController.getRelatedContent);
-router.get('/', contentController.getContents);           // ← Listado de noticias (público)
-router.get('/stats', contentController.getStats);         // ← Estadísticas (público)
-router.get('/:id', contentController.getContentById);     // ← Noticia individual (público)
+router.get('/', contentController.getContents);
+router.get('/stats', contentController.getStats);
+router.get('/:id', contentController.getContentById);
 
 // ============================================
 // RUTAS PROTEGIDAS - REQUIEREN AUTENTICACIÓN
 // ============================================
 router.use(authenticate);
 
-// Crear contenido (admin/editor)
-router.post(
-  '/',
-  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
-  contentController.createContent
-);
+router.post('/', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.createContent);
+router.put('/:id', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.updateContent);
+router.patch('/:id/status', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.changeStatus);
+router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN'), contentController.deleteContent);
 
-// Actualizar contenido (admin/editor)
-router.put(
-  '/:id',
-  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
-  contentController.updateContent
-);
-
-// Cambiar estado (admin/editor)
-router.patch(
-  '/:id/status',
-  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
-  contentController.changeStatus
-);
-
-// Eliminar contenido (solo super admin y admin)
-router.delete(
-  '/:id',
-  authorize('SUPER_ADMIN', 'ADMIN'),
-  contentController.deleteContent
-);
-
-// Subir imágenes (requiere autenticación)
+// ⚠️ IMPORTANTE: La ruta de upload debe ir ANTES de las rutas con parámetros
 router.post(
   '/upload/image',
   authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
@@ -4772,7 +4608,6 @@ router.post(
   contentController.uploadImage
 );
 
-// Subir documentos (requiere autenticación)
 router.post(
   '/upload/document',
   authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
@@ -5001,6 +4836,332 @@ router.delete(
 );
 
 module.exports = router; 
+================================= 
+src\scripts\seedContent.js 
+================================= 
+ 
+// src/scripts/seedContent.js
+// Seed para crear 100 noticias de ejemplo
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+const Content = require('../models/Content');
+const User = require('../models/User');
+
+dotenv.config();
+
+// CATEGORÍAS VÁLIDAS según el modelo Content
+const VALID_CATEGORIES = [
+  'institucional',
+  'historia',
+  'directiva',
+  'noticias',
+  'eventos',
+  'transparencia',
+  'participacion',
+  'legislacion'
+];
+
+// Títulos base para generar noticias variadas (20 títulos base)
+const TITULOS_BASE = [
+  'Senado aprueba nueva ley de desarrollo económico',
+  'Comisión de Educación recibe propuestas para reforma curricular',
+  'Senado conmemora el Día de la Madre Tierra',
+  'Cámara de Senadores aprueba proyecto de Ley de Aguas',
+  'Senado realiza audiencia pública sobre salud mental',
+  'Comisión de Autonomías analiza transferencia de competencias',
+  'Directiva del Senado presenta plan de trabajo anual',
+  'Senado abre convocatoria para pasantías universitarias',
+  'Senado impulsa proyecto de ley de desarrollo productivo',
+  'Comisión de Justicia revisa reformas al código penal',
+  'Senado aprueba presupuesto para la gestión',
+  'Comisión de Salud impulsa ley de medicina tradicional',
+  'Senado rechaza proyecto de ley controversial',
+  'Comisión de Infraestructura analiza proyectos viales',
+  'Senado aprueba declaración de emergencia departamental',
+  'Comisión de Derechos Humanos recibe informes',
+  'Senado modifica ley de telecomunicaciones',
+  'Comisión de Seguridad analiza nuevas políticas',
+  'Senado ratifica convenios internacionales',
+  'Comisión de Cultura impulsa patrimonio nacional'
+];
+
+// Tipos de contenido
+const TIPOS = ['news', 'news', 'news', 'news', 'news', 'announcement'];
+const CATEGORIAS = ['legislacion', 'institucional', 'noticias', 'eventos', 'participacion', 'transparencia'];
+
+// Función para generar título
+const generarTitulo = (index) => {
+  const base = TITULOS_BASE[index % TITULOS_BASE.length];
+  const variaciones = [
+    base,
+    `${base} - Versión ${Math.floor(index / TITULOS_BASE.length) + 1}`,
+    `${base}: nuevas disposiciones para el ${new Date().getFullYear()}`,
+    `${base} - Senado da luz verde a la iniciativa`,
+    `${base} tras debate en comisiones`,
+    `Senado: ${base.toLowerCase()}`,
+    `Histórico: ${base}`,
+    `Por unanimidad, ${base.toLowerCase()}`,
+    `${base} y su impacto en la población`,
+    `Detalles de cómo ${base.toLowerCase()}`
+  ];
+  return variaciones[index % variaciones.length];
+};
+
+// Función para generar slug
+const generarSlug = (titulo, index) => {
+  let slug = titulo
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  
+  // Limitar longitud y agregar índice para evitar duplicados
+  if (slug.length > 60) {
+    slug = slug.substring(0, 60);
+  }
+  return `${slug}-${index + 1}`;
+};
+
+// Función para generar fecha aleatoria (últimos 90 días)
+const getRandomDate = () => {
+  const date = new Date();
+  date.setDate(date.getDate() - Math.floor(Math.random() * 90));
+  return date;
+};
+
+// Función para generar tags
+const getRandomTags = () => {
+  const tags = ['leyes', 'desarrollo', 'educacion', 'medio-ambiente', 'salud', 'economia', 'seguridad', 'cultura', 'transparencia', 'participacion', 'derechos', 'infraestructura'];
+  const numTags = Math.floor(Math.random() * 3) + 2;
+  const shuffled = [...tags];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled.slice(0, numTags);
+};
+
+// Imágenes de Unsplash variadas
+const IMAGENES = [
+  'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800',
+  'https://images.unsplash.com/photo-1548839140-29a749e1cf4d?w=800',
+  'https://images.unsplash.com/photo-1529101091764-c3526daf3e28?w=800',
+  'https://images.unsplash.com/photo-1541872703-74c5e44368f9?w=800',
+  'https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=800',
+  'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=800',
+  'https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=800',
+  'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=800',
+  'https://images.unsplash.com/photo-1582555172866-f73bb12a2ab3?w=800',
+  'https://images.unsplash.com/photo-1554224154-26032ffc0a07?w=800',
+  'https://images.unsplash.com/photo-1517048676732-d65bc937f952?w=800',
+  'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=800'
+];
+
+// Generar 96 noticias adicionales (para llegar a 100 total con las 4 importantes)
+const generarNoticiasAdicionales = (cantidad) => {
+  const noticias = [];
+  const contenidosBase = [
+    `<p>En una sesión ordinaria, la Cámara de Senadores debatió y aprobó importantes proyectos de ley que beneficiarán a la población boliviana. La iniciativa fue respaldada por todas las fuerzas políticas presentes.</p>
+<p>El presidente del Senado destacó el consenso alcanzado y la importancia de trabajar de manera coordinada por el desarrollo del país.</p>
+<p>La normativa ahora pasa a la Cámara de Diputados para su revisión y posterior promulgación.</p>`,
+    
+    `<p>La Comisión correspondiente recibió a representantes de la sociedad civil para escuchar sus propuestas y observaciones sobre el proyecto en cuestión.</p>
+<p>Durante varias horas, los legisladores atendieron las inquietudes de los diferentes sectores involucrados.</p>
+<p>Se acordó incorporar varias modificaciones antes de la votación en el pleno.</p>`,
+    
+    `<p>Por unanimidad, el pleno del Senado dio su aprobación al proyecto de ley que busca mejorar las condiciones de vida de los ciudadanos.</p>
+<p>La medida incluye beneficios directos para sectores vulnerables y promueve la inversión en áreas clave.</p>
+<p>Organizaciones sociales manifestaron su satisfacción con el resultado.</p>`,
+    
+    `<p>La Comisión de Constitución emitió un dictamen favorable tras analizar en detalle el proyecto de ley presentado por el ejecutivo.</p>
+<p>Se espera que en los próximos días el documento sea considerado por el pleno camaral.</p>
+<p>Senadores de diferentes regiones expresaron su respaldo a la iniciativa.</p>`
+  ];
+  
+  for (let i = 0; i < cantidad; i++) {
+    const titulo = generarTitulo(i);
+    const fecha = getRandomDate();
+    const categoria = CATEGORIAS[i % CATEGORIAS.length];
+    const tipo = TIPOS[i % TIPOS.length];
+    const contenidoBase = contenidosBase[i % contenidosBase.length];
+    const contenidoAdicional = i % 3 === 0 ? `<p>Adicionalmente, se prevé que esta normativa tenga un impacto positivo en ${Math.floor(Math.random() * 10) + 1} departamentos del país, generando empleo y desarrollo sostenible.</p>` : '';
+    
+    noticias.push({
+      title: titulo,
+      slug: generarSlug(titulo, i),
+      content: contenidoBase + contenidoAdicional + `<p>La votación final está programada para la próxima sesión ordinaria, donde se espera contar con el respaldo necesario para su aprobación definitiva.</p>`,
+      excerpt: `${titulo.substring(0, 80)}. La iniciativa fue trabajada en consenso con todos los sectores involucrados.`,
+      type: tipo,
+      category: categoria,
+      tags: getRandomTags(),
+      status: 'published',
+      featuredImage: { 
+        url: IMAGENES[i % IMAGENES.length], 
+        alt: titulo.substring(0, 50)
+      },
+      views: Math.floor(Math.random() * 1000),
+      publishedAt: fecha
+    });
+  }
+  
+  return noticias;
+};
+
+// Noticias importantes destacadas (se mantienen al inicio)
+const noticiasImportantes = [
+  {
+    title: 'Senado aprueba Ley de Desarrollo Económico',
+    slug: 'senado-aprueba-ley-desarrollo-economico',
+    content: '<p>El pleno del Senado aprobó por unanimidad la nueva Ley de Desarrollo Económico. Esta normativa contempla beneficios tributarios para pequeñas y medianas empresas, así como líneas de crédito con tasas preferenciales para emprendedores.</p><p>"Es un día histórico para el desarrollo productivo de Bolivia", declaró el presidente del Senado. La ley fue trabajada en consenso con todas las fuerzas políticas y organizaciones sociales del país.</p><p>Entre los principales puntos de la ley se destacan: la creación de un fondo de garantía para MIPYMES, la simplificación de trámites para la creación de empresas, y beneficios fiscales para industrias que generen empleo.</p>',
+    excerpt: 'Nueva ley beneficiará a emprendedores y pequeñas empresas con créditos y beneficios tributarios',
+    type: 'news',
+    category: 'legislacion',
+    tags: ['economia', 'desarrollo', 'leyes', 'emprendedores'],
+    status: 'published',
+    featuredImage: { url: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800', alt: 'Pleno del Senado' },
+    views: 1250,
+    publishedAt: new Date()
+  },
+  {
+    title: 'Cámara de Senadores aprueba proyecto de Ley de Aguas',
+    slug: 'senado-aprueba-ley-aguas',
+    content: '<p>Por unanimidad, la Cámara de Senadores aprobó el proyecto de Ley General de Aguas, que garantiza el acceso al agua potable como derecho fundamental. La normativa establece mecanismos de distribución equitativa y protección de fuentes hídricas.</p><p>La ley contempla la creación de un fondo de inversión de Bs 1.200 millones para proyectos de riego tecnificado y plantas de tratamiento en áreas rurales y periurbanas.</p><p>Organizaciones sociales y gremiales manifestaron su respaldo a la iniciativa, destacando el trabajo conjunto entre el Legislativo y la sociedad civil.</p>',
+    excerpt: 'Ley garantiza acceso al agua potable como derecho fundamental con inversión de Bs 1.200 millones',
+    type: 'news',
+    category: 'legislacion',
+    tags: ['agua', 'derechos', 'riego', 'desarrollo'],
+    status: 'published',
+    featuredImage: { url: 'https://images.unsplash.com/photo-1541872703-74c5e44368f9?w=800', alt: 'Ley de Aguas' },
+    views: 980,
+    publishedAt: new Date()
+  },
+  {
+    title: 'Comisión de Autonomías analiza transferencia de competencias',
+    slug: 'comision-autonomias-transferencia-competencias',
+    content: '<p>La Comisión de Autonomías del Senado inició el análisis del proyecto de ley de transferencia de competencias del nivel central a las entidades territoriales autónomas. Gobernadores y alcaldes participaron de las primeras mesas de trabajo.</p><p>El objetivo es agilizar la descentralización efectiva y garantizar recursos suficientes para que las regiones ejecuten proyectos de desarrollo.</p><p>Se prevé que el proyecto sea aprobado en los próximos dos meses.</p>',
+    excerpt: 'Proyecto busca agilizar descentralización efectiva con recursos garantizados',
+    type: 'news',
+    category: 'legislacion',
+    tags: ['autonomias', 'descentralizacion', 'gobernadores', 'desarrollo'],
+    status: 'published',
+    featuredImage: { url: 'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=800', alt: 'Comisión de Autonomías' },
+    views: 750,
+    publishedAt: new Date()
+  },
+  {
+    title: 'Directiva del Senado presenta plan de trabajo anual',
+    slug: 'directiva-senado-plan-trabajo-anual',
+    content: '<p>La Directiva de la Cámara de Senadores presentó el plan de trabajo para la gestión anual, que incluye ejes prioritarios como la reactivación económica, la lucha contra la corrupción y el fortalecimiento de la democracia.</p><p>El presidente del Senado destacó que se realizarán al menos 12 sesiones descentralizadas en diferentes departamentos del país para acercar el trabajo legislativo a la ciudadanía.</p><p>También se anunció la creación de una plataforma digital de participación ciudadana.</p>',
+    excerpt: 'Plan incluye reactivación económica, lucha contra corrupción y sesiones descentralizadas',
+    type: 'news',
+    category: 'directiva',
+    tags: ['directiva', 'plan-trabajo', 'gestion', 'participacion'],
+    status: 'published',
+    featuredImage: { url: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=800', alt: 'Directiva del Senado' },
+    views: 620,
+    publishedAt: new Date()
+  }
+];
+
+async function seedContent() {
+  try {
+    console.log('🔌 Conectando a MongoDB...');
+    console.log('📍 URI:', process.env.MONGODB_URI);
+    await mongoose.connect(process.env.MONGODB_URI);
+    console.log('✅ Conectado a MongoDB');
+    
+    // OBTENER UN USUARIO ADMIN EXISTENTE
+    console.log('👤 Buscando usuario administrador...');
+    const adminUser = await User.findOne({ role: 'SUPER_ADMIN' });
+    
+    if (!adminUser) {
+      console.error('❌ No se encontró ningún usuario administrador en la base de datos.');
+      console.log('💡 Ejecuta primero: npm run seed:admin');
+      process.exit(1);
+    }
+    
+    console.log(`✅ Usuario encontrado: ${adminUser.email} (ID: ${adminUser._id})`);
+    
+    // Generar 96 noticias adicionales (para total de 100)
+    console.log('📝 Generando 96 noticias adicionales...');
+    const noticiasAdicionales = generarNoticiasAdicionales(96);
+    
+    // Combinar: 4 importantes + 96 adicionales = 100 total
+    const todasLasNoticias = [...noticiasImportantes, ...noticiasAdicionales];
+    
+    console.log(`📊 Total noticias a insertar: ${todasLasNoticias.length}`);
+    
+    // AGREGAR EL AUTHOR A CADA NOTICIA
+    const newsWithAuthor = todasLasNoticias.map(news => ({
+      ...news,
+      author: adminUser._id,
+      lastModifiedBy: adminUser._id
+    }));
+    
+    // Limpiar collection existente
+    const deleted = await Content.deleteMany({});
+    console.log(`🗑️ Eliminados ${deleted.deletedCount} documentos anteriores`);
+    
+    // Insertar en batches para evitar problemas de memoria
+    const batchSize = 50;
+    let inserted = 0;
+    
+    for (let i = 0; i < newsWithAuthor.length; i += batchSize) {
+      const batch = newsWithAuthor.slice(i, i + batchSize);
+      const result = await Content.insertMany(batch);
+      inserted += result.length;
+      console.log(`📦 Batch ${Math.floor(i / batchSize) + 1}: insertadas ${result.length} noticias`);
+    }
+    
+    console.log(`✅ Insertadas ${inserted} noticias de ejemplo`);
+    
+    // Mostrar estadísticas
+    const total = await Content.countDocuments();
+    const porCategoria = await Content.aggregate([
+      { $group: { _id: '$category', count: { $sum: 1 } } }
+    ]);
+    const porTipo = await Content.aggregate([
+      { $group: { _id: '$type', count: { $sum: 1 } } }
+    ]);
+    
+    console.log('\n📊 ESTADÍSTICAS FINALES:');
+    console.log(`   Total documentos: ${total}`);
+    
+    console.log('\n   Por categoría:');
+    porCategoria.forEach(cat => {
+      console.log(`      ${cat._id}: ${cat.count}`);
+    });
+    
+    console.log('\n   Por tipo:');
+    porTipo.forEach(tipo => {
+      console.log(`      ${tipo._id}: ${tipo.count}`);
+    });
+    
+    console.log('\n📰 PRIMERAS 6 NOTICIAS:');
+    const primeras = await Content.find().sort({ publishedAt: -1 }).limit(6);
+    primeras.forEach((news, i) => {
+      console.log(`   ${i+1}. ${news.title}`);
+    });
+    
+    await mongoose.disconnect();
+    console.log('\n👋 Desconectado de MongoDB');
+    console.log('✅ SEED COMPLETADO CON ÉXITO - 100 NOTICIAS CREADAS');
+    console.log('\n📌 Verifica la paginación en: http://demoback.senado.gob.bo/api/content');
+    
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error en seed:', error);
+    if (error.errors) {
+      console.error('📋 Detalles de validación:', Object.keys(error.errors).map(key => ({
+        campo: key,
+        mensaje: error.errors[key].message
+      })));
+    }
+    process.exit(1);
+  }
+}
+
+seedContent(); 
 ================================= 
 src\scripts\seedTabs.js 
 ================================= 
@@ -6240,4 +6401,4 @@ const userValidators = {
 };
 
 module.exports = userValidators; 
-Total archivos: 34 
+Total archivos: 35 
