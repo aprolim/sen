@@ -1,6 +1,6 @@
 // src/scripts/seedSenadores.js
 // Script para migrar los datos de senadores a MongoDB
-// LA DATA ESTÁ INCLUIDA AQUÍ
+// LA DATA ESTÁ INCLUIDA AQUÍ - las fotos apuntan a /senadores/ (backend)
 
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
@@ -930,6 +930,7 @@ async function seedSenadores() {
   console.log('\n' + '═'.repeat(80));
   console.log('👥 SEED DE SENADORES');
   console.log('   Migrando datos a MongoDB');
+  console.log('   📁 Las fotos se sirven desde: /senadores/');
   console.log('═'.repeat(80) + '\n');
 
   try {
@@ -937,26 +938,21 @@ async function seedSenadores() {
     await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/senado_bolivia');
     console.log('✅ Conectado a MongoDB\n');
 
-    // Verificar si ya hay datos
     const existingCount = await Senador.countDocuments();
     if (existingCount > 0) {
-      console.log(`⚠️ Ya existen ${existingCount} senadores en la base de datos.`);
+      console.log(`⚠️ Ya existen ${existingCount} senadores.`);
       const force = process.argv.includes('--force');
-      
       if (!force) {
         console.log('   Usa --force para sobrescribir: node src/scripts/seedSenadores.js --force');
-        console.log('❌ Operación cancelada.');
         process.exit(0);
       }
-      
       console.log('🗑️ Eliminando senadores existentes...');
       await Senador.deleteMany({});
       console.log('✅ Eliminados\n');
     }
 
-    console.log(`📝 Preparando ${SENADORES_DATA.length} senadores para insertar...\n`);
-
-    // Insertar en lotes
+    console.log(`📝 Insertando ${SENADORES_DATA.length} senadores...\n`);
+    
     const batchSize = 50;
     let inserted = 0;
     
@@ -964,25 +960,25 @@ async function seedSenadores() {
       const batch = SENADORES_DATA.slice(i, i + batchSize);
       await Senador.insertMany(batch, { ordered: false });
       inserted += batch.length;
-      console.log(`   ✅ Insertados ${inserted} de ${SENADORES_DATA.length} senadores...`);
+      console.log(`   ✅ Insertados ${inserted} de ${SENADORES_DATA.length}`);
     }
 
     console.log(`\n✅ ${inserted} senadores insertados exitosamente`);
 
-    // Verificar
     const total = await Senador.countDocuments();
     console.log(`\n📊 Total en base de datos: ${total} senadores`);
 
-    // Mostrar primeros 5
-    const sample = await Senador.find().limit(5).lean();
-    console.log('\n📋 Muestra de los primeros 5:');
+    const sample = await Senador.find().limit(3).lean();
+    console.log('\n📋 Muestra de los primeros 3:');
     sample.forEach((s, i) => {
       console.log(`   ${i + 1}. ${s.name} (${s.partyShort}) - ${s.department}`);
+      console.log(`      Foto: ${s.foto}`);
     });
 
     await mongoose.disconnect();
     console.log('\n' + '═'.repeat(80));
     console.log('🎉 SEED COMPLETADO CON ÉXITO');
+    console.log('   Las fotos se sirven desde: http://demoback.senado.gob.bo/senadores/...');
     console.log('═'.repeat(80) + '\n');
 
     process.exit(0);

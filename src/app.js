@@ -69,6 +69,7 @@ const corsOptions = {
       'http://demoap.senado.gob.bo',
       'http://demoback.senado.gob.bo',
       'https://demoap.senado.gob.bo',
+      'https://demopanel.senado.gob.bo',
     ];
     
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
@@ -106,9 +107,9 @@ const generalLimiter = rateLimit({
     success: false,
     message: 'Demasiadas peticiones desde esta IP. Intenta más tarde.'
   },
-  standardHeaders: true, // Retorna rate limit info en headers `RateLimit-*`
-  legacyHeaders: false, // Deshabilita headers `X-RateLimit-*`
-  validate: { trustProxy: true } // 🔥 Confiar en proxy para IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { trustProxy: true }
 });
 
 const authLimiter = rateLimit({
@@ -118,7 +119,7 @@ const authLimiter = rateLimit({
     success: false,
     message: 'Demasiados intentos de login. Intenta más tarde.'
   },
-  skipSuccessfulRequests: true, // No contar peticiones exitosas
+  skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
   validate: { trustProxy: true }
@@ -156,6 +157,8 @@ app.use(express.urlencoded({
 // ============================================
 // SERVIR ARCHIVOS ESTÁTICOS CON CORS
 // ============================================
+
+// 1. Uploads (imágenes subidas dinámicamente)
 app.use('/uploads', (req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -168,6 +171,16 @@ app.use('/uploads', (req, res, next) => {
   }
   next();
 }, express.static(path.join(__dirname, '..', 'uploads'), {
+  setHeaders: (res, filepath) => {
+    if (filepath.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    }
+  }
+}));
+
+// 🔥 2. Senadores (imágenes de perfiles - RUTA FIJA)
+app.use('/senadores', express.static(path.join(__dirname, '..', 'public', 'senadores'), {
   setHeaders: (res, filepath) => {
     if (filepath.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
       res.setHeader('Cache-Control', 'public, max-age=31536000');
@@ -393,6 +406,8 @@ const startServer = async () => {
       console.log('   • Protección HPP');
       console.log('   • Auditoría de logs');
       console.log('   • Validación JWT secreto');
+      console.log('   • Servir imágenes de senadores (public/senadores)');
+      console.log('   • Servir archivos subidos (uploads)');
       console.log('═'.repeat(60));
     });
     
