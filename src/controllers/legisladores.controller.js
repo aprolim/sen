@@ -1,3 +1,5 @@
+// src/controllers/legisladores.controller.js
+const Senador = require('../models/Senador');
 const legisladoresService = require('../services/legisladores.service');
 const { processImage } = require('../middleware/upload');
 const path = require('path');
@@ -508,7 +510,6 @@ class LegisladoresController {
         });
       }
 
-      // Procesar imagen
       const imagePath = path.join(req.file.destination, req.file.filename);
       const processedFilename = await processImage(imagePath, {
         width: 400,
@@ -519,7 +520,6 @@ class LegisladoresController {
 
       const imageUrl = `/uploads/legisladores/${processedFilename}`;
 
-      // Si se proporcionó ID del legislador, actualizar su foto
       if (req.body.legisladorId) {
         const legislador = await legisladoresService.getLegisladorById(req.body.legisladorId);
         legislador.fotoPerfil = {
@@ -609,6 +609,81 @@ class LegisladoresController {
       res.status(400).json({
         success: false,
         message: error.message,
+      });
+    }
+  }
+
+  // ============================================
+  // 🔥 NUEVO: OBTENER DIRECTIVA CAMARAL
+  // ============================================
+
+  /**
+   * @swagger
+   * /api/legisladores/directiva:
+   *   get:
+   *     summary: Obtener la directiva camaral (Presidente, Vicepresidencias, Secretarías)
+   *     tags: [Legisladores]
+   *     responses:
+   *       200:
+   *         description: Directiva camaral obtenida exitosamente
+   */
+  async getDirectivaCamaral(req, res) {
+    try {
+      console.log('\n👥 [getDirectivaCamaral] Obteniendo directiva camaral');
+
+      // IDs de la directiva según data/senadores.js
+      const DIRECTIVA_IDS = {
+        presidente: 32,          // Diego Esteban Mateo Ávila Navajas
+        primeraVice: 6,          // Carmen Soledad Chapeton Tancara
+        segundaVice: 12,         // Kathia Lizbeth Quiroga Fernández
+        primeraSecretaria: 33,   // Yasmín Estivariz Villarroel
+        segundaSecretaria: 13,   // Rosa Tatiana Áñez Carrasco
+        terceraSecretaria: 24    // Julio Diego Romaña Galindo
+      };
+
+      // Buscar los miembros de la directiva usando el modelo Senador
+      const Senador = require('../models/Senador');
+      
+      const miembros = await Senador.find({
+        id: {
+          $in: [
+            DIRECTIVA_IDS.presidente,
+            DIRECTIVA_IDS.primeraVice,
+            DIRECTIVA_IDS.segundaVice,
+            DIRECTIVA_IDS.primeraSecretaria,
+            DIRECTIVA_IDS.segundaSecretaria,
+            DIRECTIVA_IDS.terceraSecretaria
+          ]
+        }
+      }).lean();
+
+      console.log(`✅ Encontrados ${miembros.length} miembros de la directiva`);
+
+      const findMember = (id) => miembros.find(m => m.id === id) || null;
+
+      const resultado = {
+        presidente: findMember(DIRECTIVA_IDS.presidente),
+        vicepresidencias: [
+          { ...findMember(DIRECTIVA_IDS.primeraVice), cargo: 'Primera Vicepresidencia' },
+          { ...findMember(DIRECTIVA_IDS.segundaVice), cargo: 'Segunda Vicepresidencia' }
+        ].filter(m => m && m.id),
+        secretarias: [
+          { ...findMember(DIRECTIVA_IDS.primeraSecretaria), cargo: 'Primera Secretaria' },
+          { ...findMember(DIRECTIVA_IDS.segundaSecretaria), cargo: 'Segunda Secretaria' },
+          { ...findMember(DIRECTIVA_IDS.terceraSecretaria), cargo: 'Tercera Secretaria' }
+        ].filter(m => m && m.id)
+      };
+
+      res.json({
+        success: true,
+        data: resultado
+      });
+
+    } catch (error) {
+      console.error('❌ Error en getDirectivaCamaral:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener la directiva camaral'
       });
     }
   }

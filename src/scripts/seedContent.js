@@ -1,5 +1,5 @@
 // src/scripts/seedContent.js
-// Seed para crear 100 noticias de ejemplo
+// SEED COMPLETO - CON CATEGORÍAS: 'noticia' e 'importante'
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const Content = require('../models/Content');
@@ -7,157 +7,223 @@ const User = require('../models/User');
 
 dotenv.config();
 
-// CATEGORÍAS VÁLIDAS según el modelo Content
-const VALID_CATEGORIES = [
-  'institucional',
-  'historia',
-  'directiva',
-  'noticias',
-  'eventos',
-  'transparencia',
-  'participacion',
-  'legislacion'
+// ============================================
+// SENADORES REALES PARA CITAS
+// ============================================
+const SENADORES = [
+  { name: 'Diego Esteban Mateo Ávila Navajas', role: 'Presidente del Senado' },
+  { name: 'Carmen Soledad Chapetón Tancara', role: 'Primera Vicepresidenta del Senado' },
+  { name: 'Khatia Lisbeth Quiroga Fernández', role: 'Segunda Vicepresidenta del Senado' },
+  { name: 'Yasmin Estívariz Villarroel', role: 'Primera Secretaria del Senado' },
+  { name: 'Julio Diego Romaña Galindo', role: 'Segundo Secretario del Senado' },
+  { name: 'Andrónico Rodríguez Ledezma', role: 'Senador por Cochabamba' },
+  { name: 'Cecilia Rosario Requena Zabala', role: 'Senadora por Beni' },
+  { name: 'Félix Ajpi Ajpi', role: 'Senador por La Paz' },
+  { name: 'Gladys Margot Alurralde Peñaranda', role: 'Senadora por Tarija' },
+  { name: 'Hiroshi Ando Chávez', role: 'Senador por Santa Cruz' },
+  { name: 'Leonilda Zurita Vargas', role: 'Senadora por Potosí' },
+  { name: 'Rubén Eugenio Medinaceli Ortiz', role: 'Senador por Chuquisaca' }
 ];
 
-// Títulos base para generar noticias variadas (20 títulos base)
+// ============================================
+// TÍTULOS BASE - CATEGORÍAS CORRECTAS
+// ============================================
 const TITULOS_BASE = [
-  'Senado aprueba nueva ley de desarrollo económico',
-  'Comisión de Educación recibe propuestas para reforma curricular',
-  'Senado conmemora el Día de la Madre Tierra',
-  'Cámara de Senadores aprueba proyecto de Ley de Aguas',
-  'Senado realiza audiencia pública sobre salud mental',
-  'Comisión de Autonomías analiza transferencia de competencias',
-  'Directiva del Senado presenta plan de trabajo anual',
-  'Senado abre convocatoria para pasantías universitarias',
-  'Senado impulsa proyecto de ley de desarrollo productivo',
-  'Comisión de Justicia revisa reformas al código penal',
-  'Senado aprueba presupuesto para la gestión',
-  'Comisión de Salud impulsa ley de medicina tradicional',
-  'Senado rechaza proyecto de ley controversial',
-  'Comisión de Infraestructura analiza proyectos viales',
-  'Senado aprueba declaración de emergencia departamental',
-  'Comisión de Derechos Humanos recibe informes',
-  'Senado modifica ley de telecomunicaciones',
-  'Comisión de Seguridad analiza nuevas políticas',
-  'Senado ratifica convenios internacionales',
-  'Comisión de Cultura impulsa patrimonio nacional'
+  // NOTICIAS IMPORTANTES (⭐) - category: 'importante'
+  { titulo: '⭐ *Senado* aprueba nueva ley de *protección ambiental*', categoria: 'importante', tags: ['medio-ambiente', 'leyes', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ *Senado* rechaza *proyecto* de ley controversial', categoria: 'importante', tags: ['política', 'debate', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ *Presupuesto* general de la *nación* 2026', categoria: 'importante', tags: ['presupuesto', 'economía', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ *Senado* conmemora el *Día de la Madre Tierra*', categoria: 'importante', tags: ['medio-ambiente', 'conmemoración', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ Directiva del *Senado* presenta *plan* de trabajo anual', categoria: 'importante', tags: ['directiva', 'plan', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ *Comisión* de Justicia revisa reformas al *código penal*', categoria: 'importante', tags: ['justicia', 'reformas', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ *Senado* realiza *audiencia pública* sobre salud mental', categoria: 'importante', tags: ['salud', 'audiencia', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ *Cámara de Senadores* celebra *aniversario* institucional', categoria: 'importante', tags: ['aniversario', 'historia', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ *Foro* internacional de *derechos humanos* en el Senado', categoria: 'importante', tags: ['derechos', 'foro', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ *Senado* aprueba *ley* de educación superior', categoria: 'importante', tags: ['educación', 'universidades', 'destacado'], tieneVideo: true },
+  
+  // NOTICIAS NORMALES (📰) - category: 'noticia'
+  { titulo: '📰 Comisión de Desarrollo *Económico* presenta informe', categoria: 'noticia', tags: ['economía', 'desarrollo'], tieneVideo: false },
+  { titulo: '📰 *Nuevas* disposiciones para el sector *salud*', categoria: 'noticia', tags: ['salud', 'leyes'], tieneVideo: false },
+  { titulo: '📰 *Senado* abre *convocatoria* para pasantías universitarias', categoria: 'noticia', tags: ['educación', 'pasantías'], tieneVideo: false },
+  { titulo: '📰 *Consulta* ciudadana sobre *ley de transparencia*', categoria: 'noticia', tags: ['transparencia', 'participación'], tieneVideo: false },
+  { titulo: '📰 *Senado* impulsa *proyecto* de desarrollo productivo', categoria: 'noticia', tags: ['desarrollo', 'productivo'], tieneVideo: false },
+  { titulo: '📰 *Comisión* de Infraestructura analiza *proyectos viales*', categoria: 'noticia', tags: ['infraestructura', 'vialidad'], tieneVideo: false },
+  { titulo: '📰 Comisión de Educación recibe propuestas para reforma curricular', categoria: 'noticia', tags: ['educación', 'reformas'], tieneVideo: false },
+  { titulo: '📰 Comisión de Autonomías analiza transferencia de competencias', categoria: 'noticia', tags: ['autonomías', 'descentralización'], tieneVideo: false },
+  { titulo: '📰 Comisión de Salud impulsa ley de medicina tradicional', categoria: 'noticia', tags: ['salud', 'medicina'], tieneVideo: false },
+  { titulo: '📰 Comisión de Seguridad analiza nuevas políticas', categoria: 'noticia', tags: ['seguridad', 'políticas'], tieneVideo: false },
+  { titulo: '📰 Comisión de Cultura impulsa patrimonio nacional', categoria: 'noticia', tags: ['cultura', 'patrimonio'], tieneVideo: false },
+  { titulo: '📰 Senado ratifica convenios internacionales', categoria: 'noticia', tags: ['internacional', 'convenios'], tieneVideo: false }
 ];
 
-// Tipos de contenido
-const TIPOS = ['news', 'news', 'news', 'news', 'news', 'announcement'];
-const CATEGORIAS = ['legislacion', 'institucional', 'noticias', 'eventos', 'participacion', 'transparencia'];
-
-// Función para generar título
-const generarTitulo = (index) => {
-  const base = TITULOS_BASE[index % TITULOS_BASE.length];
-  const variaciones = [
-    base,
-    `${base} - Versión ${Math.floor(index / TITULOS_BASE.length) + 1}`,
-    `${base}: nuevas disposiciones para el ${new Date().getFullYear()}`,
-    `${base} - Senado da luz verde a la iniciativa`,
-    `${base} tras debate en comisiones`,
-    `Senado: ${base.toLowerCase()}`,
-    `Histórico: ${base}`,
-    `Por unanimidad, ${base.toLowerCase()}`,
-    `${base} y su impacto en la población`,
-    `Detalles de cómo ${base.toLowerCase()}`
-  ];
-  return variaciones[index % variaciones.length];
-};
-
-// Función para generar slug
-const generarSlug = (titulo, index) => {
-  let slug = titulo
-    .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  
-  // Limitar longitud y agregar índice para evitar duplicados
-  if (slug.length > 60) {
-    slug = slug.substring(0, 60);
-  }
-  return `${slug}-${index + 1}`;
-};
-
-// Función para generar fecha aleatoria (últimos 90 días)
-const getRandomDate = () => {
-  const date = new Date();
-  date.setDate(date.getDate() - Math.floor(Math.random() * 90));
-  return date;
-};
-
-// Función para generar tags
-const getRandomTags = () => {
-  const tags = ['leyes', 'desarrollo', 'educacion', 'medio-ambiente', 'salud', 'economia', 'seguridad', 'cultura', 'transparencia', 'participacion', 'derechos', 'infraestructura'];
-  const numTags = Math.floor(Math.random() * 3) + 2;
-  const shuffled = [...tags];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled.slice(0, numTags);
-};
-
-// Imágenes de Unsplash variadas
+// ============================================
+// IMÁGENES DE EJEMPLO
+// ============================================
 const IMAGENES = [
-  'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800',
-  'https://images.unsplash.com/photo-1548839140-29a749e1cf4d?w=800',
-  'https://images.unsplash.com/photo-1529101091764-c3526daf3e28?w=800',
-  'https://images.unsplash.com/photo-1541872703-74c5e44368f9?w=800',
-  'https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=800',
-  'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=800',
-  'https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=800',
-  'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=800',
-  'https://images.unsplash.com/photo-1582555172866-f73bb12a2ab3?w=800',
-  'https://images.unsplash.com/photo-1554224154-26032ffc0a07?w=800',
-  'https://images.unsplash.com/photo-1517048676732-d65bc937f952?w=800',
-  'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=800'
+  { url: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=1200', alt: 'Pleno del Senado en sesión', caption: 'Sesión plenaria de la Cámara de Senadores' },
+  { url: 'https://images.unsplash.com/photo-1529101091764-c3526daf3e28?w=1200', alt: 'Palacio del Senado', caption: 'Palacio del Senado de Bolivia' },
+  { url: 'https://images.unsplash.com/photo-1541872703-74c5e44368f9?w=1200', alt: 'Senadores en debate', caption: 'Senadores durante el debate legislativo' },
+  { url: 'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=1200', alt: 'Comisión del Senado', caption: 'Reunión de comisión parlamentaria' },
+  { url: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=1200', alt: 'Presidente del Senado', caption: 'Presidente del Senado en conferencia' },
+  { url: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=1200', alt: 'Senadores trabajando', caption: 'Senadores trabajando en comisiones' }
 ];
 
-// Generar 96 noticias adicionales (para llegar a 100 total con las 4 importantes)
-const generarNoticiasAdicionales = (cantidad) => {
-  const noticias = [];
-  const contenidosBase = [
-    `<p>En una sesión ordinaria, la Cámara de Senadores debatió y aprobó importantes proyectos de ley que beneficiarán a la población boliviana. La iniciativa fue respaldada por todas las fuerzas políticas presentes.</p>
-<p>El presidente del Senado destacó el consenso alcanzado y la importancia de trabajar de manera coordinada por el desarrollo del país.</p>
-<p>La normativa ahora pasa a la Cámara de Diputados para su revisión y posterior promulgación.</p>`,
-    
-    `<p>La Comisión correspondiente recibió a representantes de la sociedad civil para escuchar sus propuestas y observaciones sobre el proyecto en cuestión.</p>
-<p>Durante varias horas, los legisladores atendieron las inquietudes de los diferentes sectores involucrados.</p>
-<p>Se acordó incorporar varias modificaciones antes de la votación en el pleno.</p>`,
-    
-    `<p>Por unanimidad, el pleno del Senado dio su aprobación al proyecto de ley que busca mejorar las condiciones de vida de los ciudadanos.</p>
-<p>La medida incluye beneficios directos para sectores vulnerables y promueve la inversión en áreas clave.</p>
-<p>Organizaciones sociales manifestaron su satisfacción con el resultado.</p>`,
-    
-    `<p>La Comisión de Constitución emitió un dictamen favorable tras analizar en detalle el proyecto de ley presentado por el ejecutivo.</p>
-<p>Se espera que en los próximos días el documento sea considerado por el pleno camaral.</p>
-<p>Senadores de diferentes regiones expresaron su respaldo a la iniciativa.</p>`
-  ];
+// ============================================
+// VIDEOS DE EJEMPLO
+// ============================================
+const VIDEOS = [
+  { url: 'https://www.youtube.com/embed/dQw4w9WgXcQ', title: 'Sesión Plenaria del Senado', caption: 'Registro oficial de la sesión plenaria' },
+  { url: 'https://www.youtube.com/embed/9bZkp7q19f0', title: 'Comisión de Constitución', caption: 'Trabajo de la comisión revisando proyectos' }
+];
+
+// ============================================
+// FUNCIÓN PARA GENERAR BLOQUES
+// ============================================
+const generarBloques = (titulo, categoria, index, tieneVideo) => {
+  const bloques = [];
   
-  for (let i = 0; i < cantidad; i++) {
-    const titulo = generarTitulo(i);
-    const fecha = getRandomDate();
-    const categoria = CATEGORIAS[i % CATEGORIAS.length];
-    const tipo = TIPOS[i % TIPOS.length];
-    const contenidoBase = contenidosBase[i % contenidosBase.length];
-    const contenidoAdicional = i % 3 === 0 ? `<p>Adicionalmente, se prevé que esta normativa tenga un impacto positivo en ${Math.floor(Math.random() * 10) + 1} departamentos del país, generando empleo y desarrollo sostenible.</p>` : '';
+  // Párrafo 1 - Introducción
+  bloques.push({
+    type: 'paragraph',
+    content: `<p>En una <strong>sesión ordinaria</strong> de la Cámara de Senadores, se debatió y aprobó importantes proyectos de ley que beneficiarán a la <strong>población boliviana</strong>. La iniciativa fue respaldada por todas las fuerzas políticas presentes, demostrando el compromiso del Senado con el <em>desarrollo nacional</em>.</p>`
+  });
+  
+  // VIDEO
+  if (tieneVideo) {
+    const video = VIDEOS[index % VIDEOS.length];
+    bloques.push({
+      type: 'video',
+      url: video.url,
+      title: video.title,
+      caption: video.caption
+    });
+  }
+  
+  // Párrafo 2 - Desarrollo
+  bloques.push({
+    type: 'paragraph',
+    content: `<p>La <strong>Comisión de Constitución</strong> analizó el proyecto de ley en detalle, revisando cada uno de sus artículos y escuchando las observaciones de los diferentes sectores involucrados. Este proceso de análisis duró varias semanas y contó con la participación de <strong>expertos en la materia</strong>.</p>`
+  });
+  
+  // CITA (80% de probabilidad)
+  if (Math.random() > 0.2) {
+    const senador = SENADORES[Math.floor(Math.random() * SENADORES.length)];
+    const citas = [
+      `${titulo.replace(/\*/g, '').replace(/⭐|📰/g, '').trim()} es un paso histórico para el desarrollo legislativo de nuestro país. Nunca antes se había logrado un consenso tan amplio en una iniciativa de esta naturaleza.`,
+      `La transparencia y el diálogo son fundamentales para el fortalecimiento de nuestra democracia. Este proyecto es una prueba de que cuando trabajamos juntos, podemos lograr grandes cosas para el país.`,
+      `Trabajamos incansablemente para garantizar el bienestar de todos los bolivianos. Esta ley es una muestra de nuestro compromiso con la gente.`
+    ];
+    
+    bloques.push({
+      type: 'quote',
+      content: citas[Math.floor(Math.random() * citas.length)],
+      author: senador.name,
+      role: senador.role
+    });
+  }
+  
+  // Párrafo 3 - Votación
+  bloques.push({
+    type: 'paragraph',
+    content: `<p>La <strong>votación final</strong> está programada para la próxima sesión ordinaria, donde se espera contar con el respaldo necesario para su <strong>aprobación definitiva</strong>. Los líderes de bancada se mostraron optimistas respecto al resultado de la votación.</p>`
+  });
+  
+  // Párrafo 4 - Impacto
+  bloques.push({
+    type: 'paragraph',
+    content: `<p>Esta iniciativa legislativa forma parte de un <strong>paquete de reformas</strong> que el Senado viene impulsando para modernizar el marco normativo del país. Se prevé que en los próximos meses se presenten proyectos complementarios en áreas clave como <strong>educación, salud y desarrollo productivo</strong>.</p>`
+  });
+  
+  return bloques;
+};
+
+// ============================================
+// FUNCIÓN PARA GENERAR GALERÍA
+// ============================================
+const generarGaleria = (imagenPrincipal, index) => {
+  const galeria = [];
+  
+  galeria.push({
+    url: imagenPrincipal.url,
+    alt: imagenPrincipal.alt,
+    caption: imagenPrincipal.caption,
+    order: 0
+  });
+  
+  const numAdicionales = Math.floor(Math.random() * 2) + 1;
+  for (let i = 0; i < numAdicionales && i < IMAGENES.length; i++) {
+    const imgIndex = (index + i + 1) % IMAGENES.length;
+    if (IMAGENES[imgIndex].url !== imagenPrincipal.url) {
+      galeria.push({
+        url: IMAGENES[imgIndex].url,
+        alt: IMAGENES[imgIndex].alt,
+        caption: IMAGENES[imgIndex].caption,
+        order: i + 1
+      });
+    }
+  }
+  
+  return galeria;
+};
+
+// ============================================
+// FUNCIÓN PARA GENERAR HTML DESDE BLOQUES
+// ============================================
+const generarHTMLDesdeBloques = (bloques) => {
+  let html = '';
+  for (const bloque of bloques) {
+    if (bloque.type === 'paragraph') {
+      html += bloque.content;
+    } else if (bloque.type === 'quote') {
+      html += `<blockquote><p>${bloque.content}</p><footer>— ${bloque.author}, ${bloque.role}</footer></blockquote>`;
+    } else if (bloque.type === 'video') {
+      html += `<iframe src="${bloque.url}" title="${bloque.title}" frameborder="0" allowfullscreen style="width: 100%; height: 400px; border-radius: 12px;"></iframe>`;
+    }
+  }
+  return html;
+};
+
+// ============================================
+// GENERAR TODAS LAS NOTICIAS
+// ============================================
+const generarNoticias = async (adminUserId) => {
+  const noticias = [];
+  
+  for (let i = 0; i < TITULOS_BASE.length; i++) {
+    const base = TITULOS_BASE[i];
+    const imagenIndex = i % IMAGENES.length;
+    const imagenPrincipal = IMAGENES[imagenIndex];
+    const fecha = new Date();
+    fecha.setDate(fecha.getDate() - i);
+    
+    const tieneVideo = base.tieneVideo;
+    const bloques = generarBloques(base.titulo, base.categoria, i, tieneVideo);
+    const galeria = generarGaleria(imagenPrincipal, i);
     
     noticias.push({
-      title: titulo,
-      slug: generarSlug(titulo, i),
-      content: contenidoBase + contenidoAdicional + `<p>La votación final está programada para la próxima sesión ordinaria, donde se espera contar con el respaldo necesario para su aprobación definitiva.</p>`,
-      excerpt: `${titulo.substring(0, 80)}. La iniciativa fue trabajada en consenso con todos los sectores involucrados.`,
-      type: tipo,
-      category: categoria,
-      tags: getRandomTags(),
+      title: base.titulo,
+      slug: base.titulo
+        .toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[⭐📰]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') + '-' + Date.now() + i,
+      content: generarHTMLDesdeBloques(bloques),
+      blocks: bloques,
+      excerpt: `${base.categoria === 'importante' ? '⭐ ' : '📰 '}${base.titulo.replace(/\*/g, '').replace(/⭐|📰/g, '').trim()}. Una iniciativa importante para el desarrollo de Bolivia.`,
+      type: 'news',
+      category: base.categoria,  // 🔥 'importante' o 'noticia'
+      tags: base.tags,
       status: 'published',
-      featuredImage: { 
-        url: IMAGENES[i % IMAGENES.length], 
-        alt: titulo.substring(0, 50)
+      featuredImage: {
+        url: imagenPrincipal.url,
+        alt: imagenPrincipal.alt,
+        caption: imagenPrincipal.caption
       },
-      views: Math.floor(Math.random() * 1000),
+      gallery: galeria,
+      author: adminUserId,
+      lastModifiedBy: adminUserId,
+      views: Math.floor(Math.random() * 2000) + 100,
       publishedAt: fecha
     });
   }
@@ -165,156 +231,88 @@ const generarNoticiasAdicionales = (cantidad) => {
   return noticias;
 };
 
-// Noticias importantes destacadas (se mantienen al inicio)
-const noticiasImportantes = [
-  {
-    title: 'Senado aprueba Ley de Desarrollo Económico',
-    slug: 'senado-aprueba-ley-desarrollo-economico',
-    content: '<p>El pleno del Senado aprobó por unanimidad la nueva Ley de Desarrollo Económico. Esta normativa contempla beneficios tributarios para pequeñas y medianas empresas, así como líneas de crédito con tasas preferenciales para emprendedores.</p><p>"Es un día histórico para el desarrollo productivo de Bolivia", declaró el presidente del Senado. La ley fue trabajada en consenso con todas las fuerzas políticas y organizaciones sociales del país.</p><p>Entre los principales puntos de la ley se destacan: la creación de un fondo de garantía para MIPYMES, la simplificación de trámites para la creación de empresas, y beneficios fiscales para industrias que generen empleo.</p>',
-    excerpt: 'Nueva ley beneficiará a emprendedores y pequeñas empresas con créditos y beneficios tributarios',
-    type: 'news',
-    category: 'legislacion',
-    tags: ['economia', 'desarrollo', 'leyes', 'emprendedores'],
-    status: 'published',
-    featuredImage: { url: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800', alt: 'Pleno del Senado' },
-    views: 1250,
-    publishedAt: new Date()
-  },
-  {
-    title: 'Cámara de Senadores aprueba proyecto de Ley de Aguas',
-    slug: 'senado-aprueba-ley-aguas',
-    content: '<p>Por unanimidad, la Cámara de Senadores aprobó el proyecto de Ley General de Aguas, que garantiza el acceso al agua potable como derecho fundamental. La normativa establece mecanismos de distribución equitativa y protección de fuentes hídricas.</p><p>La ley contempla la creación de un fondo de inversión de Bs 1.200 millones para proyectos de riego tecnificado y plantas de tratamiento en áreas rurales y periurbanas.</p><p>Organizaciones sociales y gremiales manifestaron su respaldo a la iniciativa, destacando el trabajo conjunto entre el Legislativo y la sociedad civil.</p>',
-    excerpt: 'Ley garantiza acceso al agua potable como derecho fundamental con inversión de Bs 1.200 millones',
-    type: 'news',
-    category: 'legislacion',
-    tags: ['agua', 'derechos', 'riego', 'desarrollo'],
-    status: 'published',
-    featuredImage: { url: 'https://images.unsplash.com/photo-1541872703-74c5e44368f9?w=800', alt: 'Ley de Aguas' },
-    views: 980,
-    publishedAt: new Date()
-  },
-  {
-    title: 'Comisión de Autonomías analiza transferencia de competencias',
-    slug: 'comision-autonomias-transferencia-competencias',
-    content: '<p>La Comisión de Autonomías del Senado inició el análisis del proyecto de ley de transferencia de competencias del nivel central a las entidades territoriales autónomas. Gobernadores y alcaldes participaron de las primeras mesas de trabajo.</p><p>El objetivo es agilizar la descentralización efectiva y garantizar recursos suficientes para que las regiones ejecuten proyectos de desarrollo.</p><p>Se prevé que el proyecto sea aprobado en los próximos dos meses.</p>',
-    excerpt: 'Proyecto busca agilizar descentralización efectiva con recursos garantizados',
-    type: 'news',
-    category: 'legislacion',
-    tags: ['autonomias', 'descentralizacion', 'gobernadores', 'desarrollo'],
-    status: 'published',
-    featuredImage: { url: 'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=800', alt: 'Comisión de Autonomías' },
-    views: 750,
-    publishedAt: new Date()
-  },
-  {
-    title: 'Directiva del Senado presenta plan de trabajo anual',
-    slug: 'directiva-senado-plan-trabajo-anual',
-    content: '<p>La Directiva de la Cámara de Senadores presentó el plan de trabajo para la gestión anual, que incluye ejes prioritarios como la reactivación económica, la lucha contra la corrupción y el fortalecimiento de la democracia.</p><p>El presidente del Senado destacó que se realizarán al menos 12 sesiones descentralizadas en diferentes departamentos del país para acercar el trabajo legislativo a la ciudadanía.</p><p>También se anunció la creación de una plataforma digital de participación ciudadana.</p>',
-    excerpt: 'Plan incluye reactivación económica, lucha contra corrupción y sesiones descentralizadas',
-    type: 'news',
-    category: 'directiva',
-    tags: ['directiva', 'plan-trabajo', 'gestion', 'participacion'],
-    status: 'published',
-    featuredImage: { url: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=800', alt: 'Directiva del Senado' },
-    views: 620,
-    publishedAt: new Date()
-  }
-];
-
+// ============================================
+// SCRIPT PRINCIPAL
+// ============================================
 async function seedContent() {
+  console.log('\n' + '═'.repeat(80));
+  console.log('🎬 SEED DE CONTENIDO - CATEGORÍAS CORRECTAS');
+  console.log('   📰 Noticias normales  |  ⭐ Noticias importantes');
+  console.log('═'.repeat(80));
+  
   try {
-    console.log('🔌 Conectando a MongoDB...');
-    console.log('📍 URI:', process.env.MONGODB_URI);
-    await mongoose.connect(process.env.MONGODB_URI);
+    console.log('\n🔌 Conectando a MongoDB...');
+    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/senado_bolivia');
     console.log('✅ Conectado a MongoDB');
     
-    // OBTENER UN USUARIO ADMIN EXISTENTE
-    console.log('👤 Buscando usuario administrador...');
-    const adminUser = await User.findOne({ role: 'SUPER_ADMIN' });
+    console.log('\n👤 Buscando usuario administrador...');
+    let adminUser = await User.findOne({ role: 'SUPER_ADMIN' });
+    if (!adminUser) adminUser = await User.findOne({ role: 'ADMIN' });
+    if (!adminUser) adminUser = await User.findOne({});
     
     if (!adminUser) {
-      console.error('❌ No se encontró ningún usuario administrador en la base de datos.');
-      console.log('💡 Ejecuta primero: npm run seed:admin');
+      console.error('❌ No se encontró ningún usuario. Ejecuta: node src/check-admin.js');
       process.exit(1);
     }
     
-    console.log(`✅ Usuario encontrado: ${adminUser.email} (ID: ${adminUser._id})`);
+    console.log(`✅ Usuario encontrado: ${adminUser.email} (${adminUser.role})`);
     
-    // Generar 96 noticias adicionales (para total de 100)
-    console.log('📝 Generando 96 noticias adicionales...');
-    const noticiasAdicionales = generarNoticiasAdicionales(96);
+    console.log('\n📝 Generando noticias...');
+    const noticias = await generarNoticias(adminUser._id);
+    console.log(`   Total noticias generadas: ${noticias.length}`);
     
-    // Combinar: 4 importantes + 96 adicionales = 100 total
-    const todasLasNoticias = [...noticiasImportantes, ...noticiasAdicionales];
+    const importantes = noticias.filter(n => n.category === 'importante');
+    const normales = noticias.filter(n => n.category === 'noticia');
+    console.log(`   ⭐ Importantes: ${importantes.length}`);
+    console.log(`   📰 Normales: ${normales.length}`);
+    console.log(`   📹 Con video: ${noticias.filter(n => n.blocks.some(b => b.type === 'video')).length}`);
     
-    console.log(`📊 Total noticias a insertar: ${todasLasNoticias.length}`);
+    console.log('\n🗑️ Limpiando colección Content...');
+    await Content.deleteMany({});
     
-    // AGREGAR EL AUTHOR A CADA NOTICIA
-    const newsWithAuthor = todasLasNoticias.map(news => ({
-      ...news,
-      author: adminUser._id,
-      lastModifiedBy: adminUser._id
-    }));
-    
-    // Limpiar collection existente
-    const deleted = await Content.deleteMany({});
-    console.log(`🗑️ Eliminados ${deleted.deletedCount} documentos anteriores`);
-    
-    // Insertar en batches para evitar problemas de memoria
-    const batchSize = 50;
+    console.log('\n💾 Insertando noticias...');
     let inserted = 0;
-    
-    for (let i = 0; i < newsWithAuthor.length; i += batchSize) {
-      const batch = newsWithAuthor.slice(i, i + batchSize);
-      const result = await Content.insertMany(batch);
-      inserted += result.length;
-      console.log(`📦 Batch ${Math.floor(i / batchSize) + 1}: insertadas ${result.length} noticias`);
+    for (const noticia of noticias) {
+      await Content.create(noticia);
+      inserted++;
+      if (inserted % 5 === 0) console.log(`   Insertadas ${inserted} de ${noticias.length}...`);
     }
     
-    console.log(`✅ Insertadas ${inserted} noticias de ejemplo`);
-    
-    // Mostrar estadísticas
-    const total = await Content.countDocuments();
-    const porCategoria = await Content.aggregate([
-      { $group: { _id: '$category', count: { $sum: 1 } } }
-    ]);
-    const porTipo = await Content.aggregate([
-      { $group: { _id: '$type', count: { $sum: 1 } } }
-    ]);
+    console.log(`\n✅ Insertadas ${inserted} noticias exitosamente`);
     
     console.log('\n📊 ESTADÍSTICAS FINALES:');
-    console.log(`   Total documentos: ${total}`);
+    const total = await Content.countDocuments();
+    const conVideo = await Content.countDocuments({ 'blocks.type': 'video' });
+    const conCitas = await Content.countDocuments({ 'blocks.type': 'quote' });
+    const totalImportantes = await Content.countDocuments({ category: 'importante' });
+    const totalNormales = await Content.countDocuments({ category: 'noticia' });
     
-    console.log('\n   Por categoría:');
-    porCategoria.forEach(cat => {
-      console.log(`      ${cat._id}: ${cat.count}`);
+    console.log(`   • Total noticias: ${total}`);
+    console.log(`   • ⭐ Importantes: ${totalImportantes}`);
+    console.log(`   • 📰 Normales: ${totalNormales}`);
+    console.log(`   • 📹 Con video: ${conVideo}`);
+    console.log(`   • 💬 Con citas: ${conCitas}`);
+    
+    console.log('\n📰 NOTICIAS IMPORTANTES:');
+    const noticiasImportantes = await Content.find({ category: 'importante' }).limit(5);
+    noticiasImportantes.forEach((news, idx) => {
+      console.log(`   ${idx + 1}. ⭐ ${news.title}`);
     });
     
-    console.log('\n   Por tipo:');
-    porTipo.forEach(tipo => {
-      console.log(`      ${tipo._id}: ${tipo.count}`);
-    });
-    
-    console.log('\n📰 PRIMERAS 6 NOTICIAS:');
-    const primeras = await Content.find().sort({ publishedAt: -1 }).limit(6);
-    primeras.forEach((news, i) => {
-      console.log(`   ${i+1}. ${news.title}`);
-    });
+    console.log('\n📌 Para probar:');
+    console.log('   GET /api/content?category=importante - Noticias importantes');
+    console.log('   GET /api/content?category=noticia - Noticias normales');
+    console.log('   GET /api/content - Todas las noticias');
     
     await mongoose.disconnect();
-    console.log('\n👋 Desconectado de MongoDB');
-    console.log('✅ SEED COMPLETADO CON ÉXITO - 100 NOTICIAS CREADAS');
-    console.log('\n📌 Verifica la paginación en: http://demoback.senado.gob.bo/api/content');
+    console.log('\n' + '═'.repeat(80));
+    console.log('🎉 SEED COMPLETADO CON ÉXITO');
+    console.log('═'.repeat(80));
     
     process.exit(0);
+    
   } catch (error) {
-    console.error('❌ Error en seed:', error);
-    if (error.errors) {
-      console.error('📋 Detalles de validación:', Object.keys(error.errors).map(key => ({
-        campo: key,
-        mensaje: error.errors[key].message
-      })));
-    }
+    console.error('\n❌ ERROR:', error.message);
     process.exit(1);
   }
 }

@@ -1,11 +1,17 @@
+// src/routes/legisladores.routes.js
 const express = require('express');
 const router = express.Router();
 const legisladoresController = require('../controllers/legisladores.controller');
 const { authenticate, authorize } = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
 
-// Rutas públicas
+console.log('✅ Cargando rutas de legisladores...');
+
+// ============================================
+// RUTAS PÚBLICAS (NO REQUIEREN AUTENTICACIÓN)
+// ============================================
 router.get('/', legisladoresController.getLegisladores);
+router.get('/directiva', legisladoresController.getDirectivaCamaral);  // 🔥 NUEVA RUTA
 router.get('/cargos', legisladoresController.getCargosDisponibles);
 router.get('/estados', legisladoresController.getEstadosDisponibles);
 router.get('/distribution/party', legisladoresController.getDistributionByParty);
@@ -15,7 +21,9 @@ router.get('/search', legisladoresController.searchLegisladores);
 router.get('/ci/:ci', legisladoresController.getLegisladorByCI);
 router.get('/:id', legisladoresController.getLegisladorById);
 
-// Rutas protegidas (requieren autenticación)
+// ============================================
+// RUTAS PROTEGIDAS (REQUIEREN AUTENTICACIÓN)
+// ============================================
 router.use(authenticate);
 
 // Rutas de administración (admin/editor)
@@ -51,5 +59,7 @@ router.post(
   upload.single('foto'),
   legisladoresController.uploadFotoPerfil
 );
+
+console.log('✅ Rutas de legisladores configuradas correctamente');
 
 module.exports = router;

@@ -1,4 +1,4 @@
-// src/controllers/content.controller.js
+// src/controllers/content.controller.js - COMPLETO CON NUEVAS FUNCIONES
 const Content = require('../models/Content');
 const path = require('path');
 const fs = require('fs');
@@ -15,25 +15,37 @@ class ContentController {
       const limit = parseInt(req.query.limit) || 100;
       const { type, category, search } = req.query;
       
-      console.log('\n🌐 [PUBLICO] ========== LISTANDO NOTICIAS PARA FRONTEND ==========');
-      console.log(`   Página: ${page}, Límite: ${limit}`);
-      console.log(`   Filtros: type=${type || 'ninguno'}, category=${category || 'ninguno'}, search=${search || 'ninguno'}`);
+      console.log('\n🌐 [PUBLICO] ========== LISTANDO NOTICIAS ==========');
       
+      // PUBLICAR CONTENIDO PROGRAMADO (si existe y ya pasó la fecha)
+      const now = new Date();
+      const scheduledToPublish = await Content.find({
+        status: 'scheduled',
+        scheduledFor: { $lte: now }
+      }).limit(10);
+      
+      for (const content of scheduledToPublish) {
+        content.status = 'published';
+        content.publishedAt = now;
+        content.scheduledFor = null;
+        await content.save();
+        console.log(`   ✅ Publicado automáticamente: "${content.title}"`);
+      }
+      
+      // OBTENER NOTICIAS PUBLICADAS
       const filters = { status: 'published' };
+      
+      if (category && category !== 'all' && category !== 'undefined' && category !== '') {
+        filters.category = category;
+        console.log(`   ✅ Aplicando filtro: category = ${category}`);
+      }
       
       if (type && type !== 'all' && type !== 'undefined') {
         filters.type = type;
-        console.log(`   ✅ Filtro type: ${type}`);
-      }
-      
-      if (category && category !== 'undefined') {
-        filters.category = category;
-        console.log(`   ✅ Filtro category: ${category}`);
       }
       
       if (search && search !== 'undefined') {
         filters.$text = { $search: search };
-        console.log(`   ✅ Filtro search: ${search}`);
       }
       
       const skip = (page - 1) * limit;
@@ -72,7 +84,7 @@ class ContentController {
 
   /**
    * ============================================
-   * ADMIN DASHBOARD - Todas las noticias (con filtros)
+   * ADMIN DASHBOARD - Todas las noticias
    * ============================================
    */
   async getContentsAdmin(req, res) {
@@ -82,32 +94,22 @@ class ContentController {
       const { type, status, category, search } = req.query;
       
       console.log('\n🔐 [ADMIN] ========== LISTANDO NOTICIAS PARA DASHBOARD ==========');
-      console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
-      console.log(`   Página: ${page}, Límite: ${limit}`);
-      console.log(`   Filtros: type=${type || 'ninguno'}, status=${status || 'ninguno'}, category=${category || 'ninguno'}, search=${search || 'ninguno'}`);
       
       const filters = {};
       
       if (type && type !== 'all' && type !== 'undefined') {
         filters.type = type;
-        console.log(`   ✅ Filtro type: ${type}`);
       }
-      
-      if (category && category !== 'undefined') {
+      if (category && category !== 'all' && category !== 'undefined' && category !== '') {
         filters.category = category;
-        console.log(`   ✅ Filtro category: ${category}`);
+        console.log(`   ✅ Aplicando filtro category: ${category}`);
       }
-      
       if (status && status !== 'all' && status !== 'undefined') {
         filters.status = status;
-        console.log(`   ✅ Filtro status: ${status}`);
-      } else {
-        console.log(`   ⏭️ Sin filtro de estado - mostrando TODOS`);
+        console.log(`   ✅ Aplicando filtro status: ${status}`);
       }
-      
       if (search && search !== 'undefined') {
         filters.$text = { $search: search };
-        console.log(`   ✅ Filtro search: ${search}`);
       }
       
       const skip = (page - 1) * limit;
@@ -154,6 +156,21 @@ class ContentController {
       
       console.log(`\n🔍 [PUBLICO] Buscando noticia por slug: ${slug}`);
       
+      const now = new Date();
+      const scheduledContent = await Content.findOne({
+        slug,
+        status: 'scheduled',
+        scheduledFor: { $lte: now }
+      });
+      
+      if (scheduledContent) {
+        scheduledContent.status = 'published';
+        scheduledContent.publishedAt = now;
+        scheduledContent.scheduledFor = null;
+        await scheduledContent.save();
+        console.log(`   ✅ Publicada automáticamente: "${scheduledContent.title}"`);
+      }
+      
       const content = await Content.findOne({ 
         slug, 
         status: 'published' 
@@ -173,6 +190,8 @@ class ContentController {
       await content.save();
       
       console.log(`✅ Encontrada: ${content.title}`);
+      console.log(`   Categoría: ${content.category}`);
+      console.log(`   Participantes: ${content.participantes || 'Ninguno'}`);
       
       res.json({
         success: true,
@@ -180,6 +199,73 @@ class ContentController {
       });
     } catch (error) {
       console.error(`❌ Error en getContentBySlug: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Obtener contenido por ID (PÚBLICO)
+   */
+  async getContentByIdPublic(req, res) {
+    try {
+      const { id } = req.params;
+      
+      console.log(`\n🔍 [PUBLICO] Buscando noticia por ID: ${id}`);
+      
+      if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+        console.log(`❌ ID inválido: ${id}`);
+        return res.status(400).json({
+          success: false,
+          message: 'ID inválido'
+        });
+      }
+      
+      const now = new Date();
+      const scheduledContent = await Content.findOne({
+        _id: id,
+        status: 'scheduled',
+        scheduledFor: { $lte: now }
+      });
+      
+      if (scheduledContent) {
+        scheduledContent.status = 'published';
+        scheduledContent.publishedAt = now;
+        scheduledContent.scheduledFor = null;
+        await scheduledContent.save();
+        console.log(`   ✅ Publicada automáticamente: "${scheduledContent.title}"`);
+      }
+      
+      const content = await Content.findById(id)
+        .populate('author', 'email profile')
+        .populate('lastModifiedBy', 'email profile');
+      
+      if (!content) {
+        console.log(`❌ No encontrada: ${id}`);
+        return res.status(404).json({
+          success: false,
+          message: 'Contenido no encontrado'
+        });
+      }
+      
+      if (content.status !== 'published') {
+        console.log(`❌ No publicada: ${id}`);
+        return res.status(404).json({
+          success: false,
+          message: 'Contenido no disponible'
+        });
+      }
+      
+      console.log(`✅ Encontrada: ${content.title}`);
+      
+      res.json({
+        success: true,
+        data: content
+      });
+    } catch (error) {
+      console.error(`❌ Error en getContentByIdPublic: ${error.message}`);
       res.status(500).json({
         success: false,
         message: error.message
@@ -196,6 +282,14 @@ class ContentController {
       
       console.log(`\n🔍 [ADMIN] Buscando noticia por ID: ${id}`);
       
+      if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+        console.log(`❌ ID inválido: ${id}`);
+        return res.status(400).json({
+          success: false,
+          message: 'ID inválido'
+        });
+      }
+      
       const content = await Content.findById(id)
         .populate('author', 'email profile')
         .populate('lastModifiedBy', 'email profile');
@@ -209,6 +303,7 @@ class ContentController {
       }
       
       console.log(`✅ Encontrada: ${content.title}`);
+      console.log(`   Participantes: ${content.participantes || 'Ninguno'}`);
       
       res.json({
         success: true,
@@ -233,28 +328,58 @@ class ContentController {
       console.log(`👤 Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
       console.log(`📦 Título: ${req.body.title}`);
       console.log(`📦 Estado: ${req.body.status || 'draft'}`);
+      console.log(`📦 Categoría: ${req.body.category || 'noticia'}`);
+      console.log(`👥 Participantes: ${req.body.participantes || 'Ninguno'}`);
       
       const status = req.body.status || 'draft';
+      const scheduledFor = req.body.scheduledFor;
+      const publishedAt = req.body.publishedAt;
+      
+      // 🔥 VALIDACIÓN: Si es programada y la fecha ya pasó, publicar ahora
+      let finalStatus = status;
+      let finalPublishedAt = null;
+      
+      if (status === 'scheduled' && scheduledFor) {
+        const now = new Date();
+        const scheduleDate = new Date(scheduledFor);
+        
+        if (scheduleDate <= now) {
+          finalStatus = 'published';
+          finalPublishedAt = now;
+          console.log(`⚠️ Fecha programada ya pasó, publicando ahora: ${req.body.title}`);
+        } else {
+          finalStatus = 'scheduled';
+        }
+      } else if (status === 'published') {
+        finalPublishedAt = publishedAt ? new Date(publishedAt) : new Date();
+        console.log(`📅 Fecha de publicación: ${finalPublishedAt}`);
+      }
       
       const contentData = {
         title: req.body.title,
         slug: req.body.slug || this.generateSlug(req.body.title),
         content: req.body.content,
+        blocks: req.body.blocks || [],
         excerpt: req.body.excerpt || '',
         type: req.body.type || 'news',
-        category: req.body.category || 'noticias',
+        category: req.body.category || 'noticia',
+        originalCategory: req.body.originalCategory,
         tags: req.body.tags || [],
-        status: status,
+        status: finalStatus,
         featuredImage: req.body.featuredImage || { url: '', alt: '' },
+        gallery: req.body.gallery || [],
+        participantes: req.body.participantes || [], // 🔥 NUEVO
         author: req.user._id,
         lastModifiedBy: req.user._id,
-        publishedAt: status === 'published' ? new Date() : null
+        publishedAt: finalStatus === 'published' ? finalPublishedAt : null,
+        scheduledFor: finalStatus === 'scheduled' ? scheduledFor : null
       };
       
       const content = new Content(contentData);
       await content.save();
       
-      console.log(`✅ Contenido creado - ID: ${content._id}, Status: ${content.status}`);
+      console.log(`✅ Contenido creado - ID: ${content._id}, Status: ${content.status}, Categoría: ${content.category}`);
+      console.log(`   Participantes: ${content.participantes || 'Ninguno'}`);
       console.log('='.repeat(80) + '\n');
       
       res.status(201).json({
@@ -284,7 +409,9 @@ class ContentController {
   }
 
   /**
-   * Actualizar contenido (ADMIN)
+   * ============================================
+   * ACTUALIZAR CONTENIDO (ADMIN) - CORREGIDO
+   * ============================================
    */
   async updateContent(req, res) {
     try {
@@ -292,6 +419,17 @@ class ContentController {
       
       console.log(`\n📝 [updateContent] Actualizando ID: ${id}`);
       console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
+      console.log(`   📅 publishedAt recibido: ${req.body.publishedAt}`);
+      console.log(`   📅 scheduledFor recibido: ${req.body.scheduledFor}`);
+      console.log(`   👥 Participantes recibidos: ${req.body.participantes || 'Ninguno'}`);
+      
+      if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+        console.log(`❌ ID inválido: ${id}`);
+        return res.status(400).json({
+          success: false,
+          message: 'ID inválido'
+        });
+      }
       
       const content = await Content.findById(id);
       
@@ -305,7 +443,7 @@ class ContentController {
       
       console.log(`   Título original: ${content.title}`);
       console.log(`   Estado original: ${content.status}`);
-      console.log(`   Nuevo estado: ${req.body.status || 'sin cambio'}`);
+      console.log(`   Participantes originales: ${content.participantes || 'Ninguno'}`);
       
       // Guardar versión anterior en historial
       content.versionHistory.push({
@@ -316,30 +454,122 @@ class ContentController {
         comment: req.body.versionComment || 'Actualización'
       });
       
-      const allowedFields = ['title', 'slug', 'content', 'excerpt', 'type', 'category', 'tags', 'status', 'featuredImage', 'gallery', 'seo', 'scheduledFor'];
+      // ✅ Campos permitidos para actualizar (sin fechas)
+      const allowedFields = [
+        'title', 'slug', 'content', 'blocks', 'excerpt', 
+        'type', 'category', 'originalCategory', 'tags', 
+        'featuredImage', 'gallery', 'seo', 'participantes' // 🔥 NUEVO
+      ];
       
+      // Actualizar campos básicos
       allowedFields.forEach(field => {
         if (req.body[field] !== undefined) {
           content[field] = req.body[field];
+          console.log(`   ✅ ${field} actualizado`);
         }
       });
       
+      // ============================================
+      // 🔥 MANEJO DE FECHAS - CORREGIDO
+      // ============================================
+      
+      // 1. Guardar publishedAt si viene en el body
+      if (req.body.publishedAt !== undefined) {
+        if (typeof req.body.publishedAt === 'string') {
+          const parsedDate = new Date(req.body.publishedAt);
+          if (!isNaN(parsedDate.getTime())) {
+            content.publishedAt = parsedDate;
+            console.log(`   📅 publishedAt guardado desde body: ${content.publishedAt}`);
+          } else {
+            console.log(`   ⚠️ publishedAt inválido: ${req.body.publishedAt}`);
+          }
+        } else if (req.body.publishedAt instanceof Date) {
+          content.publishedAt = req.body.publishedAt;
+          console.log(`   📅 publishedAt guardado desde body (Date): ${content.publishedAt}`);
+        } else if (req.body.publishedAt === null) {
+          content.publishedAt = null;
+          console.log(`   📅 publishedAt establecido a null`);
+        }
+      }
+      
+      // 2. Guardar scheduledFor si viene en el body
+      if (req.body.scheduledFor !== undefined) {
+        if (typeof req.body.scheduledFor === 'string') {
+          const parsedDate = new Date(req.body.scheduledFor);
+          if (!isNaN(parsedDate.getTime())) {
+            content.scheduledFor = parsedDate;
+            console.log(`   ⏰ scheduledFor guardado desde body: ${content.scheduledFor}`);
+          } else {
+            console.log(`   ⚠️ scheduledFor inválido: ${req.body.scheduledFor}`);
+          }
+        } else if (req.body.scheduledFor instanceof Date) {
+          content.scheduledFor = req.body.scheduledFor;
+          console.log(`   ⏰ scheduledFor guardado desde body (Date): ${content.scheduledFor}`);
+        } else if (req.body.scheduledFor === null) {
+          content.scheduledFor = null;
+          console.log(`   ⏰ scheduledFor establecido a null`);
+        }
+      }
+      
+      // ============================================
+      // 🔥 MANEJO DE ESTADO - CORREGIDO
+      // ============================================
+      
+      const newStatus = req.body.status || content.status;
+      
+      // Solo cambiar el estado si se especificó en el body y es diferente
+      if (req.body.status !== undefined && req.body.status !== content.status) {
+        console.log(`   🔄 Estado: ${content.status} → ${newStatus}`);
+        
+        content.status = newStatus;
+        
+        if (newStatus === 'published') {
+          if (!content.publishedAt) {
+            content.publishedAt = new Date();
+            console.log(`   📅 publishedAt asignado (no tenía): ${content.publishedAt}`);
+          }
+          content.scheduledFor = null;
+          console.log(`   ⏰ scheduledFor limpiado (publicado)`);
+          
+        } else if (newStatus === 'scheduled') {
+          if (!content.scheduledFor) {
+            const defaultDate = new Date();
+            defaultDate.setDate(defaultDate.getDate() + 7);
+            content.scheduledFor = defaultDate;
+            console.log(`   ⏰ scheduledFor asignado (por defecto +7 días): ${content.scheduledFor}`);
+          }
+          console.log(`   📅 publishedAt preservado: ${content.publishedAt}`);
+          
+        } else if (newStatus === 'draft' || newStatus === 'archived') {
+          console.log(`   📅 publishedAt preservado: ${content.publishedAt}`);
+          console.log(`   ⏰ scheduledFor preservado: ${content.scheduledFor}`);
+        }
+      } else {
+        console.log(`   ℹ️ Estado sin cambios: ${content.status}`);
+      }
+      
+      // Actualizar metadatos
       content.lastModifiedBy = req.user._id;
       content.revision += 1;
-      
-      if (req.body.status === 'published' && !content.publishedAt) {
-        content.publishedAt = new Date();
-      }
       
       await content.save();
       
       console.log(`✅ Actualizado - Nuevo estado: ${content.status}`);
+      console.log(`   📅 publishedAt final: ${content.publishedAt}`);
+      console.log(`   ⏰ scheduledFor final: ${content.scheduledFor}`);
+      console.log(`   👥 Participantes finales: ${content.participantes || 'Ninguno'}`);
+      
+      // Obtener el contenido actualizado con población
+      const updatedContent = await Content.findById(id)
+        .populate('author', 'email profile')
+        .populate('lastModifiedBy', 'email profile');
       
       res.json({
         success: true,
         message: 'Contenido actualizado exitosamente',
-        data: content
+        data: updatedContent
       });
+      
     } catch (error) {
       console.error(`❌ Error en updateContent: ${error.message}`);
       res.status(400).json({
@@ -358,6 +588,14 @@ class ContentController {
       
       console.log(`\n🗑️ [deleteContent] Eliminando ID: ${id}`);
       console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
+      
+      if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+        console.log(`❌ ID inválido: ${id}`);
+        return res.status(400).json({
+          success: false,
+          message: 'ID inválido'
+        });
+      }
       
       const content = await Content.findByIdAndDelete(id);
       
@@ -397,6 +635,14 @@ class ContentController {
       console.log(`   Nuevo estado: ${status}`);
       console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
       
+      if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+        console.log(`❌ ID inválido: ${id}`);
+        return res.status(400).json({
+          success: false,
+          message: 'ID inválido'
+        });
+      }
+      
       const content = await Content.findById(id);
       
       if (!content) {
@@ -414,6 +660,11 @@ class ContentController {
       
       if (status === 'published' && !content.publishedAt) {
         content.publishedAt = new Date();
+        content.scheduledFor = null;
+      }
+      
+      if (status === 'scheduled' && !content.scheduledFor) {
+        content.scheduledFor = new Date();
       }
       
       await content.save();
@@ -443,12 +694,16 @@ class ContentController {
       const published = await Content.countDocuments({ status: 'published' });
       const drafts = await Content.countDocuments({ status: 'draft' });
       const archived = await Content.countDocuments({ status: 'archived' });
+      const scheduled = await Content.countDocuments({ status: 'scheduled' });
+      const noticias = await Content.countDocuments({ category: 'noticia' });
+      const importantes = await Content.countDocuments({ category: 'importante' });
       
-      console.log(`\n📊 [getStats] Total: ${total}, Publicadas: ${published}, Borradores: ${drafts}, Archivadas: ${archived}`);
+      console.log(`\n📊 [getStats] Total: ${total}, Publicadas: ${published}, Borradores: ${drafts}, Archivadas: ${archived}, Programadas: ${scheduled}`);
+      console.log(`   Noticias: ${noticias}, Importantes: ${importantes}`);
       
       res.json({
         success: true,
-        data: { total, published, drafts, archived }
+        data: { total, published, drafts, archived, scheduled, noticias, importantes }
       });
     } catch (error) {
       console.error(`❌ Error en getStats: ${error.message}`);
@@ -505,9 +760,13 @@ class ContentController {
       const { id } = req.params;
       const limit = parseInt(req.query.limit) || 5;
       
+      if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+        return res.json({ success: true, data: [] });
+      }
+      
       const current = await Content.findById(id);
       
-      if (!current) {
+      if (!current || current.status !== 'published') {
         return res.json({ success: true, data: [] });
       }
       
@@ -520,7 +779,9 @@ class ContentController {
           { type: current.type }
         ]
       })
-      .limit(limit);
+      .sort({ publishedAt: -1, views: -1 })
+      .limit(limit)
+      .select('title slug excerpt type category publishedAt featuredImage views');
       
       res.json({
         success: true,
@@ -528,6 +789,208 @@ class ContentController {
       });
     } catch (error) {
       console.error(`❌ Error en getRelatedContent: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * 🔥 OBTENER NOTICIAS POR SENADOR (PÚBLICO)
+   * GET /api/content/senador/:senadorId
+   */
+  async getContentsBySenador(req, res) {
+    try {
+      const { senadorId } = req.params;
+      const limit = parseInt(req.query.limit) || 10;
+      const page = parseInt(req.query.page) || 1;
+      
+      console.log(`\n👤 [PUBLICO] Buscando noticias del senador ID: ${senadorId}`);
+      
+      // Validar que sea un número
+      const idNumero = parseInt(senadorId);
+      if (isNaN(idNumero)) {
+        console.log(`❌ ID inválido: ${senadorId}`);
+        return res.status(400).json({
+          success: false,
+          message: 'ID de senador inválido'
+        });
+      }
+      
+      // Publicar contenido programado si corresponde
+      const now = new Date();
+      const scheduledToPublish = await Content.find({
+        status: 'scheduled',
+        scheduledFor: { $lte: now }
+      }).limit(10);
+      
+      for (const content of scheduledToPublish) {
+        content.status = 'published';
+        content.publishedAt = now;
+        content.scheduledFor = null;
+        await content.save();
+        console.log(`   ✅ Publicado automáticamente: "${content.title}"`);
+      }
+      
+      // Buscar noticias donde el senador esté en participantes
+      const skip = (page - 1) * limit;
+      
+      const query = {
+        status: 'published',
+        participantes: { $in: [idNumero] }
+      };
+      
+      const [contents, total] = await Promise.all([
+        Content.find(query)
+          .sort({ publishedAt: -1, createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .select('title slug excerpt category publishedAt featuredImage views participantes')
+          .lean(),
+        Content.countDocuments(query)
+      ]);
+      
+      console.log(`   📊 Encontradas ${contents.length} noticias para el senador ${senadorId}`);
+      
+      res.json({
+        success: true,
+        data: {
+          contents,
+          total,
+          page,
+          limit,
+          pages: Math.ceil(total / limit)
+        }
+      });
+      
+    } catch (error) {
+      console.error(`❌ Error en getContentsBySenador: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * 🔥 OBTENER NOTICIAS POR MÚLTIPLES SENADORES (PÚBLICO)
+   * POST /api/content/senadores
+   */
+  async getContentsBySenadores(req, res) {
+    try {
+      const { senadoresIds, limit = 20 } = req.body;
+      
+      if (!senadoresIds || !Array.isArray(senadoresIds) || senadoresIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Se requiere un array de IDs de senadores'
+        });
+      }
+      
+      console.log(`\n👥 [PUBLICO] Buscando noticias para ${senadoresIds.length} senadores`);
+      
+      // Convertir a números
+      const idsNumericos = senadoresIds
+        .map(id => parseInt(id))
+        .filter(id => !isNaN(id));
+      
+      if (idsNumericos.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'IDs de senadores inválidos'
+        });
+      }
+      
+      // Publicar contenido programado
+      const now = new Date();
+      const scheduledToPublish = await Content.find({
+        status: 'scheduled',
+        scheduledFor: { $lte: now }
+      }).limit(10);
+      
+      for (const content of scheduledToPublish) {
+        content.status = 'published';
+        content.publishedAt = now;
+        content.scheduledFor = null;
+        await content.save();
+      }
+      
+      const contents = await Content.find({
+        status: 'published',
+        participantes: { $in: idsNumericos }
+      })
+        .sort({ publishedAt: -1, createdAt: -1 })
+        .limit(limit)
+        .select('title slug excerpt category publishedAt featuredImage views participantes')
+        .lean();
+      
+      console.log(`   📊 Encontradas ${contents.length} noticias`);
+      
+      res.json({
+        success: true,
+        data: contents
+      });
+      
+    } catch (error) {
+      console.error(`❌ Error en getContentsBySenadores: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Obtener noticias por categoría (PÚBLICO)
+   */
+  async getContentsByCategory(req, res) {
+    try {
+      const { category } = req.params;
+      const limit = parseInt(req.query.limit) || 10;
+      const excludeId = req.query.exclude;
+      
+      if (category !== 'noticia' && category !== 'importante') {
+        return res.status(400).json({
+          success: false,
+          message: 'Categoría no válida. Use "noticia" o "importante"'
+        });
+      }
+      
+      const now = new Date();
+      const scheduledToPublish = await Content.find({
+        status: 'scheduled',
+        scheduledFor: { $lte: now }
+      }).limit(10);
+      
+      for (const content of scheduledToPublish) {
+        content.status = 'published';
+        content.publishedAt = now;
+        content.scheduledFor = null;
+        await content.save();
+        console.log(`   ✅ Publicada automáticamente: "${content.title}"`);
+      }
+      
+      const filters = { 
+        status: 'published',
+        category: category 
+      };
+      
+      if (excludeId && excludeId.match(/^[0-9a-fA-F]{24}$/)) {
+        filters._id = { $ne: excludeId };
+      }
+      
+      const contents = await Content.find(filters)
+        .sort({ publishedAt: -1 })
+        .limit(limit)
+        .select('title slug excerpt category publishedAt featuredImage views');
+      
+      res.json({
+        success: true,
+        data: contents
+      });
+    } catch (error) {
+      console.error(`❌ Error en getContentsByCategory: ${error.message}`);
       res.status(500).json({
         success: false,
         message: error.message
@@ -553,14 +1016,8 @@ class ContentController {
    */
   async getCategories(req, res) {
     const categories = [
-      { value: 'institucional', label: 'Institucional', color: 'blue' },
-      { value: 'historia', label: 'Historia', color: 'green' },
-      { value: 'directiva', label: 'Directiva', color: 'purple' },
-      { value: 'noticias', label: 'Noticias', color: 'orange' },
-      { value: 'eventos', label: 'Eventos', color: 'red' },
-      { value: 'transparencia', label: 'Transparencia', color: 'teal' },
-      { value: 'participacion', label: 'Participación', color: 'cyan' },
-      { value: 'legislacion', label: 'Legislación', color: 'indigo' },
+      { value: 'noticia', label: '📰 Noticia', description: 'Noticias regulares del día a día', color: 'blue' },
+      { value: 'importante', label: '⭐ Importante', description: 'Noticias destacadas, leyes aprobadas, eventos especiales', color: 'red' },
     ];
     res.json({ success: true, data: categories });
   }
@@ -636,6 +1093,55 @@ class ContentController {
       res.status(500).json({
         success: false,
         message: 'Error al subir el documento'
+      });
+    }
+  }
+
+  /**
+   * Publicar contenido programado (endpoint para cron o bajo demanda)
+   */
+  async publishScheduledContent(req, res) {
+    try {
+      console.log('\n⏰ [publishScheduledContent] Verificando contenido programado...');
+      
+      const now = new Date();
+      
+      const scheduledContents = await Content.find({
+        status: 'scheduled',
+        scheduledFor: { $lte: now }
+      });
+      
+      console.log(`   📝 Encontrados ${scheduledContents.length} contenidos para publicar`);
+      
+      let published = 0;
+      let errors = 0;
+      
+      for (const content of scheduledContents) {
+        try {
+          content.status = 'published';
+          content.publishedAt = now;
+          content.scheduledFor = null;
+          await content.save();
+          published++;
+          console.log(`   ✅ Publicado: "${content.title}"`);
+        } catch (error) {
+          errors++;
+          console.error(`   ❌ Error publicando "${content.title}":`, error.message);
+        }
+      }
+      
+      console.log(`   📊 Resumen: ${published} publicados, ${errors} errores`);
+      
+      res.json({
+        success: true,
+        message: 'Verificación completada',
+        data: { published, errors, total: scheduledContents.length }
+      });
+    } catch (error) {
+      console.error('❌ Error en publishScheduledContent:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
       });
     }
   }

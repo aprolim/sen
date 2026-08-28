@@ -63,6 +63,8 @@ const corsOptions = {
       'http://10.0.0.20',
       'http://10.0.0.22',
       'http://10.0.0.21',
+      'http://10.0.0.21:3000',
+      'http://10.0.0.21:3001',
       'http://demopanel.senado.gob.bo',
       'http://demoap.senado.gob.bo',
       'http://demoback.senado.gob.bo',
@@ -136,7 +138,7 @@ app.use(morgan('combined', {
 
 // Limitar tamaño de requests
 app.use(express.json({
-  limit: '10kb',
+  limit: '50mb',
   verify: (req, res, buf) => {
     try {
       JSON.parse(buf);
@@ -148,7 +150,7 @@ app.use(express.json({
 
 app.use(express.urlencoded({ 
   extended: true, 
-  limit: '10kb' 
+  limit: '50mb' 
 }));
 
 // ============================================
@@ -236,6 +238,7 @@ const contentRoutes = require('./routes/content.routes');
 const legisladoresRoutes = require('./routes/legisladores.routes');
 const tabsRoutes = require('./routes/tabs.routes');
 const iconsRoutes = require('./routes/icons.routes');
+const sesionesRoutes = require('./routes/sesiones.routes');
 
 // Aplicar rate limiting específico a login
 app.use('/api/auth/login', authLimiter);
@@ -248,6 +251,7 @@ app.use('/api/content', contentRoutes);
 app.use('/api/legisladores', legisladoresRoutes);
 app.use('/api/tabs', tabsRoutes);
 app.use('/api/icons', iconsRoutes);
+app.use('/api/sesiones', sesionesRoutes);
 
 // ============================================
 // 4. RUTAS DEL SISTEMA

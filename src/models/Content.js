@@ -19,6 +19,24 @@ const contentSchema = new mongoose.Schema({
     type: String,
     required: [true, 'El contenido es requerido'],
   },
+  blocks: {
+    type: [{
+      type: {
+        type: String,
+        enum: ['paragraph', 'quote', 'video', 'image', 'heading'],
+        default: 'paragraph'
+      },
+      content: { type: String, default: '' },
+      author: { type: String, default: '' },
+      role: { type: String, default: '' },
+      url: { type: String, default: '' },
+      title: { type: String, default: '' },
+      caption: { type: String, default: '' },
+      level: { type: Number, min: 1, max: 6, default: 2 },
+      order: { type: Number, default: 0 }
+    }],
+    default: []
+  },
   excerpt: {
     type: String,
     trim: true,
@@ -31,14 +49,14 @@ const contentSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    enum: ['institucional', 'historia', 'directiva', 'noticias', 'eventos', 'transparencia', 'participacion', 'legislacion'],
-    default: 'noticias',
+    enum: ['noticia', 'importante'],
+    default: 'noticia',
   },
-  tags: [{
+  originalCategory: {
     type: String,
-    trim: true,
-    lowercase: true,
-  }],
+    enum: ['institucional', 'historia', 'directiva', 'noticias', 'eventos', 'transparencia', 'participacion', 'legislacion'],
+  },
+  tags: [{ type: String, trim: true, lowercase: true }],
   author: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -54,18 +72,25 @@ const contentSchema = new mongoose.Schema({
     alt: String,
     caption: String,
     credit: String,
+    name: String,
   },
   gallery: [{
     url: String,
     alt: String,
     caption: String,
     order: Number,
+    name: String,
   }],
   attachments: [{
     name: String,
     url: String,
     size: Number,
     type: String,
+  }],
+  // 🔥 NUEVO CAMPO: IDs de los senadores participantes
+  participantes: [{
+    type: Number,
+    index: true
   }],
   seo: {
     title: String,
@@ -114,6 +139,9 @@ contentSchema.index({ slug: 1 }, { unique: true });
 contentSchema.index({ title: 'text', content: 'text', excerpt: 'text' });
 contentSchema.index({ type: 1, status: 1, publishedAt: -1 });
 contentSchema.index({ category: 1, tags: 1 });
+contentSchema.index({ status: 1, scheduledFor: 1 });
+contentSchema.index({ originalCategory: 1 });
+contentSchema.index({ participantes: 1 }); // 🔥 Índice para búsquedas por senador
 
 // Middleware para generar slug automáticamente
 contentSchema.pre('validate', function(next) {
@@ -134,6 +162,11 @@ contentSchema.pre('save', function(next) {
   }
   if (this.status === 'scheduled' && !this.scheduledFor) {
     this.scheduledFor = new Date();
+  }
+  if (this.status === 'scheduled' && this.scheduledFor && this.scheduledFor <= new Date()) {
+    this.status = 'published';
+    this.publishedAt = new Date();
+    this.scheduledFor = null;
   }
   next();
 });

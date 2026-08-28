@@ -163,6 +163,8 @@ const corsOptions = {
       'http://10.0.0.20',
       'http://10.0.0.22',
       'http://10.0.0.21',
+      'http://10.0.0.21:3000',
+      'http://10.0.0.21:3001',
       'http://demopanel.senado.gob.bo',
       'http://demoap.senado.gob.bo',
       'http://demoback.senado.gob.bo',
@@ -236,7 +238,7 @@ app.use(morgan('combined', {
 
 // Limitar tamaño de requests
 app.use(express.json({
-  limit: '10kb',
+  limit: '50mb',
   verify: (req, res, buf) => {
     try {
       JSON.parse(buf);
@@ -248,7 +250,7 @@ app.use(express.json({
 
 app.use(express.urlencoded({ 
   extended: true, 
-  limit: '10kb' 
+  limit: '50mb' 
 }));
 
 // ============================================
@@ -336,6 +338,7 @@ const contentRoutes = require('./routes/content.routes');
 const legisladoresRoutes = require('./routes/legisladores.routes');
 const tabsRoutes = require('./routes/tabs.routes');
 const iconsRoutes = require('./routes/icons.routes');
+const sesionesRoutes = require('./routes/sesiones.routes');
 
 // Aplicar rate limiting específico a login
 app.use('/api/auth/login', authLimiter);
@@ -348,6 +351,7 @@ app.use('/api/content', contentRoutes);
 app.use('/api/legisladores', legisladoresRoutes);
 app.use('/api/tabs', tabsRoutes);
 app.use('/api/icons', iconsRoutes);
+app.use('/api/sesiones', sesionesRoutes);
 
 // ============================================
 // 4. RUTAS DEL SISTEMA
@@ -921,72 +925,57 @@ module.exports = new AuthController();
 src\controllers\content.controller.js 
 ================================= 
  
-// src/controllers/content.controller.js
+// src/controllers/content.controller.js - COMPLETO CON NUEVAS FUNCIONES
 const Content = require('../models/Content');
 const path = require('path');
 const fs = require('fs');
 
 class ContentController {
   /**
-   * Obtener lista de contenido paginada (PUBLICO + ADMIN)
+   * ============================================
+   * FRONTEND PÚBLICO - Solo noticias publicadas
+   * ============================================
    */
-  async getContents(req, res) {
+  async getContentsPublic(req, res) {
     try {
-      // HEADERS ANTI-CACHÉ
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
-      
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 100;
-      const type = req.query.type;
-      const status = req.query.status;
-      const category = req.query.category;
-      const search = req.query.search;
+      const { type, category, search } = req.query;
       
-      console.log('\n' + '='.repeat(80));
-      console.log('📥 [getContents] SOLICITUD RECIBIDA');
-      console.log(`   status recibido: ${status || 'no enviado'}`);
-      console.log(`   Usuario autenticado: ${req.user ? req.user.email : 'NO'}`);
+      console.log('\n🌐 [PUBLICO] ========== LISTANDO NOTICIAS ==========');
       
-      const filters = {};
+      // PUBLICAR CONTENIDO PROGRAMADO (si existe y ya pasó la fecha)
+      const now = new Date();
+      const scheduledToPublish = await Content.find({
+        status: 'scheduled',
+        scheduledFor: { $lte: now }
+      }).limit(10);
       
-      // Filtrar por tipo
-      if (type && type !== 'all' && type !== 'undefined' && type !== '') {
+      for (const content of scheduledToPublish) {
+        content.status = 'published';
+        content.publishedAt = now;
+        content.scheduledFor = null;
+        await content.save();
+        console.log(`   ✅ Publicado automáticamente: "${content.title}"`);
+      }
+      
+      // OBTENER NOTICIAS PUBLICADAS
+      const filters = { status: 'published' };
+      
+      if (category && category !== 'all' && category !== 'undefined' && category !== '') {
+        filters.category = category;
+        console.log(`   ✅ Aplicando filtro: category = ${category}`);
+      }
+      
+      if (type && type !== 'all' && type !== 'undefined') {
         filters.type = type;
       }
       
-      // Filtrar por categoría
-      if (category && category !== 'undefined' && category !== '') {
-        filters.category = category;
-      }
-      
-      // 🔥 FILTRO POR ESTADO - CORREGIDO
-      if (status && status !== 'all' && status !== 'undefined' && status !== '') {
-        filters.status = status;
-        console.log(`   ✅ Aplicando filtro status: ${status}`);
-      } else if (status === 'all') {
-        console.log(`   ⏭️ status = "all", no se filtra por estado`);
-      } else {
-        // 🔥 IMPORTANTE: Si NO hay filtro de estado Y el usuario es admin, mostrar TODOS
-        if (req.user) {
-          console.log(`   🔓 Usuario ADMIN sin filtro de estado - mostrando TODOS los estados`);
-          // No agregamos filtro de status - mostrará todos
-        } else {
-          // Usuario público: solo publicados
-          filters.status = 'published';
-          console.log(`   🔒 Usuario público - forzando status: published`);
-        }
-      }
-      
-      // Búsqueda por texto
-      if (search && search !== 'undefined' && search !== '') {
+      if (search && search !== 'undefined') {
         filters.$text = { $search: search };
       }
       
       const skip = (page - 1) * limit;
-      
-      console.log(`\n📋 FILTROS FINALES:`, JSON.stringify(filters, null, 2));
       
       const [contents, total] = await Promise.all([
         Content.find(filters)
@@ -994,12 +983,12 @@ class ContentController {
           .skip(skip)
           .limit(limit)
           .populate('author', 'email profile')
-          .populate('lastModifiedBy', 'email profile')
           .lean(),
         Content.countDocuments(filters)
       ]);
       
-      console.log(`\n✅ RESULTADO: ${contents.length} de ${total} documentos`);
+      console.log(`   📊 Resultado: ${contents.length} de ${total} noticias publicadas`);
+      console.log('🌐 ==============================================================\n');
       
       res.json({
         success: true,
@@ -1012,7 +1001,243 @@ class ContentController {
         }
       });
     } catch (error) {
-      console.error('❌ Error en getContents:', error);
+      console.error('❌ Error en getContentsPublic:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * ============================================
+   * ADMIN DASHBOARD - Todas las noticias
+   * ============================================
+   */
+  async getContentsAdmin(req, res) {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 100;
+      const { type, status, category, search } = req.query;
+      
+      console.log('\n🔐 [ADMIN] ========== LISTANDO NOTICIAS PARA DASHBOARD ==========');
+      
+      const filters = {};
+      
+      if (type && type !== 'all' && type !== 'undefined') {
+        filters.type = type;
+      }
+      if (category && category !== 'all' && category !== 'undefined' && category !== '') {
+        filters.category = category;
+        console.log(`   ✅ Aplicando filtro category: ${category}`);
+      }
+      if (status && status !== 'all' && status !== 'undefined') {
+        filters.status = status;
+        console.log(`   ✅ Aplicando filtro status: ${status}`);
+      }
+      if (search && search !== 'undefined') {
+        filters.$text = { $search: search };
+      }
+      
+      const skip = (page - 1) * limit;
+      
+      const [contents, total] = await Promise.all([
+        Content.find(filters)
+          .sort({ publishedAt: -1, createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .populate('author', 'email profile')
+          .populate('lastModifiedBy', 'email profile')
+          .lean(),
+        Content.countDocuments(filters)
+      ]);
+      
+      console.log(`   📊 Resultado: ${contents.length} de ${total} documentos`);
+      console.log('🔐 ==============================================================\n');
+      
+      res.json({
+        success: true,
+        data: {
+          contents,
+          total,
+          page,
+          limit,
+          pages: Math.ceil(total / limit)
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error en getContentsAdmin:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Obtener contenido por slug (PÚBLICO)
+   */
+  async getContentBySlug(req, res) {
+    try {
+      const { slug } = req.params;
+      
+      console.log(`\n🔍 [PUBLICO] Buscando noticia por slug: ${slug}`);
+      
+      const now = new Date();
+      const scheduledContent = await Content.findOne({
+        slug,
+        status: 'scheduled',
+        scheduledFor: { $lte: now }
+      });
+      
+      if (scheduledContent) {
+        scheduledContent.status = 'published';
+        scheduledContent.publishedAt = now;
+        scheduledContent.scheduledFor = null;
+        await scheduledContent.save();
+        console.log(`   ✅ Publicada automáticamente: "${scheduledContent.title}"`);
+      }
+      
+      const content = await Content.findOne({ 
+        slug, 
+        status: 'published' 
+      })
+      .populate('author', 'email profile')
+      .populate('lastModifiedBy', 'email profile');
+      
+      if (!content) {
+        console.log(`❌ No encontrada: ${slug}`);
+        return res.status(404).json({
+          success: false,
+          message: 'Contenido no encontrado'
+        });
+      }
+      
+      content.views += 1;
+      await content.save();
+      
+      console.log(`✅ Encontrada: ${content.title}`);
+      console.log(`   Categoría: ${content.category}`);
+      console.log(`   Participantes: ${content.participantes || 'Ninguno'}`);
+      
+      res.json({
+        success: true,
+        data: content
+      });
+    } catch (error) {
+      console.error(`❌ Error en getContentBySlug: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Obtener contenido por ID (PÚBLICO)
+   */
+  async getContentByIdPublic(req, res) {
+    try {
+      const { id } = req.params;
+      
+      console.log(`\n🔍 [PUBLICO] Buscando noticia por ID: ${id}`);
+      
+      if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+        console.log(`❌ ID inválido: ${id}`);
+        return res.status(400).json({
+          success: false,
+          message: 'ID inválido'
+        });
+      }
+      
+      const now = new Date();
+      const scheduledContent = await Content.findOne({
+        _id: id,
+        status: 'scheduled',
+        scheduledFor: { $lte: now }
+      });
+      
+      if (scheduledContent) {
+        scheduledContent.status = 'published';
+        scheduledContent.publishedAt = now;
+        scheduledContent.scheduledFor = null;
+        await scheduledContent.save();
+        console.log(`   ✅ Publicada automáticamente: "${scheduledContent.title}"`);
+      }
+      
+      const content = await Content.findById(id)
+        .populate('author', 'email profile')
+        .populate('lastModifiedBy', 'email profile');
+      
+      if (!content) {
+        console.log(`❌ No encontrada: ${id}`);
+        return res.status(404).json({
+          success: false,
+          message: 'Contenido no encontrado'
+        });
+      }
+      
+      if (content.status !== 'published') {
+        console.log(`❌ No publicada: ${id}`);
+        return res.status(404).json({
+          success: false,
+          message: 'Contenido no disponible'
+        });
+      }
+      
+      console.log(`✅ Encontrada: ${content.title}`);
+      
+      res.json({
+        success: true,
+        data: content
+      });
+    } catch (error) {
+      console.error(`❌ Error en getContentByIdPublic: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Obtener contenido por ID (ADMIN)
+   */
+  async getContentById(req, res) {
+    try {
+      const { id } = req.params;
+      
+      console.log(`\n🔍 [ADMIN] Buscando noticia por ID: ${id}`);
+      
+      if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+        console.log(`❌ ID inválido: ${id}`);
+        return res.status(400).json({
+          success: false,
+          message: 'ID inválido'
+        });
+      }
+      
+      const content = await Content.findById(id)
+        .populate('author', 'email profile')
+        .populate('lastModifiedBy', 'email profile');
+      
+      if (!content) {
+        console.log(`❌ No encontrada: ${id}`);
+        return res.status(404).json({
+          success: false,
+          message: 'Contenido no encontrado'
+        });
+      }
+      
+      console.log(`✅ Encontrada: ${content.title}`);
+      console.log(`   Participantes: ${content.participantes || 'Ninguno'}`);
+      
+      res.json({
+        success: true,
+        data: content
+      });
+    } catch (error) {
+      console.error(`❌ Error en getContentById: ${error.message}`);
       res.status(500).json({
         success: false,
         message: error.message
@@ -1027,43 +1252,61 @@ class ContentController {
     try {
       console.log('\n' + '='.repeat(80));
       console.log('📝 [createContent] CREANDO NUEVO CONTENIDO');
-      console.log(`📅 Fecha/Hora: ${new Date().toISOString()}`);
       console.log(`👤 Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
-      console.log(`📦 Body recibido:`, JSON.stringify(req.body, null, 2));
+      console.log(`📦 Título: ${req.body.title}`);
+      console.log(`📦 Estado: ${req.body.status || 'draft'}`);
+      console.log(`📦 Categoría: ${req.body.category || 'noticia'}`);
+      console.log(`👥 Participantes: ${req.body.participantes || 'Ninguno'}`);
       
-      // Asegurar que el status se guarda correctamente
       const status = req.body.status || 'draft';
-      console.log(`\n🎯 Estado a guardar: ${status}`);
+      const scheduledFor = req.body.scheduledFor;
+      const publishedAt = req.body.publishedAt;
+      
+      // 🔥 VALIDACIÓN: Si es programada y la fecha ya pasó, publicar ahora
+      let finalStatus = status;
+      let finalPublishedAt = null;
+      
+      if (status === 'scheduled' && scheduledFor) {
+        const now = new Date();
+        const scheduleDate = new Date(scheduledFor);
+        
+        if (scheduleDate <= now) {
+          finalStatus = 'published';
+          finalPublishedAt = now;
+          console.log(`⚠️ Fecha programada ya pasó, publicando ahora: ${req.body.title}`);
+        } else {
+          finalStatus = 'scheduled';
+        }
+      } else if (status === 'published') {
+        finalPublishedAt = publishedAt ? new Date(publishedAt) : new Date();
+        console.log(`📅 Fecha de publicación: ${finalPublishedAt}`);
+      }
       
       const contentData = {
         title: req.body.title,
         slug: req.body.slug || this.generateSlug(req.body.title),
         content: req.body.content,
+        blocks: req.body.blocks || [],
         excerpt: req.body.excerpt || '',
         type: req.body.type || 'news',
-        category: req.body.category || 'noticias',
+        category: req.body.category || 'noticia',
+        originalCategory: req.body.originalCategory,
         tags: req.body.tags || [],
-        status: status,
+        status: finalStatus,
         featuredImage: req.body.featuredImage || { url: '', alt: '' },
+        gallery: req.body.gallery || [],
+        participantes: req.body.participantes || [], // 🔥 NUEVO
         author: req.user._id,
         lastModifiedBy: req.user._id,
-        publishedAt: status === 'published' ? new Date() : null
+        publishedAt: finalStatus === 'published' ? finalPublishedAt : null,
+        scheduledFor: finalStatus === 'scheduled' ? scheduledFor : null
       };
-      
-      console.log(`\n📋 Datos a guardar:`);
-      console.log(`   title: ${contentData.title}`);
-      console.log(`   slug: ${contentData.slug}`);
-      console.log(`   status: ${contentData.status}`);
-      console.log(`   publishedAt: ${contentData.publishedAt || 'null'}`);
-      console.log(`   category: ${contentData.category}`);
       
       const content = new Content(contentData);
       await content.save();
       
-      console.log(`\n✅ [createContent] Contenido creado exitosamente`);
-      console.log(`   ID: ${content._id}`);
-      console.log(`   Status guardado: ${content.status}`);
-      console.log(`   Título: ${content.title}`);
+      console.log(`✅ Contenido creado - ID: ${content._id}, Status: ${content.status}, Categoría: ${content.category}`);
+      console.log(`   Participantes: ${content.participantes || 'Ninguno'}`);
       console.log('='.repeat(80) + '\n');
       
       res.status(201).json({
@@ -1072,11 +1315,7 @@ class ContentController {
         data: content
       });
     } catch (error) {
-      console.error(`\n❌❌❌ ERROR EN createContent ❌❌❌`);
-      console.error(`   Mensaje: ${error.message}`);
-      console.error(`   Stack: ${error.stack}`);
-      console.error('='.repeat(80) + '\n');
-      
+      console.error(`❌ Error en createContent: ${error.message}`);
       res.status(400).json({
         success: false,
         message: error.message
@@ -1097,111 +1336,41 @@ class ContentController {
   }
 
   /**
-   * Obtener contenido por slug (PÚBLICO)
-   */
-  async getContentBySlug(req, res) {
-    try {
-      const { slug } = req.params;
-      
-      console.log(`\n🔍 [getContentBySlug] Buscando slug: ${slug}`);
-      console.log(`📅 Fecha/Hora: ${new Date().toISOString()}`);
-      
-      const content = await Content.findOne({ 
-        slug, 
-        status: 'published' 
-      })
-      .populate('author', 'email profile')
-      .populate('lastModifiedBy', 'email profile');
-      
-      if (!content) {
-        console.log(`❌ [getContentBySlug] No encontrado: ${slug}`);
-        return res.status(404).json({
-          success: false,
-          message: 'Contenido no encontrado'
-        });
-      }
-      
-      // Incrementar vistas
-      content.views += 1;
-      await content.save();
-      
-      console.log(`✅ [getContentBySlug] Encontrado: ${content.title}`);
-      console.log(`   Vistas: ${content.views}`);
-      
-      res.json({
-        success: true,
-        data: content
-      });
-    } catch (error) {
-      console.error(`❌ Error en getContentBySlug: ${error.message}`);
-      res.status(500).json({
-        success: false,
-        message: error.message
-      });
-    }
-  }
-
-  /**
-   * Obtener contenido por ID (ADMIN)
-   */
-  async getContentById(req, res) {
-    try {
-      const { id } = req.params;
-      
-      console.log(`\n🔍 [getContentById] Buscando ID: ${id}`);
-      
-      const content = await Content.findById(id)
-        .populate('author', 'email profile')
-        .populate('lastModifiedBy', 'email profile');
-      
-      if (!content) {
-        console.log(`❌ [getContentById] No encontrado: ${id}`);
-        return res.status(404).json({
-          success: false,
-          message: 'Contenido no encontrado'
-        });
-      }
-      
-      console.log(`✅ [getContentById] Encontrado: ${content.title}`);
-      
-      res.json({
-        success: true,
-        data: content
-      });
-    } catch (error) {
-      console.error(`❌ Error en getContentById: ${error.message}`);
-      res.status(500).json({
-        success: false,
-        message: error.message
-      });
-    }
-  }
-
-  /**
-   * Actualizar contenido (ADMIN)
+   * ============================================
+   * ACTUALIZAR CONTENIDO (ADMIN) - CORREGIDO
+   * ============================================
    */
   async updateContent(req, res) {
     try {
       const { id } = req.params;
       
       console.log(`\n📝 [updateContent] Actualizando ID: ${id}`);
-      console.log(`📅 Fecha/Hora: ${new Date().toISOString()}`);
-      console.log(`👤 Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
-      console.log(`📦 Body:`, JSON.stringify(req.body, null, 2));
+      console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
+      console.log(`   📅 publishedAt recibido: ${req.body.publishedAt}`);
+      console.log(`   📅 scheduledFor recibido: ${req.body.scheduledFor}`);
+      console.log(`   👥 Participantes recibidos: ${req.body.participantes || 'Ninguno'}`);
+      
+      if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+        console.log(`❌ ID inválido: ${id}`);
+        return res.status(400).json({
+          success: false,
+          message: 'ID inválido'
+        });
+      }
       
       const content = await Content.findById(id);
       
       if (!content) {
-        console.log(`❌ [updateContent] No encontrado: ${id}`);
+        console.log(`❌ No encontrado: ${id}`);
         return res.status(404).json({
           success: false,
           message: 'Contenido no encontrado'
         });
       }
       
-      console.log(`📰 Contenido original:`);
-      console.log(`   title: ${content.title}`);
-      console.log(`   status: ${content.status}`);
+      console.log(`   Título original: ${content.title}`);
+      console.log(`   Estado original: ${content.status}`);
+      console.log(`   Participantes originales: ${content.participantes || 'Ninguno'}`);
       
       // Guardar versión anterior en historial
       content.versionHistory.push({
@@ -1212,35 +1381,122 @@ class ContentController {
         comment: req.body.versionComment || 'Actualización'
       });
       
-      // Actualizar campos permitidos
-      const allowedFields = ['title', 'slug', 'content', 'excerpt', 'type', 'category', 'tags', 'status', 'featuredImage', 'gallery', 'seo', 'scheduledFor'];
+      // ✅ Campos permitidos para actualizar (sin fechas)
+      const allowedFields = [
+        'title', 'slug', 'content', 'blocks', 'excerpt', 
+        'type', 'category', 'originalCategory', 'tags', 
+        'featuredImage', 'gallery', 'seo', 'participantes' // 🔥 NUEVO
+      ];
       
+      // Actualizar campos básicos
       allowedFields.forEach(field => {
         if (req.body[field] !== undefined) {
           content[field] = req.body[field];
-          console.log(`   ✏️ Actualizando ${field}`);
+          console.log(`   ✅ ${field} actualizado`);
         }
       });
       
+      // ============================================
+      // 🔥 MANEJO DE FECHAS - CORREGIDO
+      // ============================================
+      
+      // 1. Guardar publishedAt si viene en el body
+      if (req.body.publishedAt !== undefined) {
+        if (typeof req.body.publishedAt === 'string') {
+          const parsedDate = new Date(req.body.publishedAt);
+          if (!isNaN(parsedDate.getTime())) {
+            content.publishedAt = parsedDate;
+            console.log(`   📅 publishedAt guardado desde body: ${content.publishedAt}`);
+          } else {
+            console.log(`   ⚠️ publishedAt inválido: ${req.body.publishedAt}`);
+          }
+        } else if (req.body.publishedAt instanceof Date) {
+          content.publishedAt = req.body.publishedAt;
+          console.log(`   📅 publishedAt guardado desde body (Date): ${content.publishedAt}`);
+        } else if (req.body.publishedAt === null) {
+          content.publishedAt = null;
+          console.log(`   📅 publishedAt establecido a null`);
+        }
+      }
+      
+      // 2. Guardar scheduledFor si viene en el body
+      if (req.body.scheduledFor !== undefined) {
+        if (typeof req.body.scheduledFor === 'string') {
+          const parsedDate = new Date(req.body.scheduledFor);
+          if (!isNaN(parsedDate.getTime())) {
+            content.scheduledFor = parsedDate;
+            console.log(`   ⏰ scheduledFor guardado desde body: ${content.scheduledFor}`);
+          } else {
+            console.log(`   ⚠️ scheduledFor inválido: ${req.body.scheduledFor}`);
+          }
+        } else if (req.body.scheduledFor instanceof Date) {
+          content.scheduledFor = req.body.scheduledFor;
+          console.log(`   ⏰ scheduledFor guardado desde body (Date): ${content.scheduledFor}`);
+        } else if (req.body.scheduledFor === null) {
+          content.scheduledFor = null;
+          console.log(`   ⏰ scheduledFor establecido a null`);
+        }
+      }
+      
+      // ============================================
+      // 🔥 MANEJO DE ESTADO - CORREGIDO
+      // ============================================
+      
+      const newStatus = req.body.status || content.status;
+      
+      // Solo cambiar el estado si se especificó en el body y es diferente
+      if (req.body.status !== undefined && req.body.status !== content.status) {
+        console.log(`   🔄 Estado: ${content.status} → ${newStatus}`);
+        
+        content.status = newStatus;
+        
+        if (newStatus === 'published') {
+          if (!content.publishedAt) {
+            content.publishedAt = new Date();
+            console.log(`   📅 publishedAt asignado (no tenía): ${content.publishedAt}`);
+          }
+          content.scheduledFor = null;
+          console.log(`   ⏰ scheduledFor limpiado (publicado)`);
+          
+        } else if (newStatus === 'scheduled') {
+          if (!content.scheduledFor) {
+            const defaultDate = new Date();
+            defaultDate.setDate(defaultDate.getDate() + 7);
+            content.scheduledFor = defaultDate;
+            console.log(`   ⏰ scheduledFor asignado (por defecto +7 días): ${content.scheduledFor}`);
+          }
+          console.log(`   📅 publishedAt preservado: ${content.publishedAt}`);
+          
+        } else if (newStatus === 'draft' || newStatus === 'archived') {
+          console.log(`   📅 publishedAt preservado: ${content.publishedAt}`);
+          console.log(`   ⏰ scheduledFor preservado: ${content.scheduledFor}`);
+        }
+      } else {
+        console.log(`   ℹ️ Estado sin cambios: ${content.status}`);
+      }
+      
+      // Actualizar metadatos
       content.lastModifiedBy = req.user._id;
       content.revision += 1;
       
-      if (req.body.status === 'published' && !content.publishedAt) {
-        content.publishedAt = new Date();
-        console.log(`   📅 Estableciendo publishedAt: ${content.publishedAt}`);
-      }
-      
       await content.save();
       
-      console.log(`\n✅ [updateContent] Actualizado exitosamente`);
-      console.log(`   Nuevo status: ${content.status}`);
-      console.log(`   Nueva revisión: ${content.revision}`);
+      console.log(`✅ Actualizado - Nuevo estado: ${content.status}`);
+      console.log(`   📅 publishedAt final: ${content.publishedAt}`);
+      console.log(`   ⏰ scheduledFor final: ${content.scheduledFor}`);
+      console.log(`   👥 Participantes finales: ${content.participantes || 'Ninguno'}`);
+      
+      // Obtener el contenido actualizado con población
+      const updatedContent = await Content.findById(id)
+        .populate('author', 'email profile')
+        .populate('lastModifiedBy', 'email profile');
       
       res.json({
         success: true,
         message: 'Contenido actualizado exitosamente',
-        data: content
+        data: updatedContent
       });
+      
     } catch (error) {
       console.error(`❌ Error en updateContent: ${error.message}`);
       res.status(400).json({
@@ -1258,19 +1514,27 @@ class ContentController {
       const { id } = req.params;
       
       console.log(`\n🗑️ [deleteContent] Eliminando ID: ${id}`);
-      console.log(`👤 Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
+      console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
+      
+      if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+        console.log(`❌ ID inválido: ${id}`);
+        return res.status(400).json({
+          success: false,
+          message: 'ID inválido'
+        });
+      }
       
       const content = await Content.findByIdAndDelete(id);
       
       if (!content) {
-        console.log(`❌ [deleteContent] No encontrado: ${id}`);
+        console.log(`❌ No encontrado: ${id}`);
         return res.status(404).json({
           success: false,
           message: 'Contenido no encontrado'
         });
       }
       
-      console.log(`✅ [deleteContent] Eliminado: ${content.title}`);
+      console.log(`✅ Eliminado: ${content.title}`);
       
       res.json({
         success: true,
@@ -1298,10 +1562,18 @@ class ContentController {
       console.log(`   Nuevo estado: ${status}`);
       console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
       
+      if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+        console.log(`❌ ID inválido: ${id}`);
+        return res.status(400).json({
+          success: false,
+          message: 'ID inválido'
+        });
+      }
+      
       const content = await Content.findById(id);
       
       if (!content) {
-        console.log(`❌ [changeStatus] No encontrado: ${id}`);
+        console.log(`❌ No encontrado: ${id}`);
         return res.status(404).json({
           success: false,
           message: 'Contenido no encontrado'
@@ -1315,12 +1587,16 @@ class ContentController {
       
       if (status === 'published' && !content.publishedAt) {
         content.publishedAt = new Date();
-        console.log(`   📅 Estableciendo publishedAt: ${content.publishedAt}`);
+        content.scheduledFor = null;
+      }
+      
+      if (status === 'scheduled' && !content.scheduledFor) {
+        content.scheduledFor = new Date();
       }
       
       await content.save();
       
-      console.log(`✅ [changeStatus] Estado cambiado a ${status}`);
+      console.log(`✅ Estado cambiado a ${status}`);
       
       res.json({
         success: true,
@@ -1337,7 +1613,7 @@ class ContentController {
   }
 
   /**
-   * Obtener estadísticas de contenido (ADMIN)
+   * Obtener estadísticas de contenido
    */
   async getStats(req, res) {
     try {
@@ -1345,21 +1621,16 @@ class ContentController {
       const published = await Content.countDocuments({ status: 'published' });
       const drafts = await Content.countDocuments({ status: 'draft' });
       const archived = await Content.countDocuments({ status: 'archived' });
+      const scheduled = await Content.countDocuments({ status: 'scheduled' });
+      const noticias = await Content.countDocuments({ category: 'noticia' });
+      const importantes = await Content.countDocuments({ category: 'importante' });
       
-      console.log(`\n📊 [getStats] ESTADÍSTICAS:`);
-      console.log(`   Total: ${total}`);
-      console.log(`   Publicadas: ${published}`);
-      console.log(`   Borradores: ${drafts}`);
-      console.log(`   Archivadas: ${archived}`);
+      console.log(`\n📊 [getStats] Total: ${total}, Publicadas: ${published}, Borradores: ${drafts}, Archivadas: ${archived}, Programadas: ${scheduled}`);
+      console.log(`   Noticias: ${noticias}, Importantes: ${importantes}`);
       
       res.json({
         success: true,
-        data: {
-          total,
-          published,
-          drafts,
-          archived
-        }
+        data: { total, published, drafts, archived, scheduled, noticias, importantes }
       });
     } catch (error) {
       console.error(`❌ Error en getStats: ${error.message}`);
@@ -1387,16 +1658,13 @@ class ContentController {
       console.log(`\n🔍 [searchContent] Buscando: ${q}`);
       
       const results = await Content.find(
-        { 
-          $text: { $search: q },
-          status: 'published'
-        },
+        { $text: { $search: q }, status: 'published' },
         { score: { $meta: 'textScore' } }
       )
       .sort({ score: { $meta: 'textScore' } })
       .limit(parseInt(limit));
       
-      console.log(`✅ [searchContent] Encontrados: ${results.length}`);
+      console.log(`✅ Encontrados: ${results.length}`);
       
       res.json({
         success: true,
@@ -1419,9 +1687,13 @@ class ContentController {
       const { id } = req.params;
       const limit = parseInt(req.query.limit) || 5;
       
+      if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+        return res.json({ success: true, data: [] });
+      }
+      
       const current = await Content.findById(id);
       
-      if (!current) {
+      if (!current || current.status !== 'published') {
         return res.json({ success: true, data: [] });
       }
       
@@ -1434,7 +1706,9 @@ class ContentController {
           { type: current.type }
         ]
       })
-      .limit(limit);
+      .sort({ publishedAt: -1, views: -1 })
+      .limit(limit)
+      .select('title slug excerpt type category publishedAt featuredImage views');
       
       res.json({
         success: true,
@@ -1450,43 +1724,229 @@ class ContentController {
   }
 
   /**
+   * 🔥 OBTENER NOTICIAS POR SENADOR (PÚBLICO)
+   * GET /api/content/senador/:senadorId
+   */
+  async getContentsBySenador(req, res) {
+    try {
+      const { senadorId } = req.params;
+      const limit = parseInt(req.query.limit) || 10;
+      const page = parseInt(req.query.page) || 1;
+      
+      console.log(`\n👤 [PUBLICO] Buscando noticias del senador ID: ${senadorId}`);
+      
+      // Validar que sea un número
+      const idNumero = parseInt(senadorId);
+      if (isNaN(idNumero)) {
+        console.log(`❌ ID inválido: ${senadorId}`);
+        return res.status(400).json({
+          success: false,
+          message: 'ID de senador inválido'
+        });
+      }
+      
+      // Publicar contenido programado si corresponde
+      const now = new Date();
+      const scheduledToPublish = await Content.find({
+        status: 'scheduled',
+        scheduledFor: { $lte: now }
+      }).limit(10);
+      
+      for (const content of scheduledToPublish) {
+        content.status = 'published';
+        content.publishedAt = now;
+        content.scheduledFor = null;
+        await content.save();
+        console.log(`   ✅ Publicado automáticamente: "${content.title}"`);
+      }
+      
+      // Buscar noticias donde el senador esté en participantes
+      const skip = (page - 1) * limit;
+      
+      const query = {
+        status: 'published',
+        participantes: { $in: [idNumero] }
+      };
+      
+      const [contents, total] = await Promise.all([
+        Content.find(query)
+          .sort({ publishedAt: -1, createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .select('title slug excerpt category publishedAt featuredImage views participantes')
+          .lean(),
+        Content.countDocuments(query)
+      ]);
+      
+      console.log(`   📊 Encontradas ${contents.length} noticias para el senador ${senadorId}`);
+      
+      res.json({
+        success: true,
+        data: {
+          contents,
+          total,
+          page,
+          limit,
+          pages: Math.ceil(total / limit)
+        }
+      });
+      
+    } catch (error) {
+      console.error(`❌ Error en getContentsBySenador: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * 🔥 OBTENER NOTICIAS POR MÚLTIPLES SENADORES (PÚBLICO)
+   * POST /api/content/senadores
+   */
+  async getContentsBySenadores(req, res) {
+    try {
+      const { senadoresIds, limit = 20 } = req.body;
+      
+      if (!senadoresIds || !Array.isArray(senadoresIds) || senadoresIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Se requiere un array de IDs de senadores'
+        });
+      }
+      
+      console.log(`\n👥 [PUBLICO] Buscando noticias para ${senadoresIds.length} senadores`);
+      
+      // Convertir a números
+      const idsNumericos = senadoresIds
+        .map(id => parseInt(id))
+        .filter(id => !isNaN(id));
+      
+      if (idsNumericos.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'IDs de senadores inválidos'
+        });
+      }
+      
+      // Publicar contenido programado
+      const now = new Date();
+      const scheduledToPublish = await Content.find({
+        status: 'scheduled',
+        scheduledFor: { $lte: now }
+      }).limit(10);
+      
+      for (const content of scheduledToPublish) {
+        content.status = 'published';
+        content.publishedAt = now;
+        content.scheduledFor = null;
+        await content.save();
+      }
+      
+      const contents = await Content.find({
+        status: 'published',
+        participantes: { $in: idsNumericos }
+      })
+        .sort({ publishedAt: -1, createdAt: -1 })
+        .limit(limit)
+        .select('title slug excerpt category publishedAt featuredImage views participantes')
+        .lean();
+      
+      console.log(`   📊 Encontradas ${contents.length} noticias`);
+      
+      res.json({
+        success: true,
+        data: contents
+      });
+      
+    } catch (error) {
+      console.error(`❌ Error en getContentsBySenadores: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Obtener noticias por categoría (PÚBLICO)
+   */
+  async getContentsByCategory(req, res) {
+    try {
+      const { category } = req.params;
+      const limit = parseInt(req.query.limit) || 10;
+      const excludeId = req.query.exclude;
+      
+      if (category !== 'noticia' && category !== 'importante') {
+        return res.status(400).json({
+          success: false,
+          message: 'Categoría no válida. Use "noticia" o "importante"'
+        });
+      }
+      
+      const now = new Date();
+      const scheduledToPublish = await Content.find({
+        status: 'scheduled',
+        scheduledFor: { $lte: now }
+      }).limit(10);
+      
+      for (const content of scheduledToPublish) {
+        content.status = 'published';
+        content.publishedAt = now;
+        content.scheduledFor = null;
+        await content.save();
+        console.log(`   ✅ Publicada automáticamente: "${content.title}"`);
+      }
+      
+      const filters = { 
+        status: 'published',
+        category: category 
+      };
+      
+      if (excludeId && excludeId.match(/^[0-9a-fA-F]{24}$/)) {
+        filters._id = { $ne: excludeId };
+      }
+      
+      const contents = await Content.find(filters)
+        .sort({ publishedAt: -1 })
+        .limit(limit)
+        .select('title slug excerpt category publishedAt featuredImage views');
+      
+      res.json({
+        success: true,
+        data: contents
+      });
+    } catch (error) {
+      console.error(`❌ Error en getContentsByCategory: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
    * Obtener tipos de contenido disponibles
    */
   async getContentTypes(req, res) {
-    try {
-      const types = [
-        { value: 'page', label: 'Página', description: 'Páginas estáticas' },
-        { value: 'news', label: 'Noticia', description: 'Noticias y anuncios' },
-        { value: 'article', label: 'Artículo', description: 'Artículos de opinión' },
-        { value: 'announcement', label: 'Anuncio', description: 'Comunicados oficiales' },
-      ];
-      
-      res.json({ success: true, data: types });
-    } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
-    }
+    const types = [
+      { value: 'page', label: 'Página', description: 'Páginas estáticas' },
+      { value: 'news', label: 'Noticia', description: 'Noticias y anuncios' },
+      { value: 'article', label: 'Artículo', description: 'Artículos de opinión' },
+      { value: 'announcement', label: 'Anuncio', description: 'Comunicados oficiales' },
+    ];
+    res.json({ success: true, data: types });
   }
 
   /**
    * Obtener categorías disponibles
    */
   async getCategories(req, res) {
-    try {
-      const categories = [
-        { value: 'institucional', label: 'Institucional', color: 'blue' },
-        { value: 'historia', label: 'Historia', color: 'green' },
-        { value: 'directiva', label: 'Directiva', color: 'purple' },
-        { value: 'noticias', label: 'Noticias', color: 'orange' },
-        { value: 'eventos', label: 'Eventos', color: 'red' },
-        { value: 'transparencia', label: 'Transparencia', color: 'teal' },
-        { value: 'participacion', label: 'Participación', color: 'cyan' },
-        { value: 'legislacion', label: 'Legislación', color: 'indigo' },
-      ];
-      
-      res.json({ success: true, data: categories });
-    } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
-    }
+    const categories = [
+      { value: 'noticia', label: '📰 Noticia', description: 'Noticias regulares del día a día', color: 'blue' },
+      { value: 'importante', label: '⭐ Importante', description: 'Noticias destacadas, leyes aprobadas, eventos especiales', color: 'red' },
+    ];
+    res.json({ success: true, data: categories });
   }
 
   /**
@@ -1496,10 +1956,8 @@ class ContentController {
     try {
       console.log(`\n📸 [uploadImage] Subiendo imagen`);
       console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
-      console.log(`   Archivo:`, req.file);
       
       if (!req.file) {
-        console.log(`❌ No se subió ninguna imagen`);
         return res.status(400).json({
           success: false,
           message: 'No se subió ninguna imagen'
@@ -1509,7 +1967,7 @@ class ContentController {
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const imageUrl = `${baseUrl}/uploads/images/${req.file.filename}`;
       
-      console.log(`✅ Imagen subida exitosamente: ${imageUrl}`);
+      console.log(`✅ Imagen subida: ${imageUrl}`);
       
       res.json({
         success: true,
@@ -1526,8 +1984,7 @@ class ContentController {
       console.error(`❌ Error subiendo imagen: ${error.message}`);
       res.status(500).json({
         success: false,
-        message: 'Error al subir la imagen',
-        error: error.message
+        message: 'Error al subir la imagen'
       });
     }
   }
@@ -1563,6 +2020,55 @@ class ContentController {
       res.status(500).json({
         success: false,
         message: 'Error al subir el documento'
+      });
+    }
+  }
+
+  /**
+   * Publicar contenido programado (endpoint para cron o bajo demanda)
+   */
+  async publishScheduledContent(req, res) {
+    try {
+      console.log('\n⏰ [publishScheduledContent] Verificando contenido programado...');
+      
+      const now = new Date();
+      
+      const scheduledContents = await Content.find({
+        status: 'scheduled',
+        scheduledFor: { $lte: now }
+      });
+      
+      console.log(`   📝 Encontrados ${scheduledContents.length} contenidos para publicar`);
+      
+      let published = 0;
+      let errors = 0;
+      
+      for (const content of scheduledContents) {
+        try {
+          content.status = 'published';
+          content.publishedAt = now;
+          content.scheduledFor = null;
+          await content.save();
+          published++;
+          console.log(`   ✅ Publicado: "${content.title}"`);
+        } catch (error) {
+          errors++;
+          console.error(`   ❌ Error publicando "${content.title}":`, error.message);
+        }
+      }
+      
+      console.log(`   📊 Resumen: ${published} publicados, ${errors} errores`);
+      
+      res.json({
+        success: true,
+        message: 'Verificación completada',
+        data: { published, errors, total: scheduledContents.length }
+      });
+    } catch (error) {
+      console.error('❌ Error en publishScheduledContent:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
       });
     }
   }
@@ -2264,6 +2770,324 @@ class LegisladoresController {
 }
 
 module.exports = new LegisladoresController(); 
+================================= 
+src\controllers\sesiones.controller.js 
+================================= 
+ 
+// src/controllers/sesiones.controller.js
+const SesionesVideo = require('../models/SesionesVideo');
+const SesionFecha = require('../models/SesionFecha');
+
+class SesionesController {
+  
+  // ============================================
+  // VIDEOS - PÚBLICOS
+  // ============================================
+  
+  async getVideos(req, res) {
+    console.log('📹 [GET /api/sesiones] Solicitando videos');
+    try {
+      const videos = await SesionesVideo.find()
+        .sort({ position: 1 })
+        .lean();
+      
+      console.log(`📹 Encontrados ${videos.length} videos en BD`);
+      res.json({ success: true, data: videos });
+    } catch (error) {
+      console.error('❌ Error en getVideos:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  async getLiveVideo(req, res) {
+    console.log('🔴 [GET /api/sesiones/live] Solicitando video en vivo');
+    try {
+      const liveVideo = await SesionesVideo.findOne({ 
+        isLive: true,
+        isActive: true 
+      }).lean();
+      
+      res.json({ 
+        success: true, 
+        data: liveVideo || null
+      });
+    } catch (error) {
+      console.error('❌ Error en getLiveVideo:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  // ============================================
+  // VIDEOS - ADMIN
+  // ============================================
+
+  async getAllVideos(req, res) {
+    try {
+      const videos = await SesionesVideo.find().sort({ position: 1 });
+      res.json({ success: true, data: videos });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  async createVideo(req, res) {
+    try {
+      const { position, title, url, isActive, isLive } = req.body;
+      
+      const existing = await SesionesVideo.findOne({ position });
+      if (existing) {
+        return res.status(400).json({ 
+          success: false, 
+          message: `Ya existe un video en la posición ${position}` 
+        });
+      }
+      
+      const video = new SesionesVideo({
+        position,
+        title,
+        url,
+        youtubeId: this.extractYoutubeId(url),
+        isActive: isActive !== undefined ? isActive : true,
+        isLive: isLive || false,
+        createdBy: req.user?._id,
+        lastUpdatedBy: req.user?._id
+      });
+      
+      await video.save();
+      res.status(201).json({ success: true, data: video });
+    } catch (error) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
+  async updateVideo(req, res) {
+    try {
+      const { position } = req.params;
+      const { title, url, isActive, youtubeId, isLive } = req.body;
+      
+      console.log(`📹 [PUT /api/sesiones/${position}]`);
+      console.log(`   Título: ${title}`);
+      console.log(`   isLive: ${isLive}`);
+      
+      let video = await SesionesVideo.findOne({ position: parseInt(position) });
+      
+      if (video) {
+        video.title = title;
+        video.url = url;
+        if (youtubeId) video.youtubeId = youtubeId;
+        if (isActive !== undefined) video.isActive = isActive;
+        if (isLive !== undefined) video.isLive = isLive;
+        video.lastUpdatedBy = req.user?._id;
+        await video.save();
+        console.log(`✅ Video ${position} actualizado`);
+      } else {
+        video = new SesionesVideo({
+          position: parseInt(position),
+          title,
+          url,
+          youtubeId: youtubeId || this.extractYoutubeId(url),
+          isActive: isActive !== undefined ? isActive : true,
+          isLive: isLive || false,
+          createdBy: req.user?._id,
+          lastUpdatedBy: req.user?._id
+        });
+        await video.save();
+        console.log(`✅ Video ${position} creado`);
+      }
+      
+      res.json({ success: true, data: video });
+    } catch (error) {
+      console.error('❌ Error en updateVideo:', error);
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
+  async deleteVideo(req, res) {
+    try {
+      const { position } = req.params;
+      
+      console.log(`🗑️ [DELETE /api/sesiones/${position}]`);
+      
+      const video = await SesionesVideo.findOne({ position: parseInt(position) });
+      
+      if (!video) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Video no encontrado' 
+        });
+      }
+      
+      await SesionesVideo.deleteOne({ _id: video._id });
+      
+      console.log(`✅ Video ${position} eliminado permanentemente`);
+      
+      res.json({ 
+        success: true, 
+        message: `Video ${position} eliminado` 
+      });
+    } catch (error) {
+      console.error('❌ Error en deleteVideo:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  extractYoutubeId(url) {
+    if (!url) return '';
+    const regex = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&?#]+)/;
+    const match = url.match(regex);
+    return match ? match[1] : '';
+  }
+
+  // ============================================
+  // FECHAS DE SESIONES - PÚBLICAS
+  // ============================================
+
+  async getFechasSesiones(req, res) {
+    try {
+      console.log('📅 [GET /api/sesiones/fechas] Solicitando fechas de sesiones');
+      
+      const ahora = new Date();
+      const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+      const finMes = new Date(ahora.getFullYear(), ahora.getMonth() + 2, 0);
+      
+      const fechas = await SesionFecha.find({
+        fecha: { $gte: inicioMes, $lte: finMes },
+        esActivo: true
+      })
+      .sort({ fecha: 1 })
+      .lean();
+      
+      const fechasFormateadas = fechas.map(f => ({
+        fecha: f.fecha.toISOString().split('T')[0],
+        titulo: f.titulo,
+        descripcion: f.descripcion,
+        tipo: f.tipo
+      }));
+      
+      res.json({ success: true, data: fechasFormateadas });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  // ============================================
+  // FECHAS DE SESIONES - ADMIN
+  // ============================================
+
+  async getFechasSesionesAdmin(req, res) {
+    try {
+      const { year, month } = req.query;
+      let query = {};
+      
+      if (year && month) {
+        const inicio = new Date(parseInt(year), parseInt(month) - 1, 1);
+        const fin = new Date(parseInt(year), parseInt(month), 0);
+        query.fecha = { $gte: inicio, $lte: fin };
+      }
+      
+      const fechas = await SesionFecha.find(query).sort({ fecha: 1 }).lean();
+      res.json({ success: true, data: fechas });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  async createFechaSesion(req, res) {
+    try {
+      const { fecha, titulo, descripcion, tipo } = req.body;
+      
+      if (!fecha) {
+        return res.status(400).json({
+          success: false,
+          message: 'La fecha es requerida'
+        });
+      }
+      
+      const fechaObj = new Date(fecha);
+      fechaObj.setHours(0, 0, 0, 0);
+      
+      const existing = await SesionFecha.findOne({ fecha: fechaObj });
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          message: 'Ya existe una sesión en esta fecha'
+        });
+      }
+      
+      const nuevaFecha = new SesionFecha({
+        fecha: fechaObj,
+        titulo: titulo || 'Sesión del Senado',
+        descripcion: descripcion || '',
+        tipo: tipo || 'ordinaria',
+        createdBy: req.user._id,
+        lastUpdatedBy: req.user._id
+      });
+      
+      await nuevaFecha.save();
+      
+      res.status(201).json({
+        success: true,
+        message: 'Fecha de sesión creada exitosamente',
+        data: nuevaFecha
+      });
+    } catch (error) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
+  async deleteFechaSesion(req, res) {
+    try {
+      const { fechaId } = req.params;
+      
+      const fecha = await SesionFecha.findByIdAndDelete(fechaId);
+      
+      if (!fecha) {
+        return res.status(404).json({
+          success: false,
+          message: 'Fecha no encontrada'
+        });
+      }
+      
+      res.json({ success: true, message: 'Fecha eliminada exitosamente' });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  async updateFechaSesion(req, res) {
+    try {
+      const { fechaId } = req.params;
+      const { titulo, descripcion, tipo, esActivo } = req.body;
+      
+      const fecha = await SesionFecha.findById(fechaId);
+      
+      if (!fecha) {
+        return res.status(404).json({
+          success: false,
+          message: 'Fecha no encontrada'
+        });
+      }
+      
+      if (titulo !== undefined) fecha.titulo = titulo;
+      if (descripcion !== undefined) fecha.descripcion = descripcion;
+      if (tipo !== undefined) fecha.tipo = tipo;
+      if (esActivo !== undefined) fecha.esActivo = esActivo;
+      
+      fecha.lastUpdatedBy = req.user._id;
+      await fecha.save();
+      
+      res.json({
+        success: true,
+        message: 'Fecha actualizada exitosamente',
+        data: fecha
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+}
+
+module.exports = new SesionesController(); 
 ================================= 
 src\controllers\tabs.controller.js 
 ================================= 
@@ -3595,23 +4419,22 @@ const User = require('../models/User');
 
 /**
  * Middleware para verificar token JWT
- * MODIFICADO: Permite peticiones OPTIONS (preflight CORS) sin autenticación
  */
 const authenticate = async (req, res, next) => {
   console.log('\n🔐 ========== AUTH MIDDLEWARE INICIADO ==========');
+  console.log('📌 Método:', req.method);
+  console.log('📌 Ruta:', req.path);
   
-  // ✅ NUEVO: Permitir peticiones OPTIONS (preflight CORS)
+  // Permitir peticiones OPTIONS (preflight CORS) sin autenticación
   if (req.method === 'OPTIONS') {
     console.log('📡 OPTIONS request - permitiendo sin autenticación');
     return next();
   }
   
   try {
-    // Obtener token del header
     const authHeader = req.header('Authorization');
     
-    console.log('📌 Headers completos:', req.headers);
-    console.log('📌 Authorization header:', authHeader);
+    console.log('📌 Authorization header:', authHeader ? authHeader.substring(0, 50) + '...' : 'NO');
     
     if (!authHeader) {
       console.log('❌ No hay header Authorization');
@@ -3622,7 +4445,7 @@ const authenticate = async (req, res, next) => {
     }
 
     const token = authHeader.replace('Bearer ', '');
-    console.log('🔑 Token extraído (primeros 50 chars):', token.substring(0, 50) + '...');
+    console.log('🔑 Token extraído (primeros 30 chars):', token.substring(0, 30) + '...');
     
     if (!token) {
       console.log('❌ Token vacío después de replace');
@@ -3632,17 +4455,12 @@ const authenticate = async (req, res, next) => {
       });
     }
     
-    // Verificar token
-    console.log('🔐 JWT_SECRET usado:', process.env.JWT_SECRET.substring(0, 20) + '...');
-    
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
-      console.log('✅ Token verificado. Payload:', decoded);
+      console.log('✅ Token verificado. userId:', decoded.userId);
     } catch (jwtError) {
       console.log('❌ Error verificando token:', jwtError.message);
-      console.log('🔍 Tipo de error:', jwtError.name);
-      
       if (jwtError.name === 'JsonWebTokenError') {
         return res.status(401).json({
           success: false,
@@ -3658,7 +4476,6 @@ const authenticate = async (req, res, next) => {
       throw jwtError;
     }
     
-    // Buscar usuario
     console.log('🔍 Buscando usuario con ID:', decoded.userId);
     const user = await User.findById(decoded.userId);
     
@@ -3680,10 +4497,9 @@ const authenticate = async (req, res, next) => {
       });
     }
     
-    // Adjuntar usuario a la request
     req.user = user;
     req.token = token;
-    console.log('✅ Usuario autenticado correctamente. req.user asignado:', !!req.user);
+    console.log('✅ req.user asignado correctamente');
     console.log('🔚 ========== AUTH MIDDLEWARE FINALIZADO ==========\n');
     
     next();
@@ -3814,7 +4630,8 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB
+    fileSize: 50 * 1024 * 1024, // 10MB
+    fieldSize: 50 * 1024 * 1024
   },
 });
 
@@ -3873,6 +4690,24 @@ const contentSchema = new mongoose.Schema({
     type: String,
     required: [true, 'El contenido es requerido'],
   },
+  blocks: {
+    type: [{
+      type: {
+        type: String,
+        enum: ['paragraph', 'quote', 'video', 'image', 'heading'],
+        default: 'paragraph'
+      },
+      content: { type: String, default: '' },
+      author: { type: String, default: '' },
+      role: { type: String, default: '' },
+      url: { type: String, default: '' },
+      title: { type: String, default: '' },
+      caption: { type: String, default: '' },
+      level: { type: Number, min: 1, max: 6, default: 2 },
+      order: { type: Number, default: 0 }
+    }],
+    default: []
+  },
   excerpt: {
     type: String,
     trim: true,
@@ -3885,14 +4720,14 @@ const contentSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    enum: ['institucional', 'historia', 'directiva', 'noticias', 'eventos', 'transparencia', 'participacion', 'legislacion'],
-    default: 'noticias',
+    enum: ['noticia', 'importante'],
+    default: 'noticia',
   },
-  tags: [{
+  originalCategory: {
     type: String,
-    trim: true,
-    lowercase: true,
-  }],
+    enum: ['institucional', 'historia', 'directiva', 'noticias', 'eventos', 'transparencia', 'participacion', 'legislacion'],
+  },
+  tags: [{ type: String, trim: true, lowercase: true }],
   author: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -3908,18 +4743,25 @@ const contentSchema = new mongoose.Schema({
     alt: String,
     caption: String,
     credit: String,
+    name: String,
   },
   gallery: [{
     url: String,
     alt: String,
     caption: String,
     order: Number,
+    name: String,
   }],
   attachments: [{
     name: String,
     url: String,
     size: Number,
     type: String,
+  }],
+  // 🔥 NUEVO CAMPO: IDs de los senadores participantes
+  participantes: [{
+    type: Number,
+    index: true
   }],
   seo: {
     title: String,
@@ -3968,6 +4810,9 @@ contentSchema.index({ slug: 1 }, { unique: true });
 contentSchema.index({ title: 'text', content: 'text', excerpt: 'text' });
 contentSchema.index({ type: 1, status: 1, publishedAt: -1 });
 contentSchema.index({ category: 1, tags: 1 });
+contentSchema.index({ status: 1, scheduledFor: 1 });
+contentSchema.index({ originalCategory: 1 });
+contentSchema.index({ participantes: 1 }); // 🔥 Índice para búsquedas por senador
 
 // Middleware para generar slug automáticamente
 contentSchema.pre('validate', function(next) {
@@ -3988,6 +4833,11 @@ contentSchema.pre('save', function(next) {
   }
   if (this.status === 'scheduled' && !this.scheduledFor) {
     this.scheduledFor = new Date();
+  }
+  if (this.status === 'scheduled' && this.scheduledFor && this.scheduledFor <= new Date()) {
+    this.status = 'published';
+    this.publishedAt = new Date();
+    this.scheduledFor = null;
   }
   next();
 });
@@ -4283,6 +5133,105 @@ legisladorSchema.methods.calcularEstadisticas = async function() {
 const Legislador = mongoose.model('Legislador', legisladorSchema);
 
 module.exports = Legislador; 
+================================= 
+src\models\SesionesVideo.js 
+================================= 
+ 
+// src/models/SesionesVideo.js
+const mongoose = require('mongoose');
+
+const sesionesVideoSchema = new mongoose.Schema({
+  position: {
+    type: Number,
+    required: true,
+    enum: [1, 2, 3, 4],
+    unique: true
+  },
+  title: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  url: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  youtubeId: {
+    type: String,
+    required: true
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  isLive: {
+    type: Boolean,
+    default: false
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  lastUpdatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }
+}, {
+  timestamps: true
+});
+
+module.exports = mongoose.model('SesionesVideo', sesionesVideoSchema); 
+================================= 
+src\models\SesionFecha.js 
+================================= 
+ 
+// src/models/SesionFecha.js
+const mongoose = require('mongoose');
+
+const sesionFechaSchema = new mongoose.Schema({
+  fecha: {
+    type: Date,
+    required: true,
+    index: true,
+    unique: true
+  },
+  titulo: {
+    type: String,
+    trim: true,
+    default: 'Sesión del Senado'
+  },
+  descripcion: {
+    type: String,
+    trim: true
+  },
+  tipo: {
+    type: String,
+    enum: ['ordinaria', 'extraordinaria', 'especial'],
+    default: 'ordinaria'
+  },
+  esActivo: {
+    type: Boolean,
+    default: true
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  lastUpdatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }
+}, {
+  timestamps: true
+});
+
+// Índices para búsquedas rápidas
+sesionFechaSchema.index({ fecha: 1 });
+sesionFechaSchema.index({ esActivo: 1 });
+sesionFechaSchema.index({ fecha: 1, esActivo: 1 });
+
+module.exports = mongoose.model('SesionFecha', sesionFechaSchema); 
 ================================= 
 src\models\TabCategory.js 
 ================================= 
@@ -4595,41 +5544,38 @@ const { upload } = require('../middleware/upload');
 // ============================================
 // RUTAS PÚBLICAS - NO REQUIEREN AUTENTICACIÓN
 // ============================================
-// 🔥 IMPORTANTE: getContents DEBE SER PÚBLICA para que el frontend público vea las noticias
-router.get('/', contentController.getContents);
+router.get('/', contentController.getContentsPublic);
 router.get('/types', contentController.getContentTypes);
 router.get('/categories', contentController.getCategories);
 router.get('/search', contentController.searchContent);
 router.get('/slug/:slug', contentController.getContentBySlug);
-router.get('/:id/related', contentController.getRelatedContent);
 router.get('/stats', contentController.getStats);
-router.get('/:id', contentController.getContentById);
+router.get('/:id/related', contentController.getRelatedContent);
+router.get('/public/:id', contentController.getContentByIdPublic);
+router.get('/category/:category', contentController.getContentsByCategory);
+
+// 🔥 NUEVAS RUTAS PARA NOTICIAS POR SENADOR
+router.get('/senador/:senadorId', contentController.getContentsBySenador);
+router.post('/senadores', contentController.getContentsBySenadores);
 
 // ============================================
 // RUTAS PROTEGIDAS - REQUIEREN AUTENTICACIÓN
 // ============================================
 router.use(authenticate);
 
-// Estas rutas requieren token (crear, editar, eliminar, subir imágenes)
+router.get('/admin', contentController.getContentsAdmin);
+router.get('/:id', contentController.getContentById);
+
 router.post('/', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.createContent);
 router.put('/:id', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.updateContent);
 router.patch('/:id/status', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.changeStatus);
 router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN'), contentController.deleteContent);
 
-// Subida de imágenes (requiere autenticación)
-router.post(
-  '/upload/image',
-  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
-  upload.single('image'),
-  contentController.uploadImage
-);
+// Ruta para publicar contenido programado (puede ser llamada por cron o manualmente)
+router.post('/publish-scheduled', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.publishScheduledContent);
 
-router.post(
-  '/upload/document',
-  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
-  upload.single('document'),
-  contentController.uploadDocument
-);
+router.post('/upload/image', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), upload.single('image'), contentController.uploadImage);
+router.post('/upload/document', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), upload.single('document'), contentController.uploadDocument);
 
 module.exports = router; 
 ================================= 
@@ -4705,6 +5651,40 @@ router.post(
   upload.single('foto'),
   legisladoresController.uploadFotoPerfil
 );
+
+module.exports = router; 
+================================= 
+src\routes\sesiones.routes.js 
+================================= 
+ 
+// src/routes/sesiones.routes.js
+const express = require('express');
+const router = express.Router();
+const { authenticate, authorize } = require('../middleware/auth');
+const sesionesController = require('../controllers/sesiones.controller');
+
+// ============================================
+// RUTAS PÚBLICAS
+// ============================================
+router.get('/', sesionesController.getVideos);
+router.get('/live', sesionesController.getLiveVideo);
+router.get('/fechas', sesionesController.getFechasSesiones);
+
+// ============================================
+// RUTAS PROTEGIDAS (CMS)
+// ============================================
+router.use(authenticate);
+router.use(authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'));
+
+router.get('/admin', sesionesController.getAllVideos);
+router.post('/', sesionesController.createVideo);
+router.put('/:position', sesionesController.updateVideo);
+router.delete('/:position', sesionesController.deleteVideo);
+
+router.get('/fechas/admin', sesionesController.getFechasSesionesAdmin);
+router.post('/fechas', sesionesController.createFechaSesion);
+router.put('/fechas/:fechaId', sesionesController.updateFechaSesion);
+router.delete('/fechas/:fechaId', sesionesController.deleteFechaSesion);
 
 module.exports = router; 
 ================================= 
@@ -4857,7 +5837,7 @@ src\scripts\seedContent.js
 ================================= 
  
 // src/scripts/seedContent.js
-// Seed para crear 100 noticias de ejemplo
+// SEED COMPLETO - CON CATEGORÍAS: 'noticia' e 'importante'
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const Content = require('../models/Content');
@@ -4865,157 +5845,223 @@ const User = require('../models/User');
 
 dotenv.config();
 
-// CATEGORÍAS VÁLIDAS según el modelo Content
-const VALID_CATEGORIES = [
-  'institucional',
-  'historia',
-  'directiva',
-  'noticias',
-  'eventos',
-  'transparencia',
-  'participacion',
-  'legislacion'
+// ============================================
+// SENADORES REALES PARA CITAS
+// ============================================
+const SENADORES = [
+  { name: 'Diego Esteban Mateo Ávila Navajas', role: 'Presidente del Senado' },
+  { name: 'Carmen Soledad Chapetón Tancara', role: 'Primera Vicepresidenta del Senado' },
+  { name: 'Khatia Lisbeth Quiroga Fernández', role: 'Segunda Vicepresidenta del Senado' },
+  { name: 'Yasmin Estívariz Villarroel', role: 'Primera Secretaria del Senado' },
+  { name: 'Julio Diego Romaña Galindo', role: 'Segundo Secretario del Senado' },
+  { name: 'Andrónico Rodríguez Ledezma', role: 'Senador por Cochabamba' },
+  { name: 'Cecilia Rosario Requena Zabala', role: 'Senadora por Beni' },
+  { name: 'Félix Ajpi Ajpi', role: 'Senador por La Paz' },
+  { name: 'Gladys Margot Alurralde Peñaranda', role: 'Senadora por Tarija' },
+  { name: 'Hiroshi Ando Chávez', role: 'Senador por Santa Cruz' },
+  { name: 'Leonilda Zurita Vargas', role: 'Senadora por Potosí' },
+  { name: 'Rubén Eugenio Medinaceli Ortiz', role: 'Senador por Chuquisaca' }
 ];
 
-// Títulos base para generar noticias variadas (20 títulos base)
+// ============================================
+// TÍTULOS BASE - CATEGORÍAS CORRECTAS
+// ============================================
 const TITULOS_BASE = [
-  'Senado aprueba nueva ley de desarrollo económico',
-  'Comisión de Educación recibe propuestas para reforma curricular',
-  'Senado conmemora el Día de la Madre Tierra',
-  'Cámara de Senadores aprueba proyecto de Ley de Aguas',
-  'Senado realiza audiencia pública sobre salud mental',
-  'Comisión de Autonomías analiza transferencia de competencias',
-  'Directiva del Senado presenta plan de trabajo anual',
-  'Senado abre convocatoria para pasantías universitarias',
-  'Senado impulsa proyecto de ley de desarrollo productivo',
-  'Comisión de Justicia revisa reformas al código penal',
-  'Senado aprueba presupuesto para la gestión',
-  'Comisión de Salud impulsa ley de medicina tradicional',
-  'Senado rechaza proyecto de ley controversial',
-  'Comisión de Infraestructura analiza proyectos viales',
-  'Senado aprueba declaración de emergencia departamental',
-  'Comisión de Derechos Humanos recibe informes',
-  'Senado modifica ley de telecomunicaciones',
-  'Comisión de Seguridad analiza nuevas políticas',
-  'Senado ratifica convenios internacionales',
-  'Comisión de Cultura impulsa patrimonio nacional'
+  // NOTICIAS IMPORTANTES (⭐) - category: 'importante'
+  { titulo: '⭐ *Senado* aprueba nueva ley de *protección ambiental*', categoria: 'importante', tags: ['medio-ambiente', 'leyes', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ *Senado* rechaza *proyecto* de ley controversial', categoria: 'importante', tags: ['política', 'debate', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ *Presupuesto* general de la *nación* 2026', categoria: 'importante', tags: ['presupuesto', 'economía', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ *Senado* conmemora el *Día de la Madre Tierra*', categoria: 'importante', tags: ['medio-ambiente', 'conmemoración', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ Directiva del *Senado* presenta *plan* de trabajo anual', categoria: 'importante', tags: ['directiva', 'plan', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ *Comisión* de Justicia revisa reformas al *código penal*', categoria: 'importante', tags: ['justicia', 'reformas', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ *Senado* realiza *audiencia pública* sobre salud mental', categoria: 'importante', tags: ['salud', 'audiencia', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ *Cámara de Senadores* celebra *aniversario* institucional', categoria: 'importante', tags: ['aniversario', 'historia', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ *Foro* internacional de *derechos humanos* en el Senado', categoria: 'importante', tags: ['derechos', 'foro', 'destacado'], tieneVideo: true },
+  { titulo: '⭐ *Senado* aprueba *ley* de educación superior', categoria: 'importante', tags: ['educación', 'universidades', 'destacado'], tieneVideo: true },
+  
+  // NOTICIAS NORMALES (📰) - category: 'noticia'
+  { titulo: '📰 Comisión de Desarrollo *Económico* presenta informe', categoria: 'noticia', tags: ['economía', 'desarrollo'], tieneVideo: false },
+  { titulo: '📰 *Nuevas* disposiciones para el sector *salud*', categoria: 'noticia', tags: ['salud', 'leyes'], tieneVideo: false },
+  { titulo: '📰 *Senado* abre *convocatoria* para pasantías universitarias', categoria: 'noticia', tags: ['educación', 'pasantías'], tieneVideo: false },
+  { titulo: '📰 *Consulta* ciudadana sobre *ley de transparencia*', categoria: 'noticia', tags: ['transparencia', 'participación'], tieneVideo: false },
+  { titulo: '📰 *Senado* impulsa *proyecto* de desarrollo productivo', categoria: 'noticia', tags: ['desarrollo', 'productivo'], tieneVideo: false },
+  { titulo: '📰 *Comisión* de Infraestructura analiza *proyectos viales*', categoria: 'noticia', tags: ['infraestructura', 'vialidad'], tieneVideo: false },
+  { titulo: '📰 Comisión de Educación recibe propuestas para reforma curricular', categoria: 'noticia', tags: ['educación', 'reformas'], tieneVideo: false },
+  { titulo: '📰 Comisión de Autonomías analiza transferencia de competencias', categoria: 'noticia', tags: ['autonomías', 'descentralización'], tieneVideo: false },
+  { titulo: '📰 Comisión de Salud impulsa ley de medicina tradicional', categoria: 'noticia', tags: ['salud', 'medicina'], tieneVideo: false },
+  { titulo: '📰 Comisión de Seguridad analiza nuevas políticas', categoria: 'noticia', tags: ['seguridad', 'políticas'], tieneVideo: false },
+  { titulo: '📰 Comisión de Cultura impulsa patrimonio nacional', categoria: 'noticia', tags: ['cultura', 'patrimonio'], tieneVideo: false },
+  { titulo: '📰 Senado ratifica convenios internacionales', categoria: 'noticia', tags: ['internacional', 'convenios'], tieneVideo: false }
 ];
 
-// Tipos de contenido
-const TIPOS = ['news', 'news', 'news', 'news', 'news', 'announcement'];
-const CATEGORIAS = ['legislacion', 'institucional', 'noticias', 'eventos', 'participacion', 'transparencia'];
-
-// Función para generar título
-const generarTitulo = (index) => {
-  const base = TITULOS_BASE[index % TITULOS_BASE.length];
-  const variaciones = [
-    base,
-    `${base} - Versión ${Math.floor(index / TITULOS_BASE.length) + 1}`,
-    `${base}: nuevas disposiciones para el ${new Date().getFullYear()}`,
-    `${base} - Senado da luz verde a la iniciativa`,
-    `${base} tras debate en comisiones`,
-    `Senado: ${base.toLowerCase()}`,
-    `Histórico: ${base}`,
-    `Por unanimidad, ${base.toLowerCase()}`,
-    `${base} y su impacto en la población`,
-    `Detalles de cómo ${base.toLowerCase()}`
-  ];
-  return variaciones[index % variaciones.length];
-};
-
-// Función para generar slug
-const generarSlug = (titulo, index) => {
-  let slug = titulo
-    .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  
-  // Limitar longitud y agregar índice para evitar duplicados
-  if (slug.length > 60) {
-    slug = slug.substring(0, 60);
-  }
-  return `${slug}-${index + 1}`;
-};
-
-// Función para generar fecha aleatoria (últimos 90 días)
-const getRandomDate = () => {
-  const date = new Date();
-  date.setDate(date.getDate() - Math.floor(Math.random() * 90));
-  return date;
-};
-
-// Función para generar tags
-const getRandomTags = () => {
-  const tags = ['leyes', 'desarrollo', 'educacion', 'medio-ambiente', 'salud', 'economia', 'seguridad', 'cultura', 'transparencia', 'participacion', 'derechos', 'infraestructura'];
-  const numTags = Math.floor(Math.random() * 3) + 2;
-  const shuffled = [...tags];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled.slice(0, numTags);
-};
-
-// Imágenes de Unsplash variadas
+// ============================================
+// IMÁGENES DE EJEMPLO
+// ============================================
 const IMAGENES = [
-  'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800',
-  'https://images.unsplash.com/photo-1548839140-29a749e1cf4d?w=800',
-  'https://images.unsplash.com/photo-1529101091764-c3526daf3e28?w=800',
-  'https://images.unsplash.com/photo-1541872703-74c5e44368f9?w=800',
-  'https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=800',
-  'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=800',
-  'https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=800',
-  'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=800',
-  'https://images.unsplash.com/photo-1582555172866-f73bb12a2ab3?w=800',
-  'https://images.unsplash.com/photo-1554224154-26032ffc0a07?w=800',
-  'https://images.unsplash.com/photo-1517048676732-d65bc937f952?w=800',
-  'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=800'
+  { url: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=1200', alt: 'Pleno del Senado en sesión', caption: 'Sesión plenaria de la Cámara de Senadores' },
+  { url: 'https://images.unsplash.com/photo-1529101091764-c3526daf3e28?w=1200', alt: 'Palacio del Senado', caption: 'Palacio del Senado de Bolivia' },
+  { url: 'https://images.unsplash.com/photo-1541872703-74c5e44368f9?w=1200', alt: 'Senadores en debate', caption: 'Senadores durante el debate legislativo' },
+  { url: 'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=1200', alt: 'Comisión del Senado', caption: 'Reunión de comisión parlamentaria' },
+  { url: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=1200', alt: 'Presidente del Senado', caption: 'Presidente del Senado en conferencia' },
+  { url: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=1200', alt: 'Senadores trabajando', caption: 'Senadores trabajando en comisiones' }
 ];
 
-// Generar 96 noticias adicionales (para llegar a 100 total con las 4 importantes)
-const generarNoticiasAdicionales = (cantidad) => {
-  const noticias = [];
-  const contenidosBase = [
-    `<p>En una sesión ordinaria, la Cámara de Senadores debatió y aprobó importantes proyectos de ley que beneficiarán a la población boliviana. La iniciativa fue respaldada por todas las fuerzas políticas presentes.</p>
-<p>El presidente del Senado destacó el consenso alcanzado y la importancia de trabajar de manera coordinada por el desarrollo del país.</p>
-<p>La normativa ahora pasa a la Cámara de Diputados para su revisión y posterior promulgación.</p>`,
-    
-    `<p>La Comisión correspondiente recibió a representantes de la sociedad civil para escuchar sus propuestas y observaciones sobre el proyecto en cuestión.</p>
-<p>Durante varias horas, los legisladores atendieron las inquietudes de los diferentes sectores involucrados.</p>
-<p>Se acordó incorporar varias modificaciones antes de la votación en el pleno.</p>`,
-    
-    `<p>Por unanimidad, el pleno del Senado dio su aprobación al proyecto de ley que busca mejorar las condiciones de vida de los ciudadanos.</p>
-<p>La medida incluye beneficios directos para sectores vulnerables y promueve la inversión en áreas clave.</p>
-<p>Organizaciones sociales manifestaron su satisfacción con el resultado.</p>`,
-    
-    `<p>La Comisión de Constitución emitió un dictamen favorable tras analizar en detalle el proyecto de ley presentado por el ejecutivo.</p>
-<p>Se espera que en los próximos días el documento sea considerado por el pleno camaral.</p>
-<p>Senadores de diferentes regiones expresaron su respaldo a la iniciativa.</p>`
-  ];
+// ============================================
+// VIDEOS DE EJEMPLO
+// ============================================
+const VIDEOS = [
+  { url: 'https://www.youtube.com/embed/dQw4w9WgXcQ', title: 'Sesión Plenaria del Senado', caption: 'Registro oficial de la sesión plenaria' },
+  { url: 'https://www.youtube.com/embed/9bZkp7q19f0', title: 'Comisión de Constitución', caption: 'Trabajo de la comisión revisando proyectos' }
+];
+
+// ============================================
+// FUNCIÓN PARA GENERAR BLOQUES
+// ============================================
+const generarBloques = (titulo, categoria, index, tieneVideo) => {
+  const bloques = [];
   
-  for (let i = 0; i < cantidad; i++) {
-    const titulo = generarTitulo(i);
-    const fecha = getRandomDate();
-    const categoria = CATEGORIAS[i % CATEGORIAS.length];
-    const tipo = TIPOS[i % TIPOS.length];
-    const contenidoBase = contenidosBase[i % contenidosBase.length];
-    const contenidoAdicional = i % 3 === 0 ? `<p>Adicionalmente, se prevé que esta normativa tenga un impacto positivo en ${Math.floor(Math.random() * 10) + 1} departamentos del país, generando empleo y desarrollo sostenible.</p>` : '';
+  // Párrafo 1 - Introducción
+  bloques.push({
+    type: 'paragraph',
+    content: `<p>En una <strong>sesión ordinaria</strong> de la Cámara de Senadores, se debatió y aprobó importantes proyectos de ley que beneficiarán a la <strong>población boliviana</strong>. La iniciativa fue respaldada por todas las fuerzas políticas presentes, demostrando el compromiso del Senado con el <em>desarrollo nacional</em>.</p>`
+  });
+  
+  // VIDEO
+  if (tieneVideo) {
+    const video = VIDEOS[index % VIDEOS.length];
+    bloques.push({
+      type: 'video',
+      url: video.url,
+      title: video.title,
+      caption: video.caption
+    });
+  }
+  
+  // Párrafo 2 - Desarrollo
+  bloques.push({
+    type: 'paragraph',
+    content: `<p>La <strong>Comisión de Constitución</strong> analizó el proyecto de ley en detalle, revisando cada uno de sus artículos y escuchando las observaciones de los diferentes sectores involucrados. Este proceso de análisis duró varias semanas y contó con la participación de <strong>expertos en la materia</strong>.</p>`
+  });
+  
+  // CITA (80% de probabilidad)
+  if (Math.random() > 0.2) {
+    const senador = SENADORES[Math.floor(Math.random() * SENADORES.length)];
+    const citas = [
+      `${titulo.replace(/\*/g, '').replace(/⭐|📰/g, '').trim()} es un paso histórico para el desarrollo legislativo de nuestro país. Nunca antes se había logrado un consenso tan amplio en una iniciativa de esta naturaleza.`,
+      `La transparencia y el diálogo son fundamentales para el fortalecimiento de nuestra democracia. Este proyecto es una prueba de que cuando trabajamos juntos, podemos lograr grandes cosas para el país.`,
+      `Trabajamos incansablemente para garantizar el bienestar de todos los bolivianos. Esta ley es una muestra de nuestro compromiso con la gente.`
+    ];
+    
+    bloques.push({
+      type: 'quote',
+      content: citas[Math.floor(Math.random() * citas.length)],
+      author: senador.name,
+      role: senador.role
+    });
+  }
+  
+  // Párrafo 3 - Votación
+  bloques.push({
+    type: 'paragraph',
+    content: `<p>La <strong>votación final</strong> está programada para la próxima sesión ordinaria, donde se espera contar con el respaldo necesario para su <strong>aprobación definitiva</strong>. Los líderes de bancada se mostraron optimistas respecto al resultado de la votación.</p>`
+  });
+  
+  // Párrafo 4 - Impacto
+  bloques.push({
+    type: 'paragraph',
+    content: `<p>Esta iniciativa legislativa forma parte de un <strong>paquete de reformas</strong> que el Senado viene impulsando para modernizar el marco normativo del país. Se prevé que en los próximos meses se presenten proyectos complementarios en áreas clave como <strong>educación, salud y desarrollo productivo</strong>.</p>`
+  });
+  
+  return bloques;
+};
+
+// ============================================
+// FUNCIÓN PARA GENERAR GALERÍA
+// ============================================
+const generarGaleria = (imagenPrincipal, index) => {
+  const galeria = [];
+  
+  galeria.push({
+    url: imagenPrincipal.url,
+    alt: imagenPrincipal.alt,
+    caption: imagenPrincipal.caption,
+    order: 0
+  });
+  
+  const numAdicionales = Math.floor(Math.random() * 2) + 1;
+  for (let i = 0; i < numAdicionales && i < IMAGENES.length; i++) {
+    const imgIndex = (index + i + 1) % IMAGENES.length;
+    if (IMAGENES[imgIndex].url !== imagenPrincipal.url) {
+      galeria.push({
+        url: IMAGENES[imgIndex].url,
+        alt: IMAGENES[imgIndex].alt,
+        caption: IMAGENES[imgIndex].caption,
+        order: i + 1
+      });
+    }
+  }
+  
+  return galeria;
+};
+
+// ============================================
+// FUNCIÓN PARA GENERAR HTML DESDE BLOQUES
+// ============================================
+const generarHTMLDesdeBloques = (bloques) => {
+  let html = '';
+  for (const bloque of bloques) {
+    if (bloque.type === 'paragraph') {
+      html += bloque.content;
+    } else if (bloque.type === 'quote') {
+      html += `<blockquote><p>${bloque.content}</p><footer>— ${bloque.author}, ${bloque.role}</footer></blockquote>`;
+    } else if (bloque.type === 'video') {
+      html += `<iframe src="${bloque.url}" title="${bloque.title}" frameborder="0" allowfullscreen style="width: 100%; height: 400px; border-radius: 12px;"></iframe>`;
+    }
+  }
+  return html;
+};
+
+// ============================================
+// GENERAR TODAS LAS NOTICIAS
+// ============================================
+const generarNoticias = async (adminUserId) => {
+  const noticias = [];
+  
+  for (let i = 0; i < TITULOS_BASE.length; i++) {
+    const base = TITULOS_BASE[i];
+    const imagenIndex = i % IMAGENES.length;
+    const imagenPrincipal = IMAGENES[imagenIndex];
+    const fecha = new Date();
+    fecha.setDate(fecha.getDate() - i);
+    
+    const tieneVideo = base.tieneVideo;
+    const bloques = generarBloques(base.titulo, base.categoria, i, tieneVideo);
+    const galeria = generarGaleria(imagenPrincipal, i);
     
     noticias.push({
-      title: titulo,
-      slug: generarSlug(titulo, i),
-      content: contenidoBase + contenidoAdicional + `<p>La votación final está programada para la próxima sesión ordinaria, donde se espera contar con el respaldo necesario para su aprobación definitiva.</p>`,
-      excerpt: `${titulo.substring(0, 80)}. La iniciativa fue trabajada en consenso con todos los sectores involucrados.`,
-      type: tipo,
-      category: categoria,
-      tags: getRandomTags(),
+      title: base.titulo,
+      slug: base.titulo
+        .toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[⭐📰]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') + '-' + Date.now() + i,
+      content: generarHTMLDesdeBloques(bloques),
+      blocks: bloques,
+      excerpt: `${base.categoria === 'importante' ? '⭐ ' : '📰 '}${base.titulo.replace(/\*/g, '').replace(/⭐|📰/g, '').trim()}. Una iniciativa importante para el desarrollo de Bolivia.`,
+      type: 'news',
+      category: base.categoria,  // 🔥 'importante' o 'noticia'
+      tags: base.tags,
       status: 'published',
-      featuredImage: { 
-        url: IMAGENES[i % IMAGENES.length], 
-        alt: titulo.substring(0, 50)
+      featuredImage: {
+        url: imagenPrincipal.url,
+        alt: imagenPrincipal.alt,
+        caption: imagenPrincipal.caption
       },
-      views: Math.floor(Math.random() * 1000),
+      gallery: galeria,
+      author: adminUserId,
+      lastModifiedBy: adminUserId,
+      views: Math.floor(Math.random() * 2000) + 100,
       publishedAt: fecha
     });
   }
@@ -5023,156 +6069,88 @@ const generarNoticiasAdicionales = (cantidad) => {
   return noticias;
 };
 
-// Noticias importantes destacadas (se mantienen al inicio)
-const noticiasImportantes = [
-  {
-    title: 'Senado aprueba Ley de Desarrollo Económico',
-    slug: 'senado-aprueba-ley-desarrollo-economico',
-    content: '<p>El pleno del Senado aprobó por unanimidad la nueva Ley de Desarrollo Económico. Esta normativa contempla beneficios tributarios para pequeñas y medianas empresas, así como líneas de crédito con tasas preferenciales para emprendedores.</p><p>"Es un día histórico para el desarrollo productivo de Bolivia", declaró el presidente del Senado. La ley fue trabajada en consenso con todas las fuerzas políticas y organizaciones sociales del país.</p><p>Entre los principales puntos de la ley se destacan: la creación de un fondo de garantía para MIPYMES, la simplificación de trámites para la creación de empresas, y beneficios fiscales para industrias que generen empleo.</p>',
-    excerpt: 'Nueva ley beneficiará a emprendedores y pequeñas empresas con créditos y beneficios tributarios',
-    type: 'news',
-    category: 'legislacion',
-    tags: ['economia', 'desarrollo', 'leyes', 'emprendedores'],
-    status: 'published',
-    featuredImage: { url: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800', alt: 'Pleno del Senado' },
-    views: 1250,
-    publishedAt: new Date()
-  },
-  {
-    title: 'Cámara de Senadores aprueba proyecto de Ley de Aguas',
-    slug: 'senado-aprueba-ley-aguas',
-    content: '<p>Por unanimidad, la Cámara de Senadores aprobó el proyecto de Ley General de Aguas, que garantiza el acceso al agua potable como derecho fundamental. La normativa establece mecanismos de distribución equitativa y protección de fuentes hídricas.</p><p>La ley contempla la creación de un fondo de inversión de Bs 1.200 millones para proyectos de riego tecnificado y plantas de tratamiento en áreas rurales y periurbanas.</p><p>Organizaciones sociales y gremiales manifestaron su respaldo a la iniciativa, destacando el trabajo conjunto entre el Legislativo y la sociedad civil.</p>',
-    excerpt: 'Ley garantiza acceso al agua potable como derecho fundamental con inversión de Bs 1.200 millones',
-    type: 'news',
-    category: 'legislacion',
-    tags: ['agua', 'derechos', 'riego', 'desarrollo'],
-    status: 'published',
-    featuredImage: { url: 'https://images.unsplash.com/photo-1541872703-74c5e44368f9?w=800', alt: 'Ley de Aguas' },
-    views: 980,
-    publishedAt: new Date()
-  },
-  {
-    title: 'Comisión de Autonomías analiza transferencia de competencias',
-    slug: 'comision-autonomias-transferencia-competencias',
-    content: '<p>La Comisión de Autonomías del Senado inició el análisis del proyecto de ley de transferencia de competencias del nivel central a las entidades territoriales autónomas. Gobernadores y alcaldes participaron de las primeras mesas de trabajo.</p><p>El objetivo es agilizar la descentralización efectiva y garantizar recursos suficientes para que las regiones ejecuten proyectos de desarrollo.</p><p>Se prevé que el proyecto sea aprobado en los próximos dos meses.</p>',
-    excerpt: 'Proyecto busca agilizar descentralización efectiva con recursos garantizados',
-    type: 'news',
-    category: 'legislacion',
-    tags: ['autonomias', 'descentralizacion', 'gobernadores', 'desarrollo'],
-    status: 'published',
-    featuredImage: { url: 'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=800', alt: 'Comisión de Autonomías' },
-    views: 750,
-    publishedAt: new Date()
-  },
-  {
-    title: 'Directiva del Senado presenta plan de trabajo anual',
-    slug: 'directiva-senado-plan-trabajo-anual',
-    content: '<p>La Directiva de la Cámara de Senadores presentó el plan de trabajo para la gestión anual, que incluye ejes prioritarios como la reactivación económica, la lucha contra la corrupción y el fortalecimiento de la democracia.</p><p>El presidente del Senado destacó que se realizarán al menos 12 sesiones descentralizadas en diferentes departamentos del país para acercar el trabajo legislativo a la ciudadanía.</p><p>También se anunció la creación de una plataforma digital de participación ciudadana.</p>',
-    excerpt: 'Plan incluye reactivación económica, lucha contra corrupción y sesiones descentralizadas',
-    type: 'news',
-    category: 'directiva',
-    tags: ['directiva', 'plan-trabajo', 'gestion', 'participacion'],
-    status: 'published',
-    featuredImage: { url: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=800', alt: 'Directiva del Senado' },
-    views: 620,
-    publishedAt: new Date()
-  }
-];
-
+// ============================================
+// SCRIPT PRINCIPAL
+// ============================================
 async function seedContent() {
+  console.log('\n' + '═'.repeat(80));
+  console.log('🎬 SEED DE CONTENIDO - CATEGORÍAS CORRECTAS');
+  console.log('   📰 Noticias normales  |  ⭐ Noticias importantes');
+  console.log('═'.repeat(80));
+  
   try {
-    console.log('🔌 Conectando a MongoDB...');
-    console.log('📍 URI:', process.env.MONGODB_URI);
-    await mongoose.connect(process.env.MONGODB_URI);
+    console.log('\n🔌 Conectando a MongoDB...');
+    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/senado_bolivia');
     console.log('✅ Conectado a MongoDB');
     
-    // OBTENER UN USUARIO ADMIN EXISTENTE
-    console.log('👤 Buscando usuario administrador...');
-    const adminUser = await User.findOne({ role: 'SUPER_ADMIN' });
+    console.log('\n👤 Buscando usuario administrador...');
+    let adminUser = await User.findOne({ role: 'SUPER_ADMIN' });
+    if (!adminUser) adminUser = await User.findOne({ role: 'ADMIN' });
+    if (!adminUser) adminUser = await User.findOne({});
     
     if (!adminUser) {
-      console.error('❌ No se encontró ningún usuario administrador en la base de datos.');
-      console.log('💡 Ejecuta primero: npm run seed:admin');
+      console.error('❌ No se encontró ningún usuario. Ejecuta: node src/check-admin.js');
       process.exit(1);
     }
     
-    console.log(`✅ Usuario encontrado: ${adminUser.email} (ID: ${adminUser._id})`);
+    console.log(`✅ Usuario encontrado: ${adminUser.email} (${adminUser.role})`);
     
-    // Generar 96 noticias adicionales (para total de 100)
-    console.log('📝 Generando 96 noticias adicionales...');
-    const noticiasAdicionales = generarNoticiasAdicionales(96);
+    console.log('\n📝 Generando noticias...');
+    const noticias = await generarNoticias(adminUser._id);
+    console.log(`   Total noticias generadas: ${noticias.length}`);
     
-    // Combinar: 4 importantes + 96 adicionales = 100 total
-    const todasLasNoticias = [...noticiasImportantes, ...noticiasAdicionales];
+    const importantes = noticias.filter(n => n.category === 'importante');
+    const normales = noticias.filter(n => n.category === 'noticia');
+    console.log(`   ⭐ Importantes: ${importantes.length}`);
+    console.log(`   📰 Normales: ${normales.length}`);
+    console.log(`   📹 Con video: ${noticias.filter(n => n.blocks.some(b => b.type === 'video')).length}`);
     
-    console.log(`📊 Total noticias a insertar: ${todasLasNoticias.length}`);
+    console.log('\n🗑️ Limpiando colección Content...');
+    await Content.deleteMany({});
     
-    // AGREGAR EL AUTHOR A CADA NOTICIA
-    const newsWithAuthor = todasLasNoticias.map(news => ({
-      ...news,
-      author: adminUser._id,
-      lastModifiedBy: adminUser._id
-    }));
-    
-    // Limpiar collection existente
-    const deleted = await Content.deleteMany({});
-    console.log(`🗑️ Eliminados ${deleted.deletedCount} documentos anteriores`);
-    
-    // Insertar en batches para evitar problemas de memoria
-    const batchSize = 50;
+    console.log('\n💾 Insertando noticias...');
     let inserted = 0;
-    
-    for (let i = 0; i < newsWithAuthor.length; i += batchSize) {
-      const batch = newsWithAuthor.slice(i, i + batchSize);
-      const result = await Content.insertMany(batch);
-      inserted += result.length;
-      console.log(`📦 Batch ${Math.floor(i / batchSize) + 1}: insertadas ${result.length} noticias`);
+    for (const noticia of noticias) {
+      await Content.create(noticia);
+      inserted++;
+      if (inserted % 5 === 0) console.log(`   Insertadas ${inserted} de ${noticias.length}...`);
     }
     
-    console.log(`✅ Insertadas ${inserted} noticias de ejemplo`);
-    
-    // Mostrar estadísticas
-    const total = await Content.countDocuments();
-    const porCategoria = await Content.aggregate([
-      { $group: { _id: '$category', count: { $sum: 1 } } }
-    ]);
-    const porTipo = await Content.aggregate([
-      { $group: { _id: '$type', count: { $sum: 1 } } }
-    ]);
+    console.log(`\n✅ Insertadas ${inserted} noticias exitosamente`);
     
     console.log('\n📊 ESTADÍSTICAS FINALES:');
-    console.log(`   Total documentos: ${total}`);
+    const total = await Content.countDocuments();
+    const conVideo = await Content.countDocuments({ 'blocks.type': 'video' });
+    const conCitas = await Content.countDocuments({ 'blocks.type': 'quote' });
+    const totalImportantes = await Content.countDocuments({ category: 'importante' });
+    const totalNormales = await Content.countDocuments({ category: 'noticia' });
     
-    console.log('\n   Por categoría:');
-    porCategoria.forEach(cat => {
-      console.log(`      ${cat._id}: ${cat.count}`);
+    console.log(`   • Total noticias: ${total}`);
+    console.log(`   • ⭐ Importantes: ${totalImportantes}`);
+    console.log(`   • 📰 Normales: ${totalNormales}`);
+    console.log(`   • 📹 Con video: ${conVideo}`);
+    console.log(`   • 💬 Con citas: ${conCitas}`);
+    
+    console.log('\n📰 NOTICIAS IMPORTANTES:');
+    const noticiasImportantes = await Content.find({ category: 'importante' }).limit(5);
+    noticiasImportantes.forEach((news, idx) => {
+      console.log(`   ${idx + 1}. ⭐ ${news.title}`);
     });
     
-    console.log('\n   Por tipo:');
-    porTipo.forEach(tipo => {
-      console.log(`      ${tipo._id}: ${tipo.count}`);
-    });
-    
-    console.log('\n📰 PRIMERAS 6 NOTICIAS:');
-    const primeras = await Content.find().sort({ publishedAt: -1 }).limit(6);
-    primeras.forEach((news, i) => {
-      console.log(`   ${i+1}. ${news.title}`);
-    });
+    console.log('\n📌 Para probar:');
+    console.log('   GET /api/content?category=importante - Noticias importantes');
+    console.log('   GET /api/content?category=noticia - Noticias normales');
+    console.log('   GET /api/content - Todas las noticias');
     
     await mongoose.disconnect();
-    console.log('\n👋 Desconectado de MongoDB');
-    console.log('✅ SEED COMPLETADO CON ÉXITO - 100 NOTICIAS CREADAS');
-    console.log('\n📌 Verifica la paginación en: http://demoback.senado.gob.bo/api/content');
+    console.log('\n' + '═'.repeat(80));
+    console.log('🎉 SEED COMPLETADO CON ÉXITO');
+    console.log('═'.repeat(80));
     
     process.exit(0);
+    
   } catch (error) {
-    console.error('❌ Error en seed:', error);
-    if (error.errors) {
-      console.error('📋 Detalles de validación:', Object.keys(error.errors).map(key => ({
-        campo: key,
-        mensaje: error.errors[key].message
-      })));
-    }
+    console.error('\n❌ ERROR:', error.message);
     process.exit(1);
   }
 }
@@ -6417,4 +7395,4 @@ const userValidators = {
 };
 
 module.exports = userValidators; 
-Total archivos: 35 
+Total archivos: 39 
