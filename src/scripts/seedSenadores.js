@@ -1,6 +1,6 @@
 // src/scripts/seedSenadores.js
 // Script para migrar los datos de senadores a MongoDB
-// LA DATA ESTÁ INCLUIDA AQUÍ - las fotos apuntan a /senadores/ (backend)
+// INCLUYE DATOS DE SUPLENTES
 
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
@@ -24,7 +24,7 @@ const generarSlug = (nombre) => {
 }
 
 // ============================================
-// 🔥 DATA COMPLETA DE SENADORES (71 senadores)
+// 🔥 DATA COMPLETA DE SENADORES (TITULARES + SUPLENTES)
 // ============================================
 const SENADORES_DATA = [
   // ============================================
@@ -40,7 +40,20 @@ const SENADORES_DATA = [
     partyShort: "PDC", 
     partyColor: "#2E7078", 
     department: "Cochabamba",
-    foto: "/senadores/titulares/g1/WILDER VELIZ ARMAS.png"
+    foto: "/senadores/titulares/g1/WILDER VELIZ ARMAS.png",
+    suplente: "Lenny Mayra Ayala Justiniano",
+    slugSuplente: generarSlug("Lenny Mayra Ayala Justiniano"),
+    fotoSuplente: "/senadores/suplentes/g1/LENNY MAYRA AYALA JUSTINIANO.png",
+    fechaNacimientoSuplente: "19 de enero, 1990",
+    nacidoEnSuplente: "Cochabamba - Cercado - Cochabamba",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 2, 
@@ -52,7 +65,20 @@ const SENADORES_DATA = [
     partyShort: "PDC", 
     partyColor: "#2E7078", 
     department: "Potosí",
-    foto: "/senadores/titulares/g1/JUDITH ROSARIO GARCIA COCA.png"
+    foto: "/senadores/titulares/g1/JUDITH ROSARIO GARCIA COCA.png",
+    suplente: "Royer Ivan Mamani Garcia",
+    slugSuplente: generarSlug("Royer Ivan Mamani Garcia"),
+    fotoSuplente: "/senadores/suplentes/g1/ROYER IVAN MAMANI GARCIA.png",
+    fechaNacimientoSuplente: "15 de octubre, 1991",
+    nacidoEnSuplente: "Cochabamba - Cercado - Cochabamba",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 3, 
@@ -64,7 +90,20 @@ const SENADORES_DATA = [
     partyShort: "APB", 
     partyColor: "#611789", 
     department: "Cochabamba",
-    foto: "/senadores/titulares/g1/CLAUDIA MALLON VARGAS.png"
+    foto: "/senadores/titulares/g1/CLAUDIA MALLON VARGAS.png",
+    suplente: "Apolinar Rivera Muñoz",
+    slugSuplente: generarSlug("Apolinar Rivera Muñoz"),
+    fotoSuplente: "/senadores/suplentes/g1/APOLINAR RIVERA MUÑOZ.png",
+    fechaNacimientoSuplente: "3 de septiembre, 1966",
+    nacidoEnSuplente: "Potosí - Tomas Frias - Potosí",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 4, 
@@ -76,7 +115,20 @@ const SENADORES_DATA = [
     partyShort: "LIBRE", 
     partyColor: "#DB3737", 
     department: "Cochabamba",
-    foto: "/senadores/titulares/g1/WANDA XIMENA MEDRANO HERVAS.png"
+    foto: "/senadores/titulares/g1/WANDA XIMENA MEDRANO HERVAS.png",
+    suplente: "Aldo Sergio Villegas Mora",
+    slugSuplente: generarSlug("Aldo Sergio Villegas Mora"),
+    fotoSuplente: "/senadores/suplentes/g1/ALDO SERGIO VILLEGAS MORA.png",
+    fechaNacimientoSuplente: "20 de agosto, 1979",
+    nacidoEnSuplente: "Oruro - Cercado - Oruro",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 5, 
@@ -88,7 +140,20 @@ const SENADORES_DATA = [
     partyShort: "LIBRE", 
     partyColor: "#DB3737", 
     department: "La Paz",
-    foto: "/senadores/titulares/g1/JOSE MANUEL ORMACHEA MENDIETA.png"
+    foto: "/senadores/titulares/g1/JOSE MANUEL ORMACHEA MENDIETA.png",
+    suplente: "Maria Elena Pachacute Ticona",
+    slugSuplente: generarSlug("Maria Elena Pachacute Ticona"),
+    fotoSuplente: "/senadores/suplentes/g1/MARIA ELENA PACHACUTE TICONA.png",
+    fechaNacimientoSuplente: "5 de febrero, 1990",
+    nacidoEnSuplente: "La Paz - Murillo - Señora de La Paz",
+    ocupacionSuplente: "Lic. en Comercio Internacional y Comunicación Social",
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: "https://www.facebook.com/share/1D8HNND7Ji/",
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: "https://www.tiktok.com/@elenapachacute?_r=1&_t=ZS-98rRgYCP1oz"
   },
   { 
     id: 6, 
@@ -100,7 +165,20 @@ const SENADORES_DATA = [
     partyShort: "UNIDAD", 
     partyColor: "#EFCD04", 
     department: "La Paz",
-    foto: "/senadores/titulares/g1/CARMEN SOLEDAD CHAPETÓN TANCARA.png"
+    foto: "/senadores/titulares/g1/CARMEN SOLEDAD CHAPETÓN TANCARA.png",
+    suplente: "Nilton Condori Alanoca",
+    slugSuplente: generarSlug("Nilton Condori Alanoca"),
+    fotoSuplente: "/senadores/suplentes/g1/NILTON CONDORI ALANOCA.png",
+    fechaNacimientoSuplente: "12 de octubre, 1968",
+    nacidoEnSuplente: "La Paz - Omasuyos - Tojocachi",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 7, 
@@ -112,7 +190,20 @@ const SENADORES_DATA = [
     partyShort: "PDC", 
     partyColor: "#2E7078", 
     department: "La Paz",
-    foto: "/senadores/titulares/g1/NICANOR GONZALO COCHI CONDORI.png"
+    foto: "/senadores/titulares/g1/NICANOR GONZALO COCHI CONDORI.png",
+    suplente: "Roxana Mamani Colquehuanca",
+    slugSuplente: generarSlug("Roxana Mamani Colquehuanca"),
+    fotoSuplente: "/senadores/suplentes/g1/ROXANA MAMANI COLQUEHUANCA.png",
+    fechaNacimientoSuplente: "28 de septiembre, 1978",
+    nacidoEnSuplente: "La Paz - Murillo - Señora de La Paz",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 8, 
@@ -124,7 +215,20 @@ const SENADORES_DATA = [
     partyShort: "LIBRE", 
     partyColor: "#DB3737", 
     department: "Chuquisaca",
-    foto: "/senadores/titulares/g1/TOMASA YARHUI JACOME.png"
+    foto: "/senadores/titulares/g1/TOMASA YARHUI JACOME.png",
+    suplente: "Hugo Marcelo Cortez Calvimontes",
+    slugSuplente: generarSlug("Hugo Marcelo Cortez Calvimontes"),
+    fotoSuplente: "/senadores/suplentes/g1/HUGO MARCELO CORTEZ CALVIMONTES.png",
+    fechaNacimientoSuplente: "26 de enero, 1974",
+    nacidoEnSuplente: "Chuquisaca - Oropeza - Sucre",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 9, 
@@ -136,7 +240,20 @@ const SENADORES_DATA = [
     partyShort: "LIBRE", 
     partyColor: "#DB3737", 
     department: "Chuquisaca",
-    foto: "/senadores/titulares/g1/ABDON PORCEL ARANCIBIA.png"
+    foto: "/senadores/titulares/g1/ABDON PORCEL ARANCIBIA.png",
+    suplente: "Ilse Fatima Davila Arancibia",
+    slugSuplente: generarSlug("Ilse Fatima Davila Arancibia"),
+    fotoSuplente: "/senadores/suplentes/g1/ILSE FATIMA DAVILA ARANCIBIA.png",
+    fechaNacimientoSuplente: "13 de mayo, 1984",
+    nacidoEnSuplente: "Chuquisaca - Oropeza - Sucre",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 10, 
@@ -148,7 +265,20 @@ const SENADORES_DATA = [
     partyShort: "PDC", 
     partyColor: "#2E7078", 
     department: "Chuquisaca",
-    foto: "/senadores/titulares/g1/BERTHA CARTAGENA SANCHEZ.png"
+    foto: "/senadores/titulares/g1/BERTHA CARTAGENA SANCHEZ.png",
+    suplente: "Manfred Leo Perez Hassenteufel",
+    slugSuplente: generarSlug("Manfred Leo Perez Hassenteufel"),
+    fotoSuplente: "/senadores/suplentes/g1/MANFRED LEO PEREZ HASSENTEUFEL.png",
+    fechaNacimientoSuplente: "14 de noviembre, 1971",
+    nacidoEnSuplente: "Chuquisaca - Luis Calvo - Muyupampa",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 11, 
@@ -160,7 +290,20 @@ const SENADORES_DATA = [
     partyShort: "LIBRE", 
     partyColor: "#DB3737", 
     department: "Santa Cruz",
-    foto: "/senadores/titulares/g3/BRANKO GORAN MARINKOVIC JOVICEVIC.png"
+    foto: "/senadores/titulares/g3/BRANKO GORAN MARINKOVIC JOVICEVIC.png",
+    suplente: "Kathia Natalia Miserendino Romero",
+    slugSuplente: generarSlug("Kathia Natalia Miserendino Romero"),
+    fotoSuplente: "/senadores/suplentes/g3/KATHIA NATALIA MISERENDINO ROMERO.png",
+    fechaNacimientoSuplente: "15 de diciembre, 1993",
+    nacidoEnSuplente: "Santa Cruz - Andrés Ibáñez - Santa Cruz de la Sierra",
+    ocupacionSuplente: "Ing. Agrónoma",
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: "https://www.facebook.com/katnat.miserendino",
+    twitterSuplente: null,
+    instagramSuplente: "https://www.instagram.com/senadoraporsantacruz/",
+    youtubeSuplente: null,
+    tiktokSuplente: "https://www.tiktok.com/@nataliamiserendino"
   },
   { 
     id: 12, 
@@ -172,7 +315,20 @@ const SENADORES_DATA = [
     partyShort: "LIBRE", 
     partyColor: "#DB3737", 
     department: "Santa Cruz",
-    foto: "/senadores/titulares/g3/KATHIA LISBETH QUIROGA FERNÁNDEZ.png"
+    foto: "/senadores/titulares/g3/KATHIA LISBETH QUIROGA FERNÁNDEZ.png",
+    suplente: "Leonardo Roca Eguez",
+    slugSuplente: generarSlug("Leonardo Roca Eguez"),
+    fotoSuplente: "/senadores/suplentes/g3/LEONARDO ROCA EGUEZ.png",
+    fechaNacimientoSuplente: "4 de junio, 1980",
+    nacidoEnSuplente: "Santa Cruz - Andres Ibañez - Santa Cruz de la Sierra",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 13, 
@@ -184,7 +340,20 @@ const SENADORES_DATA = [
     partyShort: "UNIDAD", 
     partyColor: "#EFCD04", 
     department: "Santa Cruz",
-    foto: "/senadores/titulares/g3/ROSA TATIANA AÑEZ CARRASCO.png"
+    foto: "/senadores/titulares/g3/ROSA TATIANA AÑEZ CARRASCO.png",
+    suplente: "Lorgio Fernando Pareja Saucedo",
+    slugSuplente: generarSlug("Lorgio Fernando Pareja Saucedo"),
+    fotoSuplente: "/senadores/suplentes/g3/LORGIO FERNANDO PAREJA SAUCEDO.png",
+    fechaNacimientoSuplente: "6 de diciembre, 1985",
+    nacidoEnSuplente: "Santa Cruz - Andrés Ibáñez - Santa Cruz de la Sierra",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 14, 
@@ -196,7 +365,20 @@ const SENADORES_DATA = [
     partyShort: "PDC", 
     partyColor: "#2E7078", 
     department: "Cochabamba",
-    foto: "/senadores/titulares/g3/PAOLA LIMBANIA LOPEZ ZEBALLOS.png"
+    foto: "/senadores/titulares/g3/PAOLA LIMBANIA LOPEZ ZEBALLOS.png",
+    suplente: "Richard Espada Ugarte",
+    slugSuplente: generarSlug("Richard Espada Ugarte"),
+    fotoSuplente: "/senadores/suplentes/g3/RICHARD ESPADA UGARTE.png",
+    fechaNacimientoSuplente: "6 de febrero, 1986",
+    nacidoEnSuplente: "Santa Cruz - Andrés Ibáñez - Santa Cruz de la Sierra",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 15, 
@@ -208,7 +390,20 @@ const SENADORES_DATA = [
     partyShort: "LIBRE", 
     partyColor: "#DB3737", 
     department: "Potosí",
-    foto: "/senadores/titulares/g2/BETTY CANAVIRI VILLANUEVA.png"
+    foto: "/senadores/titulares/g2/BETTY CANAVIRI VILLANUEVA.png",
+    suplente: "Roger Mamani Coronado",
+    slugSuplente: generarSlug("Roger Mamani Coronado"),
+    fotoSuplente: "/senadores/suplentes/g2/ROGER MAMANI CORONADO.png",
+    fechaNacimientoSuplente: "24 de junio, 1977",
+    nacidoEnSuplente: "Potosí - Tomas Frias - Potosí",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 16, 
@@ -220,7 +415,20 @@ const SENADORES_DATA = [
     partyShort: "PDC", 
     partyColor: "#2E7078", 
     department: "Potosí",
-    foto: "/senadores/titulares/g2/TERESA ALARCON ARANA.png"
+    foto: "/senadores/titulares/g2/TERESA ALARCON ARANA.png",
+    suplente: null,
+    slugSuplente: null,
+    fotoSuplente: null,
+    fechaNacimientoSuplente: null,
+    nacidoEnSuplente: null,
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 17, 
@@ -232,7 +440,20 @@ const SENADORES_DATA = [
     partyShort: "PDC", 
     partyColor: "#2E7078", 
     department: "Potosí",
-    foto: "/senadores/titulares/g2/MARCELINO FLORES ORDOÑEZ.png"
+    foto: "/senadores/titulares/g2/MARCELINO FLORES ORDOÑEZ.png",
+    suplente: "Susana Gabriela Ruiz Zuleta",
+    slugSuplente: generarSlug("Susana Gabriela Ruiz Zuleta"),
+    fotoSuplente: "/senadores/suplentes/g2/SUSANA GABRIELA RUIZ ZULETA.png",
+    fechaNacimientoSuplente: "12 de diciembre, 1984",
+    nacidoEnSuplente: "Potosí - Tomas Frias - Potosí",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 18, 
@@ -244,7 +465,20 @@ const SENADORES_DATA = [
     partyShort: "PDC", 
     partyColor: "#2E7078", 
     department: "Potosí",
-    foto: "/senadores/titulares/g2/BERTHA NURMY GUTIERREZ MENESES.png"
+    foto: "/senadores/titulares/g2/BERTHA NURMY GUTIERREZ MENESES.png",
+    suplente: "Freddy Rioja Melgar",
+    slugSuplente: generarSlug("Freddy Rioja Melgar"),
+    fotoSuplente: "/senadores/suplentes/g2/FREDDY RIOJA MELGAR.png",
+    fechaNacimientoSuplente: "20 de abril, 1957",
+    nacidoEnSuplente: "Santa Cruz - Cordillera - Camiri",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 19, 
@@ -256,7 +490,20 @@ const SENADORES_DATA = [
     partyShort: "PDC", 
     partyColor: "#2E7078", 
     department: "Beni",
-    foto: "/senadores/titulares/g3/ERICK NELSON SORUCO ALPIRE.png"
+    foto: "/senadores/titulares/g3/ERICK NELSON SORUCO ALPIRE.png",
+    suplente: "Cesia Roca Escalante",
+    slugSuplente: generarSlug("Cesia Roca Escalante"),
+    fotoSuplente: "/senadores/suplentes/g3/CESIA ROCA ESCALANTE.png",
+    fechaNacimientoSuplente: "30 de julio, 1971",
+    nacidoEnSuplente: "Beni - Vaca Diez - Riberalta",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 20, 
@@ -268,7 +515,20 @@ const SENADORES_DATA = [
     partyShort: "UNIDAD", 
     partyColor: "#EFCD04", 
     department: "Beni",
-    foto: "/senadores/titulares/g3/JOSE ROCA HAENSEL.png"
+    foto: "/senadores/titulares/g3/JOSE ROCA HAENSEL.png",
+    suplente: "Mabel Giordano Sonnenschein",
+    slugSuplente: generarSlug("Mabel Giordano Sonnenschein"),
+    fotoSuplente: "/senadores/suplentes/g3/MABEL GIORDANO SONNENSCHEIN.png",
+    fechaNacimientoSuplente: "15 de enero, 1985",
+    nacidoEnSuplente: "Beni - Vaca Diez - Riberalta",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 21, 
@@ -280,7 +540,20 @@ const SENADORES_DATA = [
     partyShort: "UNIDAD", 
     partyColor: "#EFCD04", 
     department: "Beni",
-    foto: "/senadores/titulares/g3/ANA KARINA VELASCO ÁÑEZ.png"
+    foto: "/senadores/titulares/g3/ANA KARINA VELASCO ÁÑEZ.png",
+    suplente: "Marcelo Matias Cardona Ibañez",
+    slugSuplente: generarSlug("Marcelo Matias Cardona Ibañez"),
+    fotoSuplente: "/senadores/suplentes/g3/MARCELO MATIAS CARDONA IBAÑEZ.png",
+    fechaNacimientoSuplente: "5 de enero, 1982",
+    nacidoEnSuplente: "Cochabamba - Cercado - Cochabamba",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 22, 
@@ -292,7 +565,20 @@ const SENADORES_DATA = [
     partyShort: "LIBRE", 
     partyColor: "#DB3737", 
     department: "Cochabamba",
-    foto: "/senadores/titulares/g3/ERNESTO SUAREZ SATTORI.png"
+    foto: "/senadores/titulares/g3/ERNESTO SUAREZ SATTORI.png",
+    suplente: "Claudia Cardenas Velasquez",
+    slugSuplente: generarSlug("Claudia Cardenas Velasquez"),
+    fotoSuplente: "/senadores/suplentes/g3/CLAUDIA CARDENAS VELASQUEZ.png",
+    fechaNacimientoSuplente: "2 de julio, 1969",
+    nacidoEnSuplente: "Cochabamba - Cercado - Cochabamba",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 23, 
@@ -304,7 +590,20 @@ const SENADORES_DATA = [
     partyShort: "PDC", 
     partyColor: "#2E7078", 
     department: "La Paz",
-    foto: "/senadores/titulares/g1/ANA MARIA CRISPIN CHOQUE.png"
+    foto: "/senadores/titulares/g1/ANA MARIA CRISPIN CHOQUE.png",
+    suplente: "Victor Severo Quispe Santander",
+    slugSuplente: generarSlug("Victor Severo Quispe Santander"),
+    fotoSuplente: "/senadores/suplentes/g1/VICTOR SEVERO QUISPE SANTANDER.png",
+    fechaNacimientoSuplente: "1 de febrero, 1971",
+    nacidoEnSuplente: "La Paz - Murillo - Nuestra Señora de La Paz",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 24, 
@@ -316,7 +615,20 @@ const SENADORES_DATA = [
     partyShort: "LIBRE", 
     partyColor: "#DB3737", 
     department: "Pando",
-    foto: "/senadores/titulares/g3/JULIO DIEGO ROMAÑA GALINDO.png"
+    foto: "/senadores/titulares/g3/JULIO DIEGO ROMAÑA GALINDO.png",
+    suplente: "Carolina Giese Urresti",
+    slugSuplente: generarSlug("Carolina Giese Urresti"),
+    fotoSuplente: "/senadores/suplentes/g3/CAROLINA GIESE URRESTI.png",
+    fechaNacimientoSuplente: "9 de noviembre, 1996",
+    nacidoEnSuplente: "Pando - Nicolas Suarez - Cobija",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 25, 
@@ -328,7 +640,20 @@ const SENADORES_DATA = [
     partyShort: "LIBRE", 
     partyColor: "#DB3737", 
     department: "Pando",
-    foto: "/senadores/titulares/g3/CAROL CARLO DURAN.png"
+    foto: "/senadores/titulares/g3/CAROL CARLO DURAN.png",
+    suplente: "Jorge Antonio Quispe Flores",
+    slugSuplente: generarSlug("Jorge Antonio Quispe Flores"),
+    fotoSuplente: "/senadores/suplentes/g3/JORGE ANTONIO QUISPE FLORES.png",
+    fechaNacimientoSuplente: "15 de enero, 1991",
+    nacidoEnSuplente: "Pando - Nicolas Suarez - Cobija",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 26, 
@@ -340,7 +665,20 @@ const SENADORES_DATA = [
     partyShort: "PDC", 
     partyColor: "#2E7078", 
     department: "Pando",
-    foto: "/senadores/titulares/g3/CINTIA MONICA PUERTA CAMPOS.png"
+    foto: "/senadores/titulares/g3/CINTIA MONICA PUERTA CAMPOS.png",
+    suplente: "Jesus Humberto Suarez Eguez",
+    slugSuplente: generarSlug("Jesus Humberto Suarez Eguez"),
+    fotoSuplente: "/senadores/suplentes/g3/JESUS HUMBERTO SUAREZ EGUEZ.png",
+    fechaNacimientoSuplente: "29 de mayo, 1980",
+    nacidoEnSuplente: "Beni - Cercado - Trinidad",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 27, 
@@ -352,7 +690,20 @@ const SENADORES_DATA = [
     partyShort: "UNIDAD", 
     partyColor: "#EFCD04", 
     department: "Cochabamba",
-    foto: "/senadores/titulares/g3/ELIANA RINA ACOSTA QUISPE.png"
+    foto: "/senadores/titulares/g3/ELIANA RINA ACOSTA QUISPE.png",
+    suplente: "Sichard Hans Soraide Castedo",
+    slugSuplente: generarSlug("Sichard Hans Soraide Castedo"),
+    fotoSuplente: "/senadores/suplentes/g3/SICHARD HANS SORAIDE CASTEDO.png",
+    fechaNacimientoSuplente: "28 de octubre, 1983",
+    nacidoEnSuplente: "Santa Cruz - Andres Ibañez - Santa Cruz de la Sierra",
+    ocupacionSuplente: "Ingeniero Informático",
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 28, 
@@ -364,7 +715,20 @@ const SENADORES_DATA = [
     partyShort: "PDC", 
     partyColor: "#2E7078", 
     department: "La Paz",
-    foto: "/senadores/titulares/g1/DANIEL ANTONIO ORTIZ VELASQUEZ.png"
+    foto: "/senadores/titulares/g1/DANIEL ANTONIO ORTIZ VELASQUEZ.png",
+    suplente: "Reina Isabel Pallares Morales",
+    slugSuplente: generarSlug("Reina Isabel Pallares Morales"),
+    fotoSuplente: "/senadores/suplentes/g1/REINA ISABEL PALLARES MORALES.png",
+    fechaNacimientoSuplente: "16 de noviembre, 1963",
+    nacidoEnSuplente: "Potosí - Chayanta - Ravelo",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 29, 
@@ -376,7 +740,20 @@ const SENADORES_DATA = [
     partyShort: "LIBRE", 
     partyColor: "#DB3737", 
     department: "Tarija",
-    foto: "/senadores/titulares/g2/MARIA ISABEL MORENO CORTEZ.png"
+    foto: "/senadores/titulares/g2/MARIA ISABEL MORENO CORTEZ.png",
+    suplente: "Rolando Vacaflor Gabriel Arana",
+    slugSuplente: generarSlug("Rolando Vacaflor Gabriel Arana"),
+    fotoSuplente: "/senadores/suplentes/g2/ROLANDO VACAFLOR GABRIEL ARANA.png",
+    fechaNacimientoSuplente: "18 de mayo, 1994",
+    nacidoEnSuplente: "Tarija - Cercado - Tarija",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 30, 
@@ -388,7 +765,20 @@ const SENADORES_DATA = [
     partyShort: "UNIDAD", 
     partyColor: "#EFCD04", 
     department: "Tarija",
-    foto: "/senadores/titulares/g2/CESAR MENTASTI PADILLA.png"
+    foto: "/senadores/titulares/g2/CESAR MENTASTI PADILLA.png",
+    suplente: "Marcela Guerrero Vilca",
+    slugSuplente: generarSlug("Marcela Guerrero Vilca"),
+    fotoSuplente: "/senadores/suplentes/g2/MARCELA GUERRERO VILCA.png",
+    fechaNacimientoSuplente: "10 de octubre, 1988",
+    nacidoEnSuplente: "Tarija - Cercado - Tarija",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 31, 
@@ -400,7 +790,20 @@ const SENADORES_DATA = [
     partyShort: "UNIDAD", 
     partyColor: "#EFCD04", 
     department: "Tarija",
-    foto: "/senadores/titulares/g2/LEONOR ROSALVA ROMERO GUTIERREZ.png"
+    foto: "/senadores/titulares/g2/LEONOR ROSALVA ROMERO GUTIERREZ.png",
+    suplente: "Marco Antonio Segovia Vargas",
+    slugSuplente: generarSlug("Marco Antonio Segovia Vargas"),
+    fotoSuplente: "/senadores/suplentes/g2/MARCO ANTONIO SEGOVIA VARGAS.png",
+    fechaNacimientoSuplente: "30 de agosto, 1963",
+    nacidoEnSuplente: "Tarija - Cercado - Tarija",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 32, 
@@ -412,7 +815,20 @@ const SENADORES_DATA = [
     partyShort: "PDC", 
     partyColor: "#2E7078", 
     department: "Tarija",
-    foto: "/senadores/titulares/g2/DIEGO ESTEBAN MATEO ÁVILA NAVAJAS.png"
+    foto: "/senadores/titulares/g2/DIEGO ESTEBAN MATEO ÁVILA NAVAJAS.png",
+    suplente: "Luzmaya Zelaya Vega",
+    slugSuplente: generarSlug("Luzmaya Zelaya Vega"),
+    fotoSuplente: "/senadores/suplentes/g2/LUZMAYA ZELAYA VEGA.png",
+    fechaNacimientoSuplente: "10 de febrero, 1987",
+    nacidoEnSuplente: "Chuquisaca - Hernando Silez - San Pablo de Huacareta",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 33, 
@@ -424,7 +840,20 @@ const SENADORES_DATA = [
     partyShort: "PDC", 
     partyColor: "#2E7078", 
     department: "Oruro",
-    foto: "/senadores/titulares/g2/YASMIN ESTIVARIZ VILLARROEL.png"
+    foto: "/senadores/titulares/g2/YASMIN ESTIVARIZ VILLARROEL.png",
+    suplente: "Ramiro Mamani Ramirez",
+    slugSuplente: generarSlug("Ramiro Mamani Ramirez"),
+    fotoSuplente: "/senadores/suplentes/g2/RAMIRO MAMANI RAMIREZ.png",
+    fechaNacimientoSuplente: "1 de agosto, 1990",
+    nacidoEnSuplente: "Potosí - Alonso de Ibañez - Chojlla",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 34, 
@@ -436,7 +865,20 @@ const SENADORES_DATA = [
     partyShort: "PDC", 
     partyColor: "#2E7078", 
     department: "La Paz",
-    foto: "/senadores/titulares/g2/FREDDY CASTILLO CHAVEZ.png"
+    foto: "/senadores/titulares/g2/FREDDY CASTILLO CHAVEZ.png",
+    suplente: "Villma Colque Camacho",
+    slugSuplente: generarSlug("Villma Colque Camacho"),
+    fotoSuplente: "/senadores/suplentes/g2/VILLMA COLQUE CAMACHO.png",
+    fechaNacimientoSuplente: "10 de mayo, 1983",
+    nacidoEnSuplente: "La Paz - Inquisivi - Choquetanga",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 35, 
@@ -448,7 +890,20 @@ const SENADORES_DATA = [
     partyShort: "PDC", 
     partyColor: "#2E7078", 
     department: "La Paz",
-    foto: "/senadores/titulares/g2/MARIA ANTONIETA ALCON SANCHEZ.png"
+    foto: "/senadores/titulares/g2/MARIA ANTONIETA ALCON SANCHEZ.png",
+    suplente: "Edwin Lopez Quiroga",
+    slugSuplente: generarSlug("Edwin Lopez Quiroga"),
+    fotoSuplente: "/senadores/suplentes/g2/EDWIN LOPEZ QUIROGA.png",
+    fechaNacimientoSuplente: "14 de junio, 1957",
+    nacidoEnSuplente: "Oruro - Cercado - Oruro",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   },
   { 
     id: 36, 
@@ -460,466 +915,20 @@ const SENADORES_DATA = [
     partyShort: "LIBRE", 
     partyColor: "#DB3737", 
     department: "Cochabamba",
-    foto: "/senadores/titulares/g2/JOSE SANCHEZ AGUILAR.png"
-  },
-
-  // ============================================
-  // SENADORES SUPLENTES (35)
-  // ============================================
-  { 
-    id: 101, 
-    seatNumber: 1, 
-    name: "Lenny Mayra Ayala Justiniano", 
-    slug: generarSlug("Lenny Mayra Ayala Justiniano"),
-    tipo: 'suplente',
-    titular: "Wilder Véliz Armas",
-    party: "Partido Demócrata Cristiano", 
-    partyShort: "PDC", 
-    partyColor: "#2E7078", 
-    department: "Cochabamba",
-    foto: "/senadores/suplentes/g1/LENNY MAYRA AYALA JUSTINIANO.png"
-  },
-  { 
-    id: 102, 
-    seatNumber: 2, 
-    name: "Royer Ivan Mamani Garcia", 
-    slug: generarSlug("Royer Ivan Mamani Garcia"),
-    tipo: 'suplente',
-    titular: "Judith Rosario García Coca",
-    party: "Partido Demócrata Cristiano", 
-    partyShort: "PDC", 
-    partyColor: "#2E7078", 
-    department: "Cochabamba",
-    foto: "/senadores/suplentes/g1/ROYER IVAN MAMANI GARCIA.png"
-  },
-  { 
-    id: 103, 
-    seatNumber: 3, 
-    name: "Apolinar Rivera Muñoz", 
-    slug: generarSlug("Apolinar Rivera Muñoz"),
-    tipo: 'suplente',
-    titular: "Claudia Mallón Vargas",
-    party: "Autonomía para Bolivia Súmate", 
-    partyShort: "APB", 
-    partyColor: "#611789", 
-    department: "Cochabamba",
-    foto: "/senadores/suplentes/g1/APOLINAR RIVERA MUÑOZ.png"
-  },
-  { 
-    id: 104, 
-    seatNumber: 4, 
-    name: "Aldo Sergio Villegas Mora", 
-    slug: generarSlug("Aldo Sergio Villegas Mora"),
-    tipo: 'suplente',
-    titular: "Wanda Ximena Medrano Hervas",
-    party: "Libre", 
-    partyShort: "LIBRE", 
-    partyColor: "#DB3737", 
-    department: "Cochabamba",
-    foto: "/senadores/suplentes/g1/ALDO SERGIO VILLEGAS MORA.png"
-  },
-  { 
-    id: 105, 
-    seatNumber: 5, 
-    name: "Maria Elena Pachacute Ticona", 
-    slug: generarSlug("Maria Elena Pachacute Ticona"),
-    tipo: 'suplente',
-    titular: "José Manuel Ormachea Mendieta",
-    party: "Libre", 
-    partyShort: "LIBRE", 
-    partyColor: "#DB3737", 
-    department: "La Paz",
-    foto: "/senadores/suplentes/g1/MARIA ELENA PACHACUTE TICONA.png"
-  },
-  { 
-    id: 106, 
-    seatNumber: 6, 
-    name: "Nilton Condori Alanoca", 
-    slug: generarSlug("Nilton Condori Alanoca"),
-    tipo: 'suplente',
-    titular: "Carmen Soledad Chapeton Tancara",
-    party: "Unidad", 
-    partyShort: "UNIDAD", 
-    partyColor: "#EFCD04", 
-    department: "La Paz",
-    foto: "/senadores/suplentes/g1/NILTON CONDORI ALANOCA.png"
-  },
-  { 
-    id: 107, 
-    seatNumber: 7, 
-    name: "Roxana Mamani Colquehuanca", 
-    slug: generarSlug("Roxana Mamani Colquehuanca"),
-    tipo: 'suplente',
-    titular: "Nicanor Gonzalo Cochi Condorí",
-    party: "Partido Demócrata Cristiano", 
-    partyShort: "PDC", 
-    partyColor: "#2E7078", 
-    department: "La Paz",
-    foto: "/senadores/suplentes/g1/ROXANA MAMANI COLQUEHUANCA.png"
-  },
-  { 
-    id: 108, 
-    seatNumber: 8, 
-    name: "Hugo Marcelo Cortez Calvimontes", 
-    slug: generarSlug("Hugo Marcelo Cortez Calvimontes"),
-    tipo: 'suplente',
-    titular: "Tomasa Yarhui Jacome",
-    party: "Libre", 
-    partyShort: "LIBRE", 
-    partyColor: "#DB3737", 
-    department: "Chuquisaca",
-    foto: "/senadores/suplentes/g1/HUGO MARCELO CORTEZ CALVIMONTES.png"
-  },
-  { 
-    id: 109, 
-    seatNumber: 9, 
-    name: "Ilse Fatima Davila Arancibia", 
-    slug: generarSlug("Ilse Fatima Davila Arancibia"),
-    tipo: 'suplente',
-    titular: "Abdon Porcel Arancibia",
-    party: "Libre", 
-    partyShort: "LIBRE", 
-    partyColor: "#DB3737", 
-    department: "Chuquisaca",
-    foto: "/senadores/suplentes/g1/ILSE FATIMA DAVILA ARANCIBIA.png"
-  },
-  { 
-    id: 110, 
-    seatNumber: 10, 
-    name: "Manfred Leo Perez Hassenteufel", 
-    slug: generarSlug("Manfred Leo Perez Hassenteufel"),
-    tipo: 'suplente',
-    titular: "Bertha Cartagena Sánchez",
-    party: "Partido Demócrata Cristiano", 
-    partyShort: "PDC", 
-    partyColor: "#2E7078", 
-    department: "Chuquisaca",
-    foto: "/senadores/suplentes/g1/MANFRED LEO PEREZ HASSENTEUFEL.png"
-  },
-  { 
-    id: 111, 
-    seatNumber: 11, 
-    name: "Kathia Natalia Miserendino Romero", 
-    slug: generarSlug("Kathia Natalia Miserendino Romero"),
-    tipo: 'suplente',
-    titular: "Branko Goran Marinković Jovicevic",
-    party: "Libre", 
-    partyShort: "LIBRE", 
-    partyColor: "#DB3737", 
-    department: "Santa Cruz",
-    foto: "/senadores/suplentes/g3/KATHIA NATALIA MISERENDINO ROMERO.png"
-  },
-  { 
-    id: 112, 
-    seatNumber: 12, 
-    name: "Leonardo Roca Eguez", 
-    slug: generarSlug("Leonardo Roca Eguez"),
-    tipo: 'suplente',
-    titular: "Kathia Lizbeth Quiroga Fernández",
-    party: "Libre", 
-    partyShort: "LIBRE", 
-    partyColor: "#DB3737", 
-    department: "Santa Cruz",
-    foto: "/senadores/suplentes/g3/LEONARDO ROCA EGUEZ.png"
-  },
-  { 
-    id: 113, 
-    seatNumber: 13, 
-    name: "Lorgio Fernando Pareja Saucedo", 
-    slug: generarSlug("Lorgio Fernando Pareja Saucedo"),
-    tipo: 'suplente',
-    titular: "Rosa Tatiana Áñez Carrasco",
-    party: "Unidad", 
-    partyShort: "UNIDAD", 
-    partyColor: "#EFCD04", 
-    department: "Santa Cruz",
-    foto: "/senadores/suplentes/g3/LORGIO FERNANDO PAREJA SAUCEDO.png"
-  },
-  { 
-    id: 114, 
-    seatNumber: 14, 
-    name: "Richard Espada Ugarte", 
-    slug: generarSlug("Richard Espada Ugarte"),
-    tipo: 'suplente',
-    titular: "Paola Limbania López Zeballos",
-    party: "Partido Demócrata Cristiano", 
-    partyShort: "PDC", 
-    partyColor: "#2E7078", 
-    department: "Santa Cruz",
-    foto: "/senadores/suplentes/g3/RICHARD ESPADA UGARTE.png"
-  },
-  { 
-    id: 115, 
-    seatNumber: 15, 
-    name: "Roger Mamani Coronado", 
-    slug: generarSlug("Roger Mamani Coronado"),
-    tipo: 'suplente',
-    titular: "Betty Canaviri Villanueva",
-    party: "Libre", 
-    partyShort: "LIBRE", 
-    partyColor: "#DB3737", 
-    department: "Potosí",
-    foto: "/senadores/suplentes/g2/ROGER MAMANI CORONADO.png"
-  },
-  { 
-    id: 116, 
-    seatNumber: 17, 
-    name: "Susana Gabriela Ruiz Zuleta", 
-    slug: generarSlug("Susana Gabriela Ruiz Zuleta"),
-    tipo: 'suplente',
-    titular: "Marcelino Flores Ordoñez",
-    party: "Partido Demócrata Cristiano", 
-    partyShort: "PDC", 
-    partyColor: "#2E7078", 
-    department: "Potosí",
-    foto: "/senadores/suplentes/g2/SUSANA GABRIELA RUIZ ZULETA.png"
-  },
-  { 
-    id: 117, 
-    seatNumber: 18, 
-    name: "Freddy Rioja Melgar", 
-    slug: generarSlug("Freddy Rioja Melgar"),
-    tipo: 'suplente',
-    titular: "Bertha Nurmy Gutiérrez Meneses",
-    party: "Partido Demócrata Cristiano", 
-    partyShort: "PDC", 
-    partyColor: "#2E7078", 
-    department: "Potosí",
-    foto: "/senadores/suplentes/g2/FREDDY RIOJA MELGAR.png"
-  },
-  { 
-    id: 118, 
-    seatNumber: 19, 
-    name: "Cesia Roca Escalante", 
-    slug: generarSlug("Cesia Roca Escalante"),
-    tipo: 'suplente',
-    titular: "Erick Nelson Soruco Alpire",
-    party: "Partido Demócrata Cristiano", 
-    partyShort: "PDC", 
-    partyColor: "#2E7078", 
-    department: "Beni",
-    foto: "/senadores/suplentes/g3/CESIA ROCA ESCALANTE.png"
-  },
-  { 
-    id: 119, 
-    seatNumber: 20, 
-    name: "Mabel Giordano Sonnenschein", 
-    slug: generarSlug("Mabel Giordano Sonnenschein"),
-    tipo: 'suplente',
-    titular: "José Roca Haensel",
-    party: "Unidad", 
-    partyShort: "UNIDAD", 
-    partyColor: "#EFCD04", 
-    department: "Beni",
-    foto: "/senadores/suplentes/g3/MABEL GIORDANO SONNENSCHEIN.png"
-  },
-  { 
-    id: 120, 
-    seatNumber: 21, 
-    name: "Marcelo Matias Cardona Ibañez", 
-    slug: generarSlug("Marcelo Matias Cardona Ibañez"),
-    tipo: 'suplente',
-    titular: "Ana Karina Velasco Añez",
-    party: "Unidad", 
-    partyShort: "UNIDAD", 
-    partyColor: "#EFCD04", 
-    department: "Beni",
-    foto: "/senadores/suplentes/g3/MARCELO MATIAS CARDONA IBAÑEZ.png"
-  },
-  { 
-    id: 121, 
-    seatNumber: 22, 
-    name: "Claudia Cardenas Velasquez", 
-    slug: generarSlug("Claudia Cardenas Velasquez"),
-    tipo: 'suplente',
-    titular: "Ernesto Suarez Sattori",
-    party: "Libre", 
-    partyShort: "LIBRE", 
-    partyColor: "#DB3737", 
-    department: "Beni",
-    foto: "/senadores/suplentes/g3/CLAUDIA CARDENAS VELASQUEZ.png"
-  },
-  { 
-    id: 122, 
-    seatNumber: 23, 
-    name: "Victor Severo Quispe Santander", 
-    slug: generarSlug("Victor Severo Quispe Santander"),
-    tipo: 'suplente',
-    titular: "Ana María Crispin Choque",
-    party: "Partido Demócrata Cristiano", 
-    partyShort: "PDC", 
-    partyColor: "#2E7078", 
-    department: "La Paz",
-    foto: "/senadores/suplentes/g1/VICTOR SEVERO QUISPE SANTANDER.png"
-  },
-  { 
-    id: 123, 
-    seatNumber: 24, 
-    name: "Carolina Giese Urresti", 
-    slug: generarSlug("Carolina Giese Urresti"),
-    tipo: 'suplente',
-    titular: "Julio Diego Romaña Galindo",
-    party: "Libre", 
-    partyShort: "LIBRE", 
-    partyColor: "#DB3737", 
-    department: "Pando",
-    foto: "/senadores/suplentes/g3/CAROLINA GIESE URRESTI.png"
-  },
-  { 
-    id: 124, 
-    seatNumber: 25, 
-    name: "Jorge Antonio Quispe Flores", 
-    slug: generarSlug("Jorge Antonio Quispe Flores"),
-    tipo: 'suplente',
-    titular: "Carol Carlo Durán",
-    party: "Libre", 
-    partyShort: "LIBRE", 
-    partyColor: "#DB3737", 
-    department: "Pando",
-    foto: "/senadores/suplentes/g3/JORGE ANTONIO QUISPE FLORES.png"
-  },
-  { 
-    id: 125, 
-    seatNumber: 26, 
-    name: "Jesus Humberto Suarez Eguez", 
-    slug: generarSlug("Jesus Humberto Suarez Eguez"),
-    tipo: 'suplente',
-    titular: "Cintia Monica Puerta Campos",
-    party: "Partido Demócrata Cristiano", 
-    partyShort: "PDC", 
-    partyColor: "#2E7078", 
-    department: "Pando",
-    foto: "/senadores/suplentes/g3/JESUS HUMBERTO SUAREZ EGUEZ.png"
-  },
-  { 
-    id: 126, 
-    seatNumber: 27, 
-    name: "Sichard Hans Soraide Castedo", 
-    slug: generarSlug("Sichard Hans Soraide Castedo"),
-    tipo: 'suplente',
-    titular: "Eliana Rina Acosta Quispe",
-    party: "Unidad", 
-    partyShort: "UNIDAD", 
-    partyColor: "#EFCD04", 
-    department: "Cochabamba",
-    foto: "/senadores/suplentes/g3/SICHARD HANS SORAIDE CASTEDO.png"
-  },
-  { 
-    id: 127, 
-    seatNumber: 28, 
-    name: "Reina Isabel Pallares Morales", 
-    slug: generarSlug("Reina Isabel Pallares Morales"),
-    tipo: 'suplente',
-    titular: "Daniel Antonio Ortiz Velásquez",
-    party: "Partido Demócrata Cristiano", 
-    partyShort: "PDC", 
-    partyColor: "#2E7078", 
-    department: "La Paz",
-    foto: "/senadores/suplentes/g1/REINA ISABEL PALLARES MORALES.png"
-  },
-  { 
-    id: 128, 
-    seatNumber: 29, 
-    name: "Rolando Vacaflor Gabriel Arana", 
-    slug: generarSlug("Rolando Vacaflor Gabriel Arana"),
-    tipo: 'suplente',
-    titular: "María Isabel Moreno Cortez",
-    party: "Libre", 
-    partyShort: "LIBRE", 
-    partyColor: "#DB3737", 
-    department: "Tarija",
-    foto: "/senadores/suplentes/g2/ROLANDO VACAFLOR GABRIEL ARANA.png"
-  },
-  { 
-    id: 129, 
-    seatNumber: 30, 
-    name: "Marcela Guerrero Vilca", 
-    slug: generarSlug("Marcela Guerrero Vilca"),
-    tipo: 'suplente',
-    titular: "César Mentasti Padilla",
-    party: "Unidad", 
-    partyShort: "UNIDAD", 
-    partyColor: "#EFCD04", 
-    department: "Tarija",
-    foto: "/senadores/suplentes/g2/MARCELA GUERRERO VILCA.png"
-  },
-  { 
-    id: 130, 
-    seatNumber: 31, 
-    name: "Marco Antonio Segovia Vargas", 
-    slug: generarSlug("Marco Antonio Segovia Vargas"),
-    tipo: 'suplente',
-    titular: "Leonor Rosalva Romero Gutiérrez",
-    party: "Unidad", 
-    partyShort: "UNIDAD", 
-    partyColor: "#EFCD04", 
-    department: "Tarija",
-    foto: "/senadores/suplentes/g2/MARCO ANTONIO SEGOVIA VARGAS.png"
-  },
-  { 
-    id: 131, 
-    seatNumber: 32, 
-    name: "Luzmaya Zelaya Vega", 
-    slug: generarSlug("Luzmaya Zelaya Vega"),
-    tipo: 'suplente',
-    titular: "Diego Esteban Mateo Ávila Navajas",
-    party: "Partido Demócrata Cristiano", 
-    partyShort: "PDC", 
-    partyColor: "#2E7078", 
-    department: "Tarija",
-    foto: "/senadores/suplentes/g2/LUZMAYA ZELAYA VEGA.png"
-  },
-  { 
-    id: 132, 
-    seatNumber: 33, 
-    name: "Ramiro Mamani Ramirez", 
-    slug: generarSlug("Ramiro Mamani Ramirez"),
-    tipo: 'suplente',
-    titular: "Yasmín Estivariz Villarroel",
-    party: "Partido Demócrata Cristiano", 
-    partyShort: "PDC", 
-    partyColor: "#2E7078", 
-    department: "Oruro",
-    foto: "/senadores/suplentes/g2/RAMIRO MAMANI RAMIREZ.png"
-  },
-  { 
-    id: 133, 
-    seatNumber: 34, 
-    name: "Villma Colque Camacho", 
-    slug: generarSlug("Villma Colque Camacho"),
-    tipo: 'suplente',
-    titular: "Freddy Castillo Chávez",
-    party: "Partido Demócrata Cristiano", 
-    partyShort: "PDC", 
-    partyColor: "#2E7078", 
-    department: "La Paz",
-    foto: "/senadores/suplentes/g2/VILLMA COLQUE CAMACHO.png"
-  },
-  { 
-    id: 134, 
-    seatNumber: 35, 
-    name: "Edwin Lopez Quiroga", 
-    slug: generarSlug("Edwin Lopez Quiroga"),
-    tipo: 'suplente',
-    titular: "Maria Antonieta Alcón Sánchez",
-    party: "Partido Demócrata Cristiano", 
-    partyShort: "PDC", 
-    partyColor: "#2E7078", 
-    department: "La Paz",
-    foto: "/senadores/suplentes/g2/EDWIN LOPEZ QUIROGA.png"
-  },
-  { 
-    id: 135, 
-    seatNumber: 36, 
-    name: "Cinthya Inga Gutierrez Guzman", 
-    slug: generarSlug("Cinthya Inga Gutierrez Guzman"),
-    tipo: 'suplente',
-    titular: "José Sánchez Aguilar",
-    party: "Libre", 
-    partyShort: "LIBRE", 
-    partyColor: "#DB3737", 
-    department: "Cochabamba",
-    foto: "/senadores/suplentes/g2/CINTHYA INGA GUTIERREZ GUZMAN.png"
+    foto: "/senadores/titulares/g2/JOSE SANCHEZ AGUILAR.png",
+    suplente: "Cinthya Inga Gutierrez Guzman",
+    slugSuplente: generarSlug("Cinthya Inga Gutierrez Guzman"),
+    fotoSuplente: "/senadores/suplentes/g2/CINTHYA INGA GUTIERREZ GUZMAN.png",
+    fechaNacimientoSuplente: "15 de noviembre, 1981",
+    nacidoEnSuplente: "Oruro - Cercado - Oruro",
+    ocupacionSuplente: null,
+    comiteSuplente: null,
+    cargoSuplente: null,
+    facebookSuplente: null,
+    twitterSuplente: null,
+    instagramSuplente: null,
+    youtubeSuplente: null,
+    tiktokSuplente: null
   }
 ];
 
@@ -930,7 +939,7 @@ async function seedSenadores() {
   console.log('\n' + '═'.repeat(80));
   console.log('👥 SEED DE SENADORES');
   console.log('   Migrando datos a MongoDB');
-  console.log('   📁 Las fotos se sirven desde: /senadores/');
+  console.log('   ✅ Incluye titulares y suplentes');
   console.log('═'.repeat(80) + '\n');
 
   try {
@@ -968,17 +977,17 @@ async function seedSenadores() {
     const total = await Senador.countDocuments();
     console.log(`\n📊 Total en base de datos: ${total} senadores`);
 
-    const sample = await Senador.find().limit(3).lean();
-    console.log('\n📋 Muestra de los primeros 3:');
+    const sample = await Senador.find().limit(5).lean();
+    console.log('\n📋 Muestra de los primeros 5:');
     sample.forEach((s, i) => {
       console.log(`   ${i + 1}. ${s.name} (${s.partyShort}) - ${s.department}`);
-      console.log(`      Foto: ${s.foto}`);
+      console.log(`      Suplente: ${s.suplente || 'Sin suplente'}`);
     });
 
     await mongoose.disconnect();
     console.log('\n' + '═'.repeat(80));
-    console.log('🎉 SEED COMPLETADO CON ÉXITO');
-    console.log('   Las fotos se sirven desde: http://demoback.senado.gob.bo/senadores/...');
+    console.log('🎉 SEED DE SENADORES COMPLETADO CON ÉXITO');
+    console.log('   ✅ Titulares y suplentes migrados');
     console.log('═'.repeat(80) + '\n');
 
     process.exit(0);

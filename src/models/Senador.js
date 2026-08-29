@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 
 const senadorSchema = new mongoose.Schema({
   // ============================================
-  // DATOS PRINCIPALES (igual que senadores.js)
+  // DATOS PRINCIPALES
   // ============================================
   id: {
     type: Number,
@@ -122,7 +122,7 @@ const senadorSchema = new mongoose.Schema({
   },
   
   // ============================================
-  // SUPLENTE
+  // 🔥 DATOS DEL SUPLENTE
   // ============================================
   suplente: {
     type: String,

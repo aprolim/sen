@@ -615,7 +615,7 @@ class LegisladoresController {
   }
 
   // ============================================
-  // 🔥 NUEVO: OBTENER DIRECTIVA CAMARAL
+  // 🔥 OBTENER DIRECTIVA CAMARAL
   // ============================================
 
   /**
@@ -686,14 +686,14 @@ class LegisladoresController {
   }
 
   // ============================================
-  // 🔥 NUEVO: OBTENER COMISIONES Y COMITÉS
+  // 🔥 OBTENER COMISIONES Y COMITÉS (CON SUPLENTES)
   // ============================================
 
   /**
    * @swagger
    * /api/legisladores/comisiones:
    *   get:
-   *     summary: Obtener todas las comisiones y comités con sus miembros
+   *     summary: Obtener todas las comisiones y comités con sus miembros (incluye suplentes)
    *     tags: [Legisladores]
    *     responses:
    *       200:
@@ -706,14 +706,14 @@ class LegisladoresController {
       // Obtener todas las comisiones
       const comisiones = await Comision.find().lean();
 
-      // Obtener todos los senadores
+      // Obtener todos los senadores (titulares y suplentes)
       const senadores = await Senador.find().lean();
       const senadoresMap = {};
       senadores.forEach(s => {
         senadoresMap[s.id] = s;
       });
 
-      // Función para obtener datos del senador
+      // Función para obtener datos del senador (incluye suplente)
       const getSenadorInfo = (id) => {
         const s = senadoresMap[id];
         if (!s) return null;
@@ -722,8 +722,10 @@ class LegisladoresController {
         let fotoSuplente = null;
         let cargoSuplente = null;
         
+        // Buscar suplente si existe
         if (s.suplente) {
           suplenteNombre = s.suplente;
+          // Buscar el suplente por nombre o slug
           const suplenteData = Object.values(senadoresMap).find(
             sen => sen.name === s.suplente || sen.slug === s.slugSuplente
           );
