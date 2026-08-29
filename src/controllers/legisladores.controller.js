@@ -686,7 +686,7 @@ class LegisladoresController {
   }
 
   // ============================================
-  // 🔥 OBTENER COMISIONES Y COMITÉS (CON SUPLENTES)
+  // 🔥 OBTENER COMISIONES Y COMITÉS (CON SUPLENTES - CORREGIDO)
   // ============================================
 
   /**
@@ -713,24 +713,21 @@ class LegisladoresController {
         senadoresMap[s.id] = s;
       });
 
-      // Función para obtener datos del senador (incluye suplente)
+      // 🔥 Función para obtener datos del senador (CORREGIDA - usa s.fotoSuplente)
       const getSenadorInfo = (id) => {
         const s = senadoresMap[id];
         if (!s) return null;
         
         let suplenteNombre = null;
-        let fotoSuplente = null;
         let cargoSuplente = null;
         
-        // Buscar suplente si existe
         if (s.suplente) {
           suplenteNombre = s.suplente;
-          // Buscar el suplente por nombre o slug
+          // Buscar el suplente para obtener su cargo (no su foto)
           const suplenteData = Object.values(senadoresMap).find(
             sen => sen.name === s.suplente || sen.slug === s.slugSuplente
           );
           if (suplenteData) {
-            fotoSuplente = suplenteData.foto;
             cargoSuplente = suplenteData.cargo || 'Senador Suplente';
           }
         }
@@ -744,7 +741,8 @@ class LegisladoresController {
           cargo: s.cargo || 'Senador',
           suplente: !!s.suplente,
           suplenteNombre: suplenteNombre,
-          fotoSuplente: fotoSuplente || '',
+          // ✅ CORREGIDO: Usar s.fotoSuplente directamente
+          fotoSuplente: s.fotoSuplente || '',
           cargoSuplente: cargoSuplente || 'Senador Suplente'
         };
       };
