@@ -11,7 +11,8 @@ console.log('✅ Cargando rutas de legisladores...');
 // RUTAS PÚBLICAS (NO REQUIEREN AUTENTICACIÓN)
 // ============================================
 router.get('/', legisladoresController.getLegisladores);
-router.get('/directiva', legisladoresController.getDirectivaCamaral);  // 🔥 NUEVA RUTA
+router.get('/directiva', legisladoresController.getDirectivaCamaral);
+router.get('/comisiones', legisladoresController.getComisiones);  // 🔥 NUEVA RUTA
 router.get('/cargos', legisladoresController.getCargosDisponibles);
 router.get('/estados', legisladoresController.getEstadosDisponibles);
 router.get('/distribution/party', legisladoresController.getDistributionByParty);

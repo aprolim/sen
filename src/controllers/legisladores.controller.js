@@ -1,5 +1,6 @@
 // src/controllers/legisladores.controller.js
 const Senador = require('../models/Senador');
+const Comision = require('../models/Comision');
 const legisladoresService = require('../services/legisladores.service');
 const { processImage } = require('../middleware/upload');
 const path = require('path');
@@ -631,19 +632,15 @@ class LegisladoresController {
     try {
       console.log('\n👥 [getDirectivaCamaral] Obteniendo directiva camaral');
 
-      // IDs de la directiva según data/senadores.js
       const DIRECTIVA_IDS = {
-        presidente: 32,          // Diego Esteban Mateo Ávila Navajas
-        primeraVice: 6,          // Carmen Soledad Chapeton Tancara
-        segundaVice: 12,         // Kathia Lizbeth Quiroga Fernández
-        primeraSecretaria: 33,   // Yasmín Estivariz Villarroel
-        segundaSecretaria: 13,   // Rosa Tatiana Áñez Carrasco
-        terceraSecretaria: 24    // Julio Diego Romaña Galindo
+        presidente: 32,
+        primeraVice: 6,
+        segundaVice: 12,
+        primeraSecretaria: 33,
+        segundaSecretaria: 13,
+        terceraSecretaria: 24
       };
 
-      // Buscar los miembros de la directiva usando el modelo Senador
-      const Senador = require('../models/Senador');
-      
       const miembros = await Senador.find({
         id: {
           $in: [
@@ -684,6 +681,101 @@ class LegisladoresController {
       res.status(500).json({
         success: false,
         message: 'Error al obtener la directiva camaral'
+      });
+    }
+  }
+
+  // ============================================
+  // 🔥 NUEVO: OBTENER COMISIONES Y COMITÉS
+  // ============================================
+
+  /**
+   * @swagger
+   * /api/legisladores/comisiones:
+   *   get:
+   *     summary: Obtener todas las comisiones y comités con sus miembros
+   *     tags: [Legisladores]
+   *     responses:
+   *       200:
+   *         description: Comisiones y comités obtenidos exitosamente
+   */
+  async getComisiones(req, res) {
+    try {
+      console.log('\n📋 [getComisiones] Obteniendo comisiones y comités');
+
+      // Obtener todas las comisiones
+      const comisiones = await Comision.find().lean();
+
+      // Obtener todos los senadores
+      const senadores = await Senador.find().lean();
+      const senadoresMap = {};
+      senadores.forEach(s => {
+        senadoresMap[s.id] = s;
+      });
+
+      // Función para obtener datos del senador
+      const getSenadorInfo = (id) => {
+        const s = senadoresMap[id];
+        if (!s) return null;
+        
+        let suplenteNombre = null;
+        let fotoSuplente = null;
+        let cargoSuplente = null;
+        
+        if (s.suplente) {
+          suplenteNombre = s.suplente;
+          const suplenteData = Object.values(senadoresMap).find(
+            sen => sen.name === s.suplente || sen.slug === s.slugSuplente
+          );
+          if (suplenteData) {
+            fotoSuplente = suplenteData.foto;
+            cargoSuplente = suplenteData.cargo || 'Senador Suplente';
+          }
+        }
+        
+        return {
+          nombre: s.name,
+          nombreCompleto: s.name,
+          foto: s.foto || '',
+          partido: s.partyShort || s.party || '',
+          color: s.partyColor || '#666',
+          cargo: s.cargo || 'Senador',
+          suplente: !!s.suplente,
+          suplenteNombre: suplenteNombre,
+          fotoSuplente: fotoSuplente || '',
+          cargoSuplente: cargoSuplente || 'Senador Suplente'
+        };
+      };
+
+      // Construir respuesta
+      const resultado = comisiones.map(comision => {
+        const presidente = getSenadorInfo(comision.presidenteId);
+        
+        const comites = (comision.comites || []).map(comite => {
+          const secretario = getSenadorInfo(comite.secretarioId);
+          return {
+            nombre: comite.nombre,
+            secretario: secretario
+          };
+        });
+
+        return {
+          nombre: comision.nombre,
+          presidente: presidente,
+          comites: comites
+        };
+      });
+
+      res.json({
+        success: true,
+        data: resultado
+      });
+
+    } catch (error) {
+      console.error('❌ Error en getComisiones:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener comisiones y comités'
       });
     }
   }
