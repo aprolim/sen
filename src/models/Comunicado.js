@@ -45,9 +45,12 @@ const comunicadoSchema = new mongoose.Schema({
   estado: {
     type: String,
     enum: ['programado', 'activo', 'inactivo'],
-    default: 'inactivo'
+    default: 'programado'
   },
   // 🔥 FECHAS DE PROGRAMACIÓN
+  // - Programado: ambas requeridas, activación futura
+  // - Activo: activación = ahora o pasada, desactivación OPCIONAL
+  // - Inactivo: sin fechas requeridas
   fechaActivacion: {
     type: Date,
     default: null
@@ -89,69 +92,88 @@ const comunicadoSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// ============================================
 // Índices
+// ============================================
 comunicadoSchema.index({ estado: 1 });
 comunicadoSchema.index({ fechaActivacion: 1, fechaDesactivacion: 1 });
 comunicadoSchema.index({ prioridad: -1 });
 comunicadoSchema.index({ fechaLanzamiento: -1 });
 
-// Middleware para validar fechas
+// ============================================
+// Middleware pre-save: Validaciones de negocio
+// ============================================
 comunicadoSchema.pre('save', function(next) {
-  // Si tiene fecha de activación y desactivación, validar que activación sea antes
+  const ahora = new Date();
+
+  // 1. Validar coherencia de fechas si ambas existen
   if (this.fechaActivacion && this.fechaDesactivacion) {
-    if (this.fechaActivacion > this.fechaDesactivacion) {
+    if (this.fechaActivacion >= this.fechaDesactivacion) {
       return next(new Error('La fecha de activación debe ser anterior a la fecha de desactivación'));
     }
   }
-  
-  // Si se está activando, guardar fecha
+
+  // 2. Validaciones según estado
+  if (this.estado === 'programado') {
+    if (!this.fechaActivacion || !this.fechaDesactivacion) {
+      return next(new Error('Un comunicado programado requiere ambas fechas'));
+    }
+  }
+
+  // 3. Auto-registrar fecha de activación
   if (this.estado === 'activo' && !this.activadoEn) {
-    this.activadoEn = new Date();
+    this.activadoEn = ahora;
   }
-  
-  // Si se está desactivando, guardar fecha
+
+  // 4. Auto-registrar fecha de desactivación
   if (this.estado === 'inactivo' && !this.desactivadoEn) {
-    this.desactivadoEn = new Date();
+    this.desactivadoEn = ahora;
   }
-  
+
   next();
 });
 
-// 🔥 MÉTODO: Actualizar estado automáticamente
+// ============================================
+// Método: Actualizar estado automáticamente
+// ============================================
 comunicadoSchema.methods.actualizarEstado = function() {
   const ahora = new Date();
   let cambio = false;
-  
-  // Si está programado y ya pasó la fecha de activación → activar
+
+  // Programado → Activo (cuando llega la fecha de activación)
   if (this.estado === 'programado' && this.fechaActivacion && this.fechaActivacion <= ahora) {
     this.estado = 'activo';
     this.activadoEn = ahora;
     cambio = true;
   }
-  
-  // Si está activo y pasó la fecha de desactivación → inactivar
+
+  // Activo → Inactivo (SOLO si tiene fecha de desactivación)
   if (this.estado === 'activo' && this.fechaDesactivacion && this.fechaDesactivacion <= ahora) {
     this.estado = 'inactivo';
     this.desactivadoEn = ahora;
     cambio = true;
   }
-  
+
   return cambio;
 };
 
-// 🔥 MÉTODO: Verificar si está activo actualmente
+// ============================================
+// Método: Verificar si está activo actualmente
+// ============================================
 comunicadoSchema.methods.estaActivo = function() {
   if (this.estado !== 'activo') return false;
-  
+
   const ahora = new Date();
-  
+
   if (this.fechaActivacion && this.fechaActivacion > ahora) return false;
   if (this.fechaDesactivacion && this.fechaDesactivacion < ahora) return false;
-  
+
   return true;
 };
 
-// 🔥 MÉTODO: Verificar si es un comunicado expirado (para pasar a avisos)
+// ============================================
+// Método: Verificar si es un comunicado expirado
+// ============================================
 comunicadoSchema.methods.estaExpirado = function() {
   if (this.estado !== 'inactivo') return false;
   if (!this.fechaDesactivacion) return false;

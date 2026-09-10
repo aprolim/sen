@@ -403,7 +403,7 @@ const startServer = async () => {
       console.log(`🔍 Health Check:  http://localhost:${PORT}/api/health`);
       console.log('═'.repeat(60));
       console.log('\n🛡️  MEDIDAS DE SEGURIDAD ACTIVAS:');
-      console.log('   • Rate Limiting (100 req/15min)');
+      console.log('   • Rate Limiting (10000 req/15min)');
       console.log('   • Login Limiting (5 intentos/5min)');
       console.log('   • Helmet.js (Headers seguridad)');
       console.log('   • CORS restringido');

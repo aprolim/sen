@@ -9,7 +9,7 @@ const Aviso = require('../models/Aviso');
 /**
  * Actualiza estados automáticamente:
  * - programado → activo (cuando llega fechaActivacion)
- * - activo → inactivo (cuando pasa fechaDesactivacion)
+ * - activo → inactivo (cuando pasa fechaDesactivacion, si tiene)
  */
 async function actualizarEstados() {
   try {
@@ -30,7 +30,7 @@ async function actualizarEstados() {
       console.log(`   🔄 "${comunicado.titulo}" → ACTIVO (programación cumplida)`);
     }
 
-    // 2. Activos → Inactivos
+    // 2. Activos → Inactivos (solo si tienen fechaDesactivacion)
     const activos = await Comunicado.find({
       estado: 'activo',
       fechaDesactivacion: { $lte: ahora, $ne: null }
@@ -96,6 +96,64 @@ async function crearAvisoDesdeComunicado(comunicado) {
   } catch (error) {
     console.error('   ❌ Error al crear aviso desde comunicado:', error.message);
   }
+}
+
+/**
+ * 🔥 NUEVA: Valida las reglas de negocio para programación/activación
+ * @returns {{ valido: boolean, mensaje?: string, estadoFinal: string, fechaActivacion: Date|null, fechaDesactivacion: Date|null }}
+ */
+function validarReglasDeEstado(estado, fechaActivacion, fechaDesactivacion) {
+  const ahora = new Date();
+  let estadoFinal = estado;
+  let fa = fechaActivacion ? new Date(fechaActivacion) : null;
+  let fd = fechaDesactivacion ? new Date(fechaDesactivacion) : null;
+
+  // 1. No se permite crear inactivo → forzar a programado
+  if (estadoFinal === 'inactivo') {
+    estadoFinal = 'programado';
+    console.log('   ⚠️ No se permite crear "inactivo" → forzando a "programado"');
+  }
+
+  // 2. Estado PROGRAMADO → requiere ambas fechas y fecha inicio futura
+  if (estadoFinal === 'programado') {
+    if (!fa || !fd) {
+      return {
+        valido: false,
+        mensaje: 'Un comunicado programado requiere fecha de activación Y fecha de desactivación'
+      };
+    }
+    if (fa >= fd) {
+      return {
+        valido: false,
+        mensaje: 'La fecha de activación debe ser anterior a la fecha de desactivación'
+      };
+    }
+    if (fa <= ahora) {
+      return {
+        valido: false,
+        mensaje: 'Para programar, la fecha de activación debe ser FUTURA. Si quieres que aparezca ahora, usa "Activo".'
+      };
+    }
+    return { valido: true, estadoFinal, fechaActivacion: fa, fechaDesactivacion: fd };
+  }
+
+  // 3. Estado ACTIVO → aparece ahora, fecha desactivación OPCIONAL
+  if (estadoFinal === 'activo') {
+    // Si no hay fecha activación, se activa ahora
+    if (!fa || fa > ahora) {
+      fa = ahora;
+    }
+    // Si hay fecha desactivación, validar que sea futura
+    if (fd && fd <= ahora) {
+      return {
+        valido: false,
+        mensaje: 'Si especificas fecha de desactivación, debe ser futura'
+      };
+    }
+    return { valido: true, estadoFinal, fechaActivacion: fa, fechaDesactivacion: fd };
+  }
+
+  return { valido: false, mensaje: 'Estado inválido' };
 }
 
 // ============================================
@@ -258,17 +316,33 @@ const getComunicadoById = async (req, res) => {
   }
 };
 
+/**
+ * 🔥 CREAR COMUNICADO - Con nuevas reglas
+ * - No se permite crear como "inactivo" → forzar a "programado"
+ * - Programado → requiere ambas fechas y fecha inicio futura
+ * - Activo → aparece ahora, fecha fin opcional
+ */
 const createComunicado = async (req, res) => {
   try {
     console.log('\n📢 [ADMIN] Creando comunicado...');
     console.log('   👤 Usuario:', req.user.email);
     console.log('   📝 Título:', req.body.titulo);
+    console.log('   📊 Estado solicitado:', req.body.estado);
+    console.log('   📅 fechaActivacion:', req.body.fechaActivacion);
+    console.log('   📅 fechaDesactivacion:', req.body.fechaDesactivacion);
 
     const {
-      titulo, contenido, imagen, pdf, estado,
-      fechaActivacion, fechaDesactivacion, prioridad
+      titulo,
+      contenido,
+      imagen,
+      pdf,
+      estado = 'programado',
+      fechaActivacion,
+      fechaDesactivacion,
+      prioridad
     } = req.body;
 
+    // Validar imagen
     if (!imagen || !imagen.url) {
       return res.status(400).json({
         success: false,
@@ -276,55 +350,42 @@ const createComunicado = async (req, res) => {
       });
     }
 
-    if (fechaActivacion && fechaDesactivacion) {
-      if (new Date(fechaActivacion) > new Date(fechaDesactivacion)) {
-        return res.status(400).json({
-          success: false,
-          message: 'La fecha de activación debe ser anterior a la fecha de desactivación'
-        });
-      }
+    // 🔥 Aplicar reglas de negocio
+    const validacion = validarReglasDeEstado(estado, fechaActivacion, fechaDesactivacion);
+
+    if (!validacion.valido) {
+      return res.status(400).json({
+        success: false,
+        message: validacion.mensaje
+      });
     }
 
-    let estadoFinal = estado || 'inactivo';
     const ahora = new Date();
-
-    if (estadoFinal === 'inactivo' && fechaActivacion && new Date(fechaActivacion) > ahora) {
-      estadoFinal = 'programado';
-      console.log('   ⏰ Cambiando a "programado" (fecha de activación futura)');
-    }
-
-    if (estadoFinal === 'inactivo' && fechaActivacion && new Date(fechaActivacion) <= ahora) {
-      estadoFinal = 'activo';
-      console.log('   ✅ Cambiando a "activo" (fecha de activación ya pasó)');
-    }
-
-    if (estadoFinal === 'activo' && fechaActivacion && new Date(fechaActivacion) > ahora) {
-      estadoFinal = 'programado';
-      console.log('   ⏰ Cambiando a "programado" (fecha de activación futura)');
-    }
 
     const comunicado = new Comunicado({
       titulo,
       contenido,
       imagen,
       pdf: pdf || null,
-      estado: estadoFinal,
-      fechaActivacion: fechaActivacion || null,
-      fechaDesactivacion: fechaDesactivacion || null,
+      estado: validacion.estadoFinal,
+      fechaActivacion: validacion.fechaActivacion,
+      fechaDesactivacion: validacion.fechaDesactivacion,
       prioridad: prioridad || 0,
       fechaLanzamiento: ahora,
       creadoPor: req.user._id,
       actualizadoPor: req.user._id
     });
 
-    if (estadoFinal === 'activo') {
+    if (validacion.estadoFinal === 'activo') {
       comunicado.activadoEn = ahora;
     }
 
     await comunicado.save();
 
     console.log(`   ✅ Comunicado creado ID: ${comunicado._id}`);
-    console.log(`   📊 Estado: ${comunicado.estado}`);
+    console.log(`   📊 Estado final: ${comunicado.estado}`);
+    console.log(`   📅 Activación: ${comunicado.fechaActivacion}`);
+    console.log(`   📅 Desactivación: ${comunicado.fechaDesactivacion || 'Sin fecha fin'}`);
 
     res.status(201).json({
       success: true,
@@ -340,6 +401,12 @@ const createComunicado = async (req, res) => {
   }
 };
 
+/**
+ * 🔥 ACTUALIZAR COMUNICADO - Aquí SÍ se permite inactivar
+ * - Programado → requiere ambas fechas y fecha inicio futura (o igual a ahora)
+ * - Activo → fecha fin opcional
+ * - Inactivo → permitido (para desactivar manualmente)
+ */
 const updateComunicado = async (req, res) => {
   try {
     const { id } = req.params;
@@ -357,50 +424,87 @@ const updateComunicado = async (req, res) => {
     }
 
     const {
-      titulo, contenido, imagen, pdf, estado,
-      fechaActivacion, fechaDesactivacion, prioridad
+      titulo,
+      contenido,
+      imagen,
+      pdf,
+      estado,
+      fechaActivacion,
+      fechaDesactivacion,
+      prioridad
     } = req.body;
 
+    // Actualizar campos básicos
     if (titulo !== undefined) comunicado.titulo = titulo;
     if (contenido !== undefined) comunicado.contenido = contenido;
     if (imagen !== undefined) comunicado.imagen = imagen;
     if (pdf !== undefined) comunicado.pdf = pdf;
     if (prioridad !== undefined) comunicado.prioridad = prioridad;
 
-    if (fechaActivacion !== undefined) comunicado.fechaActivacion = fechaActivacion || null;
-    if (fechaDesactivacion !== undefined) comunicado.fechaDesactivacion = fechaDesactivacion || null;
+    // Si se está cambiando el estado, validar reglas
+    if (estado !== undefined) {
+      const validacion = validarReglasDeEstado(
+        estado,
+        fechaActivacion !== undefined ? fechaActivacion : comunicado.fechaActivacion,
+        fechaDesactivacion !== undefined ? fechaDesactivacion : comunicado.fechaDesactivacion
+      );
 
-    if (comunicado.fechaActivacion && comunicado.fechaDesactivacion) {
-      if (comunicado.fechaActivacion > comunicado.fechaDesactivacion) {
+      if (!validacion.valido) {
         return res.status(400).json({
           success: false,
-          message: 'La fecha de activación debe ser anterior a la fecha de desactivación'
+          message: validacion.mensaje
         });
       }
-    }
 
-    if (estado !== undefined) {
       const estadoAnterior = comunicado.estado;
       const ahora = new Date();
 
-      comunicado.estado = estado;
+      comunicado.estado = validacion.estadoFinal;
+      comunicado.fechaActivacion = validacion.fechaActivacion;
+      comunicado.fechaDesactivacion = validacion.fechaDesactivacion;
 
-      if (estado === 'activo' && estadoAnterior !== 'activo') {
+      // Registrar cambios de estado
+      if (validacion.estadoFinal === 'activo' && estadoAnterior !== 'activo') {
         comunicado.activadoEn = ahora;
+        comunicado.desactivadoEn = null; // limpiar si se reactiva
       }
 
-      if (estado === 'inactivo' && estadoAnterior === 'activo') {
+      if (validacion.estadoFinal === 'inactivo' && estadoAnterior === 'activo') {
         comunicado.desactivadoEn = ahora;
       }
-    }
+    } else {
+      // No se cambió el estado, pero puede que se cambien las fechas
+      if (fechaActivacion !== undefined) {
+        comunicado.fechaActivacion = fechaActivacion ? new Date(fechaActivacion) : null;
+      }
+      if (fechaDesactivacion !== undefined) {
+        comunicado.fechaDesactivacion = fechaDesactivacion ? new Date(fechaDesactivacion) : null;
+      }
 
-    comunicado.actualizarEstado();
+      // Validar que si quedó programado, tenga ambas fechas
+      if (comunicado.estado === 'programado') {
+        if (!comunicado.fechaActivacion || !comunicado.fechaDesactivacion) {
+          return res.status(400).json({
+            success: false,
+            message: 'Un comunicado programado requiere ambas fechas'
+          });
+        }
+        if (comunicado.fechaActivacion >= comunicado.fechaDesactivacion) {
+          return res.status(400).json({
+            success: false,
+            message: 'La fecha de activación debe ser anterior a la fecha de desactivación'
+          });
+        }
+      }
+    }
 
     comunicado.actualizadoPor = req.user._id;
     await comunicado.save();
 
     console.log(`   ✅ Comunicado actualizado`);
-    console.log(`   📊 Nuevo estado: ${comunicado.estado}`);
+    console.log(`   📊 Estado: ${comunicado.estado}`);
+    console.log(`   📅 Activación: ${comunicado.fechaActivacion}`);
+    console.log(`   📅 Desactivación: ${comunicado.fechaDesactivacion || 'Sin fecha fin'}`);
 
     const comunicadoActualizado = await Comunicado.findById(id)
       .populate('creadoPor', 'email profile')
@@ -420,6 +524,10 @@ const updateComunicado = async (req, res) => {
   }
 };
 
+/**
+ * PATCH /api/comunicados/:id/estado
+ * Cambia solo el estado (activo/inactivo/programado)
+ */
 const changeEstado = async (req, res) => {
   try {
     const { id } = req.params;
@@ -444,15 +552,32 @@ const changeEstado = async (req, res) => {
       });
     }
 
+    // Validar según el nuevo estado
+    const validacion = validarReglasDeEstado(
+      estado,
+      comunicado.fechaActivacion,
+      comunicado.fechaDesactivacion
+    );
+
+    if (!validacion.valido) {
+      return res.status(400).json({
+        success: false,
+        message: validacion.mensaje
+      });
+    }
+
     const estadoAnterior = comunicado.estado;
     const ahora = new Date();
 
-    comunicado.estado = estado;
+    comunicado.estado = validacion.estadoFinal;
+    comunicado.fechaActivacion = validacion.fechaActivacion;
+    comunicado.fechaDesactivacion = validacion.fechaDesactivacion;
 
-    if (estado === 'activo' && estadoAnterior !== 'activo') {
+    if (validacion.estadoFinal === 'activo' && estadoAnterior !== 'activo') {
       comunicado.activadoEn = ahora;
+      comunicado.desactivadoEn = null;
     }
-    if (estado === 'inactivo' && estadoAnterior === 'activo') {
+    if (validacion.estadoFinal === 'inactivo' && estadoAnterior === 'activo') {
       comunicado.desactivadoEn = ahora;
     }
 
