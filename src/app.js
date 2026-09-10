@@ -179,7 +179,7 @@ app.use('/uploads', (req, res, next) => {
   }
 }));
 
-// 🔥 2. Senadores (imágenes de perfiles - RUTA FIJA)
+// 2. Senadores (imágenes de perfiles - RUTA FIJA)
 app.use('/senadores', express.static(path.join(__dirname, '..', 'public', 'senadores'), {
   setHeaders: (res, filepath) => {
     if (filepath.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
@@ -253,6 +253,10 @@ const tabsRoutes = require('./routes/tabs.routes');
 const iconsRoutes = require('./routes/icons.routes');
 const sesionesRoutes = require('./routes/sesiones.routes');
 
+// 🔥 NUEVAS RUTAS
+const comunicadosRoutes = require('./routes/comunicados.routes');
+const avisosRoutes = require('./routes/avisos.routes');
+
 // Aplicar rate limiting específico a login
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
@@ -265,6 +269,10 @@ app.use('/api/legisladores', legisladoresRoutes);
 app.use('/api/tabs', tabsRoutes);
 app.use('/api/icons', iconsRoutes);
 app.use('/api/sesiones', sesionesRoutes);
+
+// 🔥 NUEVAS RUTAS
+app.use('/api/comunicados', comunicadosRoutes);
+app.use('/api/avisos', avisosRoutes);
 
 // ============================================
 // 4. RUTAS DEL SISTEMA
@@ -408,6 +416,7 @@ const startServer = async () => {
       console.log('   • Validación JWT secreto');
       console.log('   • Servir imágenes de senadores (public/senadores)');
       console.log('   • Servir archivos subidos (uploads)');
+      console.log('   • Endpoints: /api/comunicados, /api/avisos');
       console.log('═'.repeat(60));
     });
     

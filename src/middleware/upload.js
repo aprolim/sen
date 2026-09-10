@@ -9,6 +9,7 @@ const uploadDirs = {
   documents: 'uploads/documents',
   legisladores: 'uploads/legisladores',
   content: 'uploads/content',
+  comunicados: 'uploads/comunicados', // 🔥 NUEVO
 };
 
 Object.values(uploadDirs).forEach(dir => {
@@ -26,6 +27,7 @@ const storage = multer.diskStorage({
     
     let folder = 'uploads/images';
     
+    // 🔥 DETECTAR TIPO DE ARCHIVO POR LA RUTA
     if (file.mimetype.startsWith('image/')) {
       folder = uploadDirs.images;
     } else if (file.mimetype === 'application/pdf') {
@@ -34,6 +36,8 @@ const storage = multer.diskStorage({
       folder = uploadDirs.legisladores;
     } else if (req.baseUrl && req.baseUrl.includes('content')) {
       folder = uploadDirs.content;
+    } else if (req.baseUrl && req.baseUrl.includes('comunicados')) {
+      folder = uploadDirs.comunicados; // 🔥 NUEVO
     }
     
     console.log('📂 Guardando en:', folder);
@@ -77,7 +81,7 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 10MB
+    fileSize: 50 * 1024 * 1024, // 50MB
     fieldSize: 50 * 1024 * 1024
   },
 });
