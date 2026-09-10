@@ -1,15 +1,17 @@
-// backend/src/middleware/upload.js
+// src/middleware/upload.js
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
+// ============================================
 // Crear directorios si no existen
+// ============================================
 const uploadDirs = {
   images: 'uploads/images',
   documents: 'uploads/documents',
   legisladores: 'uploads/legisladores',
   content: 'uploads/content',
-  comunicados: 'uploads/comunicados', // 🔥 NUEVO
+  comunicados: 'uploads/comunicados',
 };
 
 Object.values(uploadDirs).forEach(dir => {
@@ -19,15 +21,17 @@ Object.values(uploadDirs).forEach(dir => {
   }
 });
 
+// ============================================
 // Configuración de almacenamiento
+// ============================================
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     console.log('📂 Destination - req.baseUrl:', req.baseUrl);
     console.log('📂 Destination - file.mimetype:', file.mimetype);
-    
-    let folder = 'uploads/images';
-    
-    // 🔥 DETECTAR TIPO DE ARCHIVO POR LA RUTA
+
+    let folder = uploadDirs.images;
+
+    // Detectar tipo de archivo por la ruta
     if (file.mimetype.startsWith('image/')) {
       folder = uploadDirs.images;
     } else if (file.mimetype === 'application/pdf') {
@@ -37,9 +41,9 @@ const storage = multer.diskStorage({
     } else if (req.baseUrl && req.baseUrl.includes('content')) {
       folder = uploadDirs.content;
     } else if (req.baseUrl && req.baseUrl.includes('comunicados')) {
-      folder = uploadDirs.comunicados; // 🔥 NUEVO
+      folder = uploadDirs.comunicados;
     }
-    
+
     console.log('📂 Guardando en:', folder);
     cb(null, folder);
   },
@@ -50,43 +54,96 @@ const storage = multer.diskStorage({
       .toLowerCase()
       .replace(/[^a-z0-9]/g, '-')
       .substring(0, 50);
-    
+
     const filename = name + '-' + uniqueSuffix + ext;
     console.log('📄 Nombre de archivo:', filename);
     cb(null, filename);
   }
 });
 
-// Filtrar tipos de archivo
+// ============================================
+// Filtros de archivo
+// ============================================
+
+// ✅ Filtro mixto (imágenes + PDF) - el que se usa por defecto
 const fileFilter = (req, file, cb) => {
   const allowedTypes = [
     'image/jpeg',
-    'image/jpg', 
+    'image/jpg',
     'image/png',
     'image/webp',
-    'image/gif'
+    'image/gif',
+    'application/pdf'
   ];
-  
+
   console.log('🔍 FileFilter - tipo:', file.mimetype);
-  
+
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Tipo de archivo no permitido. Solo se permiten imágenes (JPEG, PNG, WEBP, GIF).'), false);
+    cb(new Error('Tipo de archivo no permitido. Solo se permiten imágenes (JPEG, PNG, WEBP, GIF) y PDFs.'), false);
   }
 };
 
-// Configurar multer
+// ✅ Filtro solo para imágenes
+const imageFilter = (req, file, cb) => {
+  const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+  if (allowed.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Solo se permiten imágenes (JPEG, PNG, WEBP, GIF).'), false);
+  }
+};
+
+// ✅ Filtro solo para PDFs
+const pdfFilter = (req, file, cb) => {
+  if (file.mimetype === 'application/pdf') {
+    cb(null, true);
+  } else {
+    cb(new Error('Solo se permiten archivos PDF.'), false);
+  }
+};
+
+// ============================================
+// Instancias de multer
+// ============================================
+
+// Upload mixto (imágenes + PDF)
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB
+    fileSize: 50 * 1024 * 1024,
     fieldSize: 50 * 1024 * 1024
   },
 });
 
+// Upload solo imágenes
+const uploadImage = multer({
+  storage: storage,
+  fileFilter: imageFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+    fieldSize: 10 * 1024 * 1024
+  },
+});
+
+// Upload solo PDFs
+const uploadPDF = multer({
+  storage: storage,
+  fileFilter: pdfFilter,
+  limits: {
+    fileSize: 20 * 1024 * 1024,
+    fieldSize: 20 * 1024 * 1024
+  },
+});
+
+// ============================================
+// Exportar
+// ============================================
 module.exports = {
-  upload,
+  upload,        // mixto (imágenes + PDF)
+  uploadImage,   // solo imágenes
+  uploadPDF,     // solo PDFs
   uploadDirs,
 };

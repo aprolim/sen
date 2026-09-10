@@ -3,7 +3,7 @@ const Comunicado = require('../models/Comunicado');
 const Aviso = require('../models/Aviso');
 
 // ============================================
-// 🔧 FUNCIONES AUXILIARES (FUERA DE LA CLASE)
+// 🔧 FUNCIONES AUXILIARES
 // ============================================
 
 /**
@@ -30,7 +30,7 @@ async function actualizarEstados() {
       console.log(`   🔄 "${comunicado.titulo}" → ACTIVO (programación cumplida)`);
     }
 
-    // 2. Activos → Inactivos (y crear aviso)
+    // 2. Activos → Inactivos
     const activos = await Comunicado.find({
       estado: 'activo',
       fechaDesactivacion: { $lte: ahora, $ne: null }
@@ -43,7 +43,7 @@ async function actualizarEstados() {
       actualizados++;
       console.log(`   🔄 "${comunicado.titulo}" → INACTIVO (fecha de desactivación cumplida)`);
 
-      // 🔥 Crear aviso automáticamente cuando expira
+      // Crear aviso automáticamente cuando expira
       await crearAvisoDesdeComunicado(comunicado);
     }
 
@@ -65,7 +65,6 @@ async function crearAvisoDesdeComunicado(comunicado) {
   try {
     console.log(`   📝 Creando aviso desde comunicado: "${comunicado.titulo}"`);
 
-    // Verificar si ya existe
     const existe = await Aviso.findOne({
       comunicadoId: comunicado._id,
       origen: 'comunicado'
@@ -100,20 +99,13 @@ async function crearAvisoDesdeComunicado(comunicado) {
 }
 
 // ============================================
-// 📦 CONTROLADOR (funciones puras, sin this)
+// 📡 PÚBLICO
 // ============================================
 
-// ---------- 📡 PÚBLICO ----------
-
-/**
- * GET /api/comunicados/activo
- * Obtiene el comunicado activo para mostrar en el modal
- */
 const getComunicadoActivo = async (req, res) => {
   try {
     console.log('\n📢 [PUBLICO] Obteniendo comunicado activo para modal...');
 
-    // ✅ Sin this
     await actualizarEstados();
 
     const comunicado = await Comunicado.findOne({
@@ -151,14 +143,10 @@ const getComunicadoActivo = async (req, res) => {
   }
 };
 
-/**
- * GET /api/comunicados/expirados
- */
 const getComunicadosExpirados = async (req, res) => {
   try {
     console.log('\n📢 [PUBLICO] Obteniendo comunicados expirados...');
 
-    // ✅ Sin this
     await actualizarEstados();
 
     const comunicados = await Comunicado.find({
@@ -183,11 +171,10 @@ const getComunicadosExpirados = async (req, res) => {
   }
 };
 
-// ---------- 🔐 ADMIN ----------
+// ============================================
+// 🔐 ADMIN - CRUD
+// ============================================
 
-/**
- * GET /api/comunicados
- */
 const getComunicados = async (req, res) => {
   try {
     console.log('\n📢 [ADMIN] Obteniendo comunicados...');
@@ -196,7 +183,6 @@ const getComunicados = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const { estado, search } = req.query;
 
-    // ✅ Sin this
     await actualizarEstados();
 
     const filters = {};
@@ -242,9 +228,6 @@ const getComunicados = async (req, res) => {
   }
 };
 
-/**
- * GET /api/comunicados/:id
- */
 const getComunicadoById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -275,9 +258,6 @@ const getComunicadoById = async (req, res) => {
   }
 };
 
-/**
- * POST /api/comunicados
- */
 const createComunicado = async (req, res) => {
   try {
     console.log('\n📢 [ADMIN] Creando comunicado...');
@@ -360,9 +340,6 @@ const createComunicado = async (req, res) => {
   }
 };
 
-/**
- * PUT /api/comunicados/:id
- */
 const updateComunicado = async (req, res) => {
   try {
     const { id } = req.params;
@@ -417,7 +394,6 @@ const updateComunicado = async (req, res) => {
       }
     }
 
-    // Método del modelo (sigue existiendo porque está en el Schema)
     comunicado.actualizarEstado();
 
     comunicado.actualizadoPor = req.user._id;
@@ -444,9 +420,6 @@ const updateComunicado = async (req, res) => {
   }
 };
 
-/**
- * PATCH /api/comunicados/:id/estado
- */
 const changeEstado = async (req, res) => {
   try {
     const { id } = req.params;
@@ -502,9 +475,6 @@ const changeEstado = async (req, res) => {
   }
 };
 
-/**
- * DELETE /api/comunicados/:id
- */
 const deleteComunicado = async (req, res) => {
   try {
     const { id } = req.params;
@@ -520,7 +490,6 @@ const deleteComunicado = async (req, res) => {
       });
     }
 
-    // Si es un comunicado expirado, también eliminar el aviso asociado
     if (comunicado.estaExpirado()) {
       const avisoEliminado = await Aviso.findOneAndDelete({
         comunicadoId: comunicado._id,
@@ -548,14 +517,10 @@ const deleteComunicado = async (req, res) => {
   }
 };
 
-/**
- * GET /api/comunicados/stats
- */
 const getStats = async (req, res) => {
   try {
     console.log('\n📊 [ADMIN] Obteniendo estadísticas de comunicados...');
 
-    // ✅ Sin this
     await actualizarEstados();
 
     const [total, activos, inactivos, programados] = await Promise.all([
@@ -591,15 +556,10 @@ const getStats = async (req, res) => {
   }
 };
 
-/**
- * POST /api/comunicados/force-update
- * Endpoint para cron o forzar actualización manual
- */
 const forceUpdateEstados = async (req, res) => {
   try {
     console.log('\n🔄 [ADMIN] Forzando actualización de estados...');
 
-    // ✅ Sin this
     const actualizados = await actualizarEstados();
 
     res.json({
@@ -617,13 +577,91 @@ const forceUpdateEstados = async (req, res) => {
 };
 
 // ============================================
-// EXPORTAR OBJETO PLANO (sin clase, sin this)
+// 📤 ADMIN - Uploads
+// ============================================
+
+const uploadImage = async (req, res) => {
+  try {
+    console.log('\n📸 [ADMIN] Subiendo imagen de comunicado...');
+    console.log('   👤 Usuario:', req.user?.email);
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No se subió ninguna imagen'
+      });
+    }
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const imageUrl = `${baseUrl}/uploads/images/${req.file.filename}`;
+
+    console.log(`   ✅ Imagen subida: ${imageUrl}`);
+
+    res.json({
+      success: true,
+      message: 'Imagen subida exitosamente',
+      data: {
+        url: imageUrl,
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        mimetype: req.file.mimetype
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error en uploadImage:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al subir la imagen'
+    });
+  }
+};
+
+const uploadPDF = async (req, res) => {
+  try {
+    console.log('\n📄 [ADMIN] Subiendo PDF de comunicado...');
+    console.log('   👤 Usuario:', req.user?.email);
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No se subió ningún PDF'
+      });
+    }
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const pdfUrl = `${baseUrl}/uploads/documents/${req.file.filename}`;
+
+    console.log(`   ✅ PDF subido: ${pdfUrl}`);
+
+    res.json({
+      success: true,
+      message: 'PDF subido exitosamente',
+      data: {
+        url: pdfUrl,
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        mimetype: req.file.mimetype
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error en uploadPDF:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al subir el PDF'
+    });
+  }
+};
+
+// ============================================
+// EXPORTAR
 // ============================================
 module.exports = {
   // Público
   getComunicadoActivo,
   getComunicadosExpirados,
-  // Admin
+  // Admin - CRUD
   getComunicados,
   getComunicadoById,
   createComunicado,
@@ -631,5 +669,8 @@ module.exports = {
   changeEstado,
   deleteComunicado,
   getStats,
-  forceUpdateEstados
+  forceUpdateEstados,
+  // Uploads
+  uploadImage,
+  uploadPDF
 };
