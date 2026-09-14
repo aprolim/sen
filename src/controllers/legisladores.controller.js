@@ -637,8 +637,8 @@ class LegisladoresController {
         primeraVice: 6,
         segundaVice: 12,
         primeraSecretaria: 33,
-        segundaSecretaria: 13,
-        terceraSecretaria: 24
+        segundaSecretaria: 24,
+        terceraSecretaria: 13
       };
 
       const miembros = await Senador.find({
