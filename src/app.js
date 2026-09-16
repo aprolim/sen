@@ -81,7 +81,7 @@ const corsOptions = {
   },
   credentials: true,
   optionsSuccessStatus: 204,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept']
 };
 
@@ -158,7 +158,7 @@ app.use(express.urlencoded({
 // SERVIR ARCHIVOS ESTÁTICOS CON CORS
 // ============================================
 
-// 1. Uploads (imágenes subidas dinámicamente)
+// 1. Uploads (imágenes y PDFs subidos dinámicamente)
 app.use('/uploads', (req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -174,6 +174,12 @@ app.use('/uploads', (req, res, next) => {
   setHeaders: (res, filepath) => {
     if (filepath.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
       res.setHeader('Cache-Control', 'public, max-age=31536000');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    }
+    if (filepath.match(/\.pdf$/)) {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'inline');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     }
   }
@@ -253,9 +259,12 @@ const tabsRoutes = require('./routes/tabs.routes');
 const iconsRoutes = require('./routes/icons.routes');
 const sesionesRoutes = require('./routes/sesiones.routes');
 
-// 🔥 NUEVAS RUTAS
+// 🔥 RUTAS EXISTENTES
 const comunicadosRoutes = require('./routes/comunicados.routes');
 const avisosRoutes = require('./routes/avisos.routes');
+
+// 🔥 NUEVA RUTA: AUDITORÍA (POA-UAI)
+const auditoriaRoutes = require('./routes/auditoria.routes');
 
 // Aplicar rate limiting específico a login
 app.use('/api/auth/login', authLimiter);
@@ -270,9 +279,12 @@ app.use('/api/tabs', tabsRoutes);
 app.use('/api/icons', iconsRoutes);
 app.use('/api/sesiones', sesionesRoutes);
 
-// 🔥 NUEVAS RUTAS
+// 🔥 RUTAS EXISTENTES
 app.use('/api/comunicados', comunicadosRoutes);
 app.use('/api/avisos', avisosRoutes);
+
+// 🔥 NUEVA RUTA: AUDITORÍA
+app.use('/api/auditoria', auditoriaRoutes);
 
 // ============================================
 // 4. RUTAS DEL SISTEMA
@@ -417,6 +429,7 @@ const startServer = async () => {
       console.log('   • Servir imágenes de senadores (public/senadores)');
       console.log('   • Servir archivos subidos (uploads)');
       console.log('   • Endpoints: /api/comunicados, /api/avisos');
+      console.log('   • Endpoints: /api/auditoria/poa-uai');
       console.log('═'.repeat(60));
     });
     
