@@ -709,11 +709,13 @@ const uploadImage = async (req, res) => {
   try {
     console.log('\n📸 [ADMIN] Subiendo imagen de comunicado...');
     console.log('   👤 Usuario:', req.user?.email);
+    console.log('   📦 Archivo:', req.file?.originalname);
 
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        message: 'No se subió ninguna imagen'
+        message: 'No se subió ninguna imagen',
+        code: 'NO_FILE'
       });
     }
 
@@ -735,9 +737,14 @@ const uploadImage = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error en uploadImage:', error);
+
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+
     res.status(500).json({
       success: false,
-      message: 'Error al subir la imagen'
+      message: 'Error al subir la imagen',
+      code: 'UPLOAD_ERROR'
     });
   }
 };
@@ -746,11 +753,14 @@ const uploadPDF = async (req, res) => {
   try {
     console.log('\n📄 [ADMIN] Subiendo PDF de comunicado...');
     console.log('   👤 Usuario:', req.user?.email);
+    console.log('   📦 Archivo:', req.file?.originalname);
+    console.log('   📊 Tamaño:', req.file ? (req.file.size / 1024 / 1024).toFixed(2) + ' MB' : 'N/A');
 
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        message: 'No se subió ningún PDF'
+        message: 'No se subió ningún PDF',
+        code: 'NO_FILE'
       });
     }
 
@@ -767,14 +777,20 @@ const uploadPDF = async (req, res) => {
         filename: req.file.filename,
         originalName: req.file.originalname,
         size: req.file.size,
+        sizeMB: (req.file.size / 1024 / 1024).toFixed(2),
         mimetype: req.file.mimetype
       }
     });
   } catch (error) {
     console.error('❌ Error en uploadPDF:', error);
+
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+
     res.status(500).json({
       success: false,
-      message: 'Error al subir el PDF'
+      message: 'Error al subir el PDF',
+      code: 'UPLOAD_ERROR'
     });
   }
 };

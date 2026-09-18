@@ -42,7 +42,6 @@ LOG_LEVEL=debug
  
 node_modules/
 .env
-uploads/
 *.log
 .DS_Store 
 ================================= 
@@ -550,7 +549,12 @@ dotenv.config();
 const app = express();
 
 // ============================================
-// TRUST PROXY - Para rate limiting detrás de proxy
+// 🔥 LÍMITE GLOBAL: 350 MB
+// ============================================
+const MAX_BODY_SIZE = '350mb';
+
+// ============================================
+// TRUST PROXY
 // ============================================
 if (process.env.NODE_ENV === 'production') {
   app.set('trust proxy', 1);
@@ -559,10 +563,54 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // ============================================
-// 1. SEGURIDAD: CONFIGURACIÓN COMPLETA
+// CORS - Configuración
 // ============================================
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:3002',
+  'http://localhost:3003',
+  'http://10.0.0.20',
+  'http://10.0.0.21',
+  'http://10.0.0.22',
+  'http://10.0.0.21:3000',
+  'http://10.0.0.21:3001',
+  'http://10.0.0.21:3002',
+  'http://10.0.0.21:3003',
+  'http://demopanel.senado.gob.bo',
+  'http://demoap.senado.gob.bo',
+  'http://demoback.senado.gob.bo',
+  'https://demoap.senado.gob.bo',
+  'https://demopanel.senado.gob.bo',
+  'https://demoback.senado.gob.bo',
+];
 
-// A. HELMET - Headers de seguridad
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Permitir requests sin origin (Postman, curl, mobile apps)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log('❌ Origen bloqueado por CORS:', origin);
+      callback(new Error('Origen no permitido por CORS'));
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 204,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept', 'Content-Length', 'X-File-Name'],
+  exposedHeaders: ['Content-Length', 'Content-Range', 'X-Total-Count'],
+  maxAge: 86400 // 24 horas de cache para preflight
+};
+
+// 🔥 CORS debe ir ANTES de todo (incluso de helmet)
+app.use(cors(corsOptions));
+
+// ============================================
+// HELMET
+// ============================================
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -577,6 +625,7 @@ app.use(helmet({
     },
   },
   crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginEmbedderPolicy: false, // 🔥 Deshabilitado para permitir iframes/PDFs
   hsts: {
     maxAge: 31536000,
     includeSubDomains: true,
@@ -585,56 +634,26 @@ app.use(helmet({
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
 }));
 
-// B. CORS - Control de orígenes
-const corsOptions = {
-  origin: function (origin, callback) {
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'http://localhost:3002',
-      'http://10.0.0.20',
-      'http://10.0.0.22',
-      'http://10.0.0.21',
-      'http://10.0.0.21:3000',
-      'http://10.0.0.21:3001',
-      'http://demopanel.senado.gob.bo',
-      'http://demoap.senado.gob.bo',
-      'http://demoback.senado.gob.bo',
-      'https://demoap.senado.gob.bo',
-      'https://demopanel.senado.gob.bo',
-    ];
-    
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.log('❌ Origen bloqueado por CORS:', origin);
-      callback(new Error('Origen no permitido por CORS'));
-    }
-  },
-  credentials: true,
-  optionsSuccessStatus: 204,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept']
-};
-
-app.use(cors(corsOptions));
-
-// Middleware para Private Network Access y manejo de OPTIONS
+// ============================================
+// MANEJO DE OPTIONS (preflight)
+// ============================================
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Private-Network', 'true');
-  
+
   if (req.method === 'OPTIONS') {
     console.log('📡 Preflight request de:', req.headers.origin);
     return res.sendStatus(204);
   }
-  
+
   next();
 });
 
-// C. RATE LIMITING - Protección DDoS/Brute Force
+// ============================================
+// RATE LIMITING
+// ============================================
 const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 10000, // máximo 10000 peticiones por ventana
+  windowMs: 15 * 60 * 1000,
+  max: 10000,
   message: {
     success: false,
     message: 'Demasiadas peticiones desde esta IP. Intenta más tarde.'
@@ -645,8 +664,8 @@ const generalLimiter = rateLimit({
 });
 
 const authLimiter = rateLimit({
-  windowMs: 3 * 60 * 1000, // 3 minutos
-  max: 5, // máximo 5 intentos
+  windowMs: 3 * 60 * 1000,
+  max: 5,
   message: {
     success: false,
     message: 'Demasiados intentos de login. Intenta más tarde.'
@@ -659,19 +678,25 @@ const authLimiter = rateLimit({
 
 app.use(generalLimiter);
 
-// D. PROTECCIÓN CONTRA INYECCIONES
+// ============================================
+// PROTECCIÓN CONTRA INYECCIONES
+// ============================================
 app.use(mongoSanitize());
 app.use(xss());
 app.use(hpp());
 
-// E. MIDDLEWARES BÁSICOS CON SEGURIDAD
+// ============================================
+// LOGGING
+// ============================================
 app.use(morgan('combined', {
   skip: (req, res) => req.path === '/api/health'
 }));
 
-// Limitar tamaño de requests
+// ============================================
+// 🔥 BODY PARSERS - LÍMITE 350 MB
+// ============================================
 app.use(express.json({
-  limit: '50mb',
+  limit: MAX_BODY_SIZE,
   verify: (req, res, buf) => {
     try {
       JSON.parse(buf);
@@ -681,23 +706,24 @@ app.use(express.json({
   }
 }));
 
-app.use(express.urlencoded({ 
-  extended: true, 
-  limit: '50mb' 
+app.use(express.urlencoded({
+  extended: true,
+  limit: MAX_BODY_SIZE
 }));
 
 // ============================================
-// SERVIR ARCHIVOS ESTÁTICOS CON CORS
+// SERVIR ARCHIVOS ESTÁTICOS
 // ============================================
 
-// 1. Uploads (imágenes subidas dinámicamente)
+// 1. Uploads (imágenes y PDFs)
 app.use('/uploads', (req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS, HEAD');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Range');
+  res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
   res.header('Cross-Origin-Resource-Policy', 'cross-origin');
-  res.header('Cross-Origin-Embedder-Policy', 'credentialless');
-  
+  res.header('Accept-Ranges', 'bytes');
+
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
   }
@@ -708,10 +734,16 @@ app.use('/uploads', (req, res, next) => {
       res.setHeader('Cache-Control', 'public, max-age=31536000');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     }
+    if (filepath.match(/\.pdf$/)) {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'inline');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    }
   }
 }));
 
-// 2. Senadores (imágenes de perfiles - RUTA FIJA)
+// 2. Senadores
 app.use('/senadores', express.static(path.join(__dirname, '..', 'public', 'senadores'), {
   setHeaders: (res, filepath) => {
     if (filepath.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
@@ -721,25 +753,36 @@ app.use('/senadores', express.static(path.join(__dirname, '..', 'public', 'senad
   }
 }));
 
-// F. HEADERS ADICIONALES
+// 🔥 3. NUEVO: Servir toda la carpeta public (para otros assets)
+app.use('/public', express.static(path.join(__dirname, '..', 'public'), {
+  setHeaders: (res, filepath) => {
+    if (filepath.match(/\.(jpg|jpeg|png|gif|webp|svg)$/)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    }
+  }
+}));
+
+// ============================================
+// HEADERS ADICIONALES
+// ============================================
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN'); // 🔥 Cambiado de DENY a SAMEORIGIN para permitir iframes internos
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
-  
+
   if (req.path.includes('/api/auth') || req.path.includes('/api/users')) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
   }
-  
+
   next();
 });
 
 // ============================================
-// 2. SWAGGER
+// SWAGGER
 // ============================================
 console.log('\n🔧 Configurando Swagger...');
 
@@ -775,7 +818,7 @@ app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 }));
 
 // ============================================
-// 3. IMPORTAR RUTAS CON SEGURIDAD
+// IMPORTAR RUTAS
 // ============================================
 const authRoutes = require('./routes/auth.routes');
 const usersRoutes = require('./routes/users.routes');
@@ -784,16 +827,15 @@ const legisladoresRoutes = require('./routes/legisladores.routes');
 const tabsRoutes = require('./routes/tabs.routes');
 const iconsRoutes = require('./routes/icons.routes');
 const sesionesRoutes = require('./routes/sesiones.routes');
-
-// 🔥 NUEVAS RUTAS
 const comunicadosRoutes = require('./routes/comunicados.routes');
 const avisosRoutes = require('./routes/avisos.routes');
+const auditoriaRoutes = require('./routes/auditoria.routes');
 
-// Aplicar rate limiting específico a login
+// Rate limiting específico
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
-// Rutas principales
+// Rutas
 app.use('/api/auth', authRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/content', contentRoutes);
@@ -801,26 +843,23 @@ app.use('/api/legisladores', legisladoresRoutes);
 app.use('/api/tabs', tabsRoutes);
 app.use('/api/icons', iconsRoutes);
 app.use('/api/sesiones', sesionesRoutes);
-
-// 🔥 NUEVAS RUTAS
 app.use('/api/comunicados', comunicadosRoutes);
 app.use('/api/avisos', avisosRoutes);
+app.use('/api/auditoria', auditoriaRoutes);
 
 // ============================================
-// 4. RUTAS DEL SISTEMA
+// RUTAS DEL SISTEMA
 // ============================================
-
-// Health check seguro (información limitada)
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,
     status: 'operational',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
+    maxFileSize: '350 MB'
   });
 });
 
-// Información básica (sin detalles internos)
 app.get('/api', (req, res) => {
   res.json({
     success: true,
@@ -828,17 +867,16 @@ app.get('/api', (req, res) => {
     version: '1.0.0',
     documentation: '/api/docs',
     requires_auth: true,
+    maxFileSize: '350 MB'
   });
 });
 
 // ============================================
-// 5. AUDITORÍA Y LOGGING DE SEGURIDAD
+// AUDITORÍA Y LOGGING
 // ============================================
-
-// Middleware de auditoría
 app.use((req, res, next) => {
   const start = Date.now();
-  
+
   res.on('finish', () => {
     const duration = Date.now() - start;
     const logData = {
@@ -850,30 +888,35 @@ app.use((req, res, next) => {
       duration: `${duration}ms`,
       userAgent: req.get('user-agent'),
     };
-    
+
     if (req.path.includes('/api/auth') || res.statusCode >= 400) {
       console.log('🔐 AUDIT:', logData);
     }
   });
-  
+
   next();
 });
 
 // ============================================
-// 6. MANEJO DE ERRORES SEGURO
+// 404
 // ============================================
-
-// 404 - No exponer estructura interna
 app.use('*', (req, res) => {
   console.warn(`⚠️  404: ${req.method} ${req.originalUrl} from ${req.ip}`);
-  
+
+  // Headers CORS manuales por si acaso
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+
   res.status(404).json({
     success: false,
     message: 'Recurso no encontrado',
   });
 });
 
-// Error handler - No exponer detalles en producción
+// ============================================
+// 🔥 ERROR HANDLER CON CORS
+// CRÍTICO: este handler DEBE incluir headers CORS
+// ============================================
 app.use((err, req, res, next) => {
   console.error('🔥 ERROR:', {
     message: err.message,
@@ -881,77 +924,121 @@ app.use((err, req, res, next) => {
     method: req.method,
     ip: req.ip,
     timestamp: new Date().toISOString(),
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
   });
-  
+
+  // 🔥 SIEMPRE incluir headers CORS en errores
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Origin, X-Requested-With, Accept');
+
   let statusCode = 500;
   let message = 'Error interno del servidor';
-  
-  if (err.name === 'ValidationError') statusCode = 400;
-  else if (err.name === 'JsonWebTokenError') statusCode = 401;
-  else if (err.name === 'TokenExpiredError') statusCode = 401;
-  else if (err.message.includes('CORS')) statusCode = 403;
-  else if (err.message.includes('rate limit')) statusCode = 429;
-  
+  let code = 'SERVER_ERROR';
+
+  // 🔥 Errores de Multer
+  if (err.name === 'MulterError') {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      statusCode = 413;
+      message = 'El archivo excede el tamaño máximo permitido (350 MB)';
+      code = 'FILE_TOO_LARGE';
+    } else {
+      statusCode = 400;
+      message = `Error al subir archivo: ${err.message}`;
+      code = err.code;
+    }
+  }
+  // Errores de validación
+  else if (err.name === 'ValidationError') {
+    statusCode = 400;
+    message = err.message;
+    code = 'VALIDATION_ERROR';
+  }
+  else if (err.name === 'JsonWebTokenError') {
+    statusCode = 401;
+    message = 'Token inválido';
+    code = 'INVALID_TOKEN';
+  }
+  else if (err.name === 'TokenExpiredError') {
+    statusCode = 401;
+    message = 'Token expirado';
+    code = 'TOKEN_EXPIRED';
+  }
+  else if (err.message && err.message.includes('CORS')) {
+    statusCode = 403;
+    message = 'Origen no permitido por CORS';
+    code = 'CORS_ERROR';
+  }
+  else if (err.message && err.message.includes('rate limit')) {
+    statusCode = 429;
+    message = 'Demasiadas peticiones';
+    code = 'RATE_LIMIT';
+  }
+  else if (err.message && err.message.includes('JSON inválido')) {
+    statusCode = 400;
+    message = 'JSON inválido en el body';
+    code = 'INVALID_JSON';
+  }
+  // 🔥 Error de body muy grande (express.json)
+  else if (err.type === 'entity.too.large') {
+    statusCode = 413;
+    message = 'El body de la petición es demasiado grande (máx 350 MB)';
+    code = 'PAYLOAD_TOO_LARGE';
+  }
+
   res.status(statusCode).json({
     success: false,
     message: process.env.NODE_ENV === 'development' ? err.message : message,
-    code: err.code || 'SERVER_ERROR',
+    code: code,
     timestamp: new Date().toISOString(),
   });
 });
 
 // ============================================
-// 7. INICIALIZACIÓN SEGURA
+// INICIALIZACIÓN
 // ============================================
 const PORT = process.env.PORT || 3000;
 
 const startServer = async () => {
   try {
-    // Validar variables críticas
     const requiredVars = ['JWT_SECRET', 'MONGODB_URI'];
     requiredVars.forEach(varName => {
       if (!process.env[varName]) {
         throw new Error(`Variable ${varName} no definida en .env`);
       }
     });
-    
-    // Validar JWT_SECRET seguro
+
     if (process.env.JWT_SECRET.length < 32) {
       throw new Error('JWT_SECRET debe tener al menos 32 caracteres');
     }
-    
-    // Conectar DB
+
     const connectDB = require('./config/database');
     await connectDB();
-    
-    // Iniciar servidor
+
     app.listen(PORT, '0.0.0.0', () => {
       console.log('\n' + '═'.repeat(60));
       console.log('✅ SERVIDOR SEGURO INICIADO');
       console.log('═'.repeat(60));
       console.log(`🚀 URL Local:    http://localhost:${PORT}`);
-      console.log(`🌐 URL Red:      http://10.0.0.20:${PORT}`);
       console.log(`📚 Documentación: http://localhost:${PORT}/api/docs`);
-      console.log(`🔍 Health Check:  http://localhost:${PORT}/api/health`);
+      console.log(`🔌 Health Check:  http://localhost:${PORT}/api/health`);
       console.log('═'.repeat(60));
       console.log('\n🛡️  MEDIDAS DE SEGURIDAD ACTIVAS:');
       console.log('   • Rate Limiting (10000 req/15min)');
       console.log('   • Login Limiting (5 intentos/5min)');
       console.log('   • Helmet.js (Headers seguridad)');
-      console.log('   • CORS restringido');
-      console.log('   • Private Network Access habilitado');
-      console.log('   • OPTIONS responden con 204');
+      console.log('   • CORS restringido (con headers en errores)');
       console.log('   • Sanitización MongoDB');
       console.log('   • Protección XSS');
       console.log('   • Protección HPP');
       console.log('   • Auditoría de logs');
       console.log('   • Validación JWT secreto');
-      console.log('   • Servir imágenes de senadores (public/senadores)');
-      console.log('   • Servir archivos subidos (uploads)');
-      console.log('   • Endpoints: /api/comunicados, /api/avisos');
+      console.log(`   • 🔥 LÍMITE DE ARCHIVOS: 350 MB`);
+      console.log(`   • 🔥 LÍMITE DE BODY: 350 MB`);
       console.log('═'.repeat(60));
     });
-    
+
   } catch (error) {
     console.error('\n❌ ERROR CRÍTICO:', error.message);
     process.exit(1);
@@ -1175,6 +1262,713 @@ const createSuperAdmin = async () => {
 };
 
 module.exports = connectDB; 
+================================= 
+src\controllers\auditoria.controller.js 
+================================= 
+ 
+// src/controllers/auditoria.controller.js
+const path = require('path');
+const fs = require('fs');
+const https = require('https');
+const http = require('http');
+const AuditoriaCategoria = require('../models/AuditoriaCategoria');
+const AuditoriaDocumento = require('../models/AuditoriaDocumento');
+const AuditoriaPOA = require('../models/AuditoriaPOA');
+
+// ============================================
+// CONSTANTES
+// ============================================
+const MODULOS_VALIDOS = ['poa-uai', 'auditorias-ejecutadas', 'informes-actividades', 'otras-actividades'];
+const MODULOS_CON_CATEGORIAS = ['auditorias-ejecutadas', 'informes-actividades', 'otras-actividades'];
+
+const validarModulo = (modulo) => MODULOS_VALIDOS.includes(modulo);
+const esModuloConCategorias = (modulo) => MODULOS_CON_CATEGORIAS.includes(modulo);
+
+// ============================================
+// 📡 PÚBLICO - Listar documentos + categorías
+// ============================================
+const getDocumentosPublicos = async (req, res) => {
+  try {
+    const { modulo } = req.params;
+
+    console.log(`\n📂 [PUBLICO] Obteniendo documentos del módulo: ${modulo}`);
+
+    if (!validarModulo(modulo)) {
+      return res.status(400).json({
+        success: false,
+        message: `Módulo inválido: ${modulo}`
+      });
+    }
+
+    // ============================================
+    // 🔥 CASO ESPECIAL: POA-UAI (sin categorías)
+    // ============================================
+    if (modulo === 'poa-uai') {
+      const poas = await AuditoriaPOA.find({ estado: { $ne: 'Borrador' } })
+        .sort({ anio: -1 })
+        .lean();
+
+      console.log(`   ✅ ${poas.length} POAs encontrados`);
+
+      return res.json({
+        success: true,
+        data: {
+          categorias: [],
+          documentos: poas
+        }
+      });
+    }
+
+    // ============================================
+    // MÓDULOS CON CATEGORÍAS/TABS
+    // ============================================
+    const [categorias, documentos] = await Promise.all([
+      AuditoriaCategoria.find({ modulo, activo: true })
+        .sort({ orden: 1 })
+        .lean(),
+      AuditoriaDocumento.find({ modulo, activo: true })
+        .sort({ gestion: -1, orden: 1 })
+        .lean()
+    ]);
+
+    console.log(`   ✅ ${categorias.length} categorías, ${documentos.length} documentos`);
+
+    res.json({
+      success: true,
+      data: {
+        categorias: categorias.map(c => ({
+          key: c.key,
+          nombre: c.nombre,
+          icono: c.icono
+        })),
+        documentos: documentos.map(d => ({
+          id: d._id,
+          titulo: d.titulo,
+          descripcion: d.descripcion,
+          gestion: d.gestion,
+          url: d.url,
+          categoria: d.categoria,
+          estado: d.estado
+        }))
+      }
+    });
+
+  } catch (error) {
+    console.error(`❌ Error en getDocumentosPublicos:`, error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener documentos'
+    });
+  }
+};
+
+// ============================================
+// 🔐 ADMIN - Listar documentos (con inactivos)
+// ============================================
+const getDocumentosAdmin = async (req, res) => {
+  try {
+    const { modulo } = req.params;
+    const { categoria, gestion, search, incluirInactivos } = req.query;
+
+    console.log(`\n📂 [ADMIN] Obteniendo documentos de: ${modulo}`);
+
+    if (!validarModulo(modulo)) {
+      return res.status(400).json({ success: false, message: 'Módulo inválido' });
+    }
+
+    if (modulo === 'poa-uai') {
+      const poas = await AuditoriaPOA.find({})
+        .sort({ anio: -1 })
+        .populate('creadoPor', 'email profile')
+        .populate('actualizadoPor', 'email profile')
+        .lean();
+
+      return res.json({
+        success: true,
+        data: { documentos: poas, total: poas.length }
+      });
+    }
+
+    const filters = { modulo };
+    if (incluirInactivos !== 'true') filters.activo = true;
+    if (categoria && categoria !== 'todas') filters.categoria = categoria;
+    if (gestion) filters.gestion = parseInt(gestion);
+    if (search) {
+      filters.$or = [
+        { titulo: { $regex: search, $options: 'i' } },
+        { descripcion: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const documentos = await AuditoriaDocumento.find(filters)
+      .sort({ gestion: -1, orden: 1 })
+      .populate('creadoPor', 'email profile')
+      .populate('actualizadoPor', 'email profile')
+      .lean();
+
+    res.json({
+      success: true,
+      data: { documentos, total: documentos.length }
+    });
+
+  } catch (error) {
+    console.error(`❌ Error en getDocumentosAdmin:`, error);
+    res.status(500).json({ success: false, message: 'Error al obtener documentos' });
+  }
+};
+
+// ============================================
+// 🔐 ADMIN - Obtener documento por ID
+// ============================================
+const getDocumentoById = async (req, res) => {
+  try {
+    const { modulo, id } = req.params;
+
+    if (!validarModulo(modulo)) {
+      return res.status(400).json({ success: false, message: 'Módulo inválido' });
+    }
+
+    const Model = modulo === 'poa-uai' ? AuditoriaPOA : AuditoriaDocumento;
+    const documento = await Model.findById(id)
+      .populate('creadoPor', 'email profile')
+      .populate('actualizadoPor', 'email profile');
+
+    if (!documento) {
+      return res.status(404).json({ success: false, message: 'Documento no encontrado' });
+    }
+
+    res.json({ success: true, data: documento });
+  } catch (error) {
+    console.error(`❌ Error en getDocumentoById:`, error);
+    res.status(500).json({ success: false, message: 'Error al obtener documento' });
+  }
+};
+
+// ============================================
+// 🔐 ADMIN - Crear documento
+// ============================================
+const createDocumento = async (req, res) => {
+  try {
+    const { modulo } = req.params;
+
+    console.log(`\n➕ [ADMIN] Creando documento en: ${modulo}`);
+    console.log(`   👤 Usuario: ${req.user.email}`);
+
+    if (!validarModulo(modulo)) {
+      return res.status(400).json({ success: false, message: 'Módulo inválido' });
+    }
+
+    // POA-UAI
+    if (modulo === 'poa-uai') {
+      const { anio, titulo, fecha, estado, activo, pdfUrl } = req.body;
+
+      if (!anio) {
+        return res.status(400).json({ success: false, message: 'El año es requerido' });
+      }
+
+      const existe = await AuditoriaPOA.findOne({ anio });
+      if (existe) {
+        return res.status(400).json({ success: false, message: `Ya existe un POA para el año ${anio}` });
+      }
+
+      const poa = new AuditoriaPOA({
+        anio,
+        titulo: titulo || `Plan Operativo Anual - UAI ${anio}`,
+        fecha: fecha || new Date().toLocaleDateString('es-ES'),
+        estado: estado || 'Publicado',
+        activo: activo || false,
+        pdfUrl: pdfUrl || null,
+        creadoPor: req.user._id,
+        actualizadoPor: req.user._id
+      });
+
+      await poa.save();
+      return res.status(201).json({ success: true, message: 'POA creado exitosamente', data: poa });
+    }
+
+    // MÓDULOS CON CATEGORÍAS
+    const { categoria, titulo, descripcion, gestion, url, estado, activo, orden } = req.body;
+
+    if (!categoria || !titulo || !gestion) {
+      return res.status(400).json({
+        success: false,
+        message: 'Categoría, título y gestión son requeridos'
+      });
+    }
+
+    const categoriaExiste = await AuditoriaCategoria.findOne({ modulo, key: categoria, activo: true });
+    if (!categoriaExiste) {
+      return res.status(400).json({
+        success: false,
+        message: `La categoría "${categoria}" no existe en el módulo ${modulo}`
+      });
+    }
+
+    const documento = new AuditoriaDocumento({
+      modulo,
+      categoria,
+      titulo,
+      descripcion: descripcion || '',
+      gestion,
+      url: url || null,
+      estado: estado || 'Publicado',
+      activo: activo !== undefined ? activo : true,
+      orden: orden || 0,
+      creadoPor: req.user._id,
+      actualizadoPor: req.user._id
+    });
+
+    await documento.save();
+    res.status(201).json({ success: true, message: 'Documento creado exitosamente', data: documento });
+
+  } catch (error) {
+    console.error(`❌ Error en createDocumento:`, error);
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+// ============================================
+// 🔐 ADMIN - Actualizar documento
+// ============================================
+const updateDocumento = async (req, res) => {
+  try {
+    const { modulo, id } = req.params;
+
+    console.log(`\n✏️ [ADMIN] Actualizando documento: ${id} en ${modulo}`);
+
+    if (!validarModulo(modulo)) {
+      return res.status(400).json({ success: false, message: 'Módulo inválido' });
+    }
+
+    const Model = modulo === 'poa-uai' ? AuditoriaPOA : AuditoriaDocumento;
+    const documento = await Model.findById(id);
+
+    if (!documento) {
+      return res.status(404).json({ success: false, message: 'Documento no encontrado' });
+    }
+
+    const allowedFields = modulo === 'poa-uai'
+      ? ['anio', 'titulo', 'fecha', 'estado', 'activo', 'pdfUrl']
+      : ['categoria', 'titulo', 'descripcion', 'gestion', 'url', 'estado', 'activo', 'orden'];
+
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        documento[field] = req.body[field];
+      }
+    });
+
+    documento.actualizadoPor = req.user._id;
+    await documento.save();
+
+    res.json({ success: true, message: 'Documento actualizado exitosamente', data: documento });
+
+  } catch (error) {
+    console.error(`❌ Error en updateDocumento:`, error);
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+// ============================================
+// 🔐 ADMIN - Eliminar documento
+// ============================================
+const deleteDocumento = async (req, res) => {
+  try {
+    const { modulo, id } = req.params;
+
+    console.log(`\n🗑️ [ADMIN] Eliminando documento: ${id} en ${modulo}`);
+
+    if (!validarModulo(modulo)) {
+      return res.status(400).json({ success: false, message: 'Módulo inválido' });
+    }
+
+    const Model = modulo === 'poa-uai' ? AuditoriaPOA : AuditoriaDocumento;
+    const documento = await Model.findByIdAndDelete(id);
+
+    if (!documento) {
+      return res.status(404).json({ success: false, message: 'Documento no encontrado' });
+    }
+
+    res.json({ success: true, message: 'Documento eliminado exitosamente' });
+
+  } catch (error) {
+    console.error(`❌ Error en deleteDocumento:`, error);
+    res.status(500).json({ success: false, message: 'Error al eliminar documento' });
+  }
+};
+
+// ============================================
+// 🔐 ADMIN - CATEGORÍAS
+// ============================================
+const getCategorias = async (req, res) => {
+  try {
+    const { modulo } = req.params;
+    const { incluirInactivos } = req.query;
+
+    if (!esModuloConCategorias(modulo)) {
+      return res.status(400).json({ success: false, message: 'Módulo no soporta categorías' });
+    }
+
+    const filters = { modulo };
+    if (incluirInactivos !== 'true') filters.activo = true;
+
+    const categorias = await AuditoriaCategoria.find(filters)
+      .sort({ orden: 1 })
+      .lean();
+
+    const categoriasConCount = await Promise.all(
+      categorias.map(async (cat) => {
+        const count = await AuditoriaDocumento.countDocuments({
+          modulo,
+          categoria: cat.key,
+          activo: true
+        });
+        return { ...cat, documentosCount: count };
+      })
+    );
+
+    res.json({ success: true, data: categoriasConCount });
+  } catch (error) {
+    console.error(`❌ Error en getCategorias:`, error);
+    res.status(500).json({ success: false, message: 'Error al obtener categorías' });
+  }
+};
+
+const createCategoria = async (req, res) => {
+  try {
+    const { modulo } = req.params;
+    const { key, nombre, icono, orden } = req.body;
+
+    console.log(`\n➕ [ADMIN] Creando categoría en: ${modulo}`);
+
+    if (!esModuloConCategorias(modulo)) {
+      return res.status(400).json({ success: false, message: 'Módulo no soporta categorías' });
+    }
+
+    if (!key || !nombre) {
+      return res.status(400).json({ success: false, message: 'Key y nombre son requeridos' });
+    }
+
+    const existe = await AuditoriaCategoria.findOne({ modulo, key });
+    if (existe) {
+      return res.status(400).json({ success: false, message: `Ya existe la categoría "${key}" en este módulo` });
+    }
+
+    const categoria = new AuditoriaCategoria({
+      modulo,
+      key,
+      nombre,
+      icono: icono || 'mdi:file-document',
+      orden: orden || 0,
+      creadoPor: req.user._id,
+      actualizadoPor: req.user._id
+    });
+
+    await categoria.save();
+    res.status(201).json({ success: true, message: 'Categoría creada exitosamente', data: categoria });
+
+  } catch (error) {
+    console.error(`❌ Error en createCategoria:`, error);
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+const updateCategoria = async (req, res) => {
+  try {
+    const { modulo, key } = req.params;
+
+    console.log(`\n✏️ [ADMIN] Actualizando categoría: ${key} en ${modulo}`);
+
+    if (!esModuloConCategorias(modulo)) {
+      return res.status(400).json({ success: false, message: 'Módulo no soporta categorías' });
+    }
+
+    const categoria = await AuditoriaCategoria.findOne({ modulo, key });
+    if (!categoria) {
+      return res.status(404).json({ success: false, message: 'Categoría no encontrada' });
+    }
+
+    const allowedFields = ['nombre', 'icono', 'orden', 'activo'];
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        categoria[field] = req.body[field];
+      }
+    });
+
+    categoria.actualizadoPor = req.user._id;
+    await categoria.save();
+
+    res.json({ success: true, message: 'Categoría actualizada', data: categoria });
+
+  } catch (error) {
+    console.error(`❌ Error en updateCategoria:`, error);
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+const deleteCategoria = async (req, res) => {
+  try {
+    const { modulo, key } = req.params;
+
+    console.log(`\n🗑️ [ADMIN] Eliminando categoría: ${key} en ${modulo}`);
+
+    if (!esModuloConCategorias(modulo)) {
+      return res.status(400).json({ success: false, message: 'Módulo no soporta categorías' });
+    }
+
+    const docsCount = await AuditoriaDocumento.countDocuments({
+      modulo,
+      categoria: key,
+      activo: true
+    });
+
+    if (docsCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `No se puede eliminar: ${docsCount} documentos activos usan esta categoría`
+      });
+    }
+
+    const categoria = await AuditoriaCategoria.findOneAndUpdate(
+      { modulo, key },
+      { activo: false, actualizadoPor: req.user._id },
+      { new: true }
+    );
+
+    if (!categoria) {
+      return res.status(404).json({ success: false, message: 'Categoría no encontrada' });
+    }
+
+    res.json({ success: true, message: 'Categoría desactivada exitosamente' });
+
+  } catch (error) {
+    console.error(`❌ Error en deleteCategoria:`, error);
+    res.status(500).json({ success: false, message: 'Error al eliminar categoría' });
+  }
+};
+
+// ============================================
+// 📤 ADMIN - Subir PDF (para cualquier módulo)
+// ============================================
+const uploadPDF = async (req, res) => {
+  try {
+    console.log('\n📄 [ADMIN] Subiendo PDF de auditoría...');
+    console.log(`   👤 Usuario: ${req.user?.email}`);
+    console.log(`   📦 Archivo: ${req.file?.originalname}`);
+    console.log(`   📊 Tamaño: ${req.file ? (req.file.size / 1024 / 1024).toFixed(2) + ' MB' : 'N/A'}`);
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No se subió ningún PDF',
+        code: 'NO_FILE'
+      });
+    }
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const pdfUrl = `${baseUrl}/uploads/documents/${req.file.filename}`;
+
+    console.log(`   ✅ PDF subido: ${pdfUrl}`);
+
+    res.json({
+      success: true,
+      message: 'PDF subido exitosamente',
+      data: {
+        url: pdfUrl,
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        sizeMB: (req.file.size / 1024 / 1024).toFixed(2),
+        mimetype: req.file.mimetype
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error en uploadPDF:', error);
+
+    // Headers CORS manuales
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+    res.status(500).json({
+      success: false,
+      message: 'Error al subir el PDF',
+      code: 'UPLOAD_ERROR'
+    });
+  }
+};
+
+// ============================================
+// 📊 ADMIN - Estadísticas
+// ============================================
+const getStats = async (req, res) => {
+  try {
+    const { modulo } = req.params;
+
+    if (!validarModulo(modulo)) {
+      return res.status(400).json({ success: false, message: 'Módulo inválido' });
+    }
+
+    if (modulo === 'poa-uai') {
+      const [total, activos, publicados, enRevision, borradores] = await Promise.all([
+        AuditoriaPOA.countDocuments(),
+        AuditoriaPOA.countDocuments({ activo: true }),
+        AuditoriaPOA.countDocuments({ estado: 'Publicado' }),
+        AuditoriaPOA.countDocuments({ estado: 'En Revisión' }),
+        AuditoriaPOA.countDocuments({ estado: 'Borrador' })
+      ]);
+      return res.json({ success: true, data: { total, activos, publicados, enRevision, borradores } });
+    }
+
+    const [total, categorias, publicados, enRevision, migrados] = await Promise.all([
+      AuditoriaDocumento.countDocuments({ modulo, activo: true }),
+      AuditoriaCategoria.countDocuments({ modulo, activo: true }),
+      AuditoriaDocumento.countDocuments({ modulo, activo: true, estado: 'Publicado' }),
+      AuditoriaDocumento.countDocuments({ modulo, activo: true, estado: 'En Revisión' }),
+      AuditoriaDocumento.countDocuments({ modulo, activo: true, migrado: true })
+    ]);
+
+    res.json({ success: true, data: { total, categorias, publicados, enRevision, migrados } });
+
+  } catch (error) {
+    console.error(`❌ Error en getStats:`, error);
+    res.status(500).json({ success: false, message: 'Error al obtener estadísticas' });
+  }
+};
+
+// ============================================
+// 🔥 ADMIN - Migrar PDFs externos al backend
+// ============================================
+const migrarPDFs = async (req, res) => {
+  try {
+    console.log('\n🚚 [ADMIN] Iniciando migración de PDFs...');
+
+    const documentos = await AuditoriaDocumento.find({
+      migrado: false,
+      url: { $ne: null }
+    });
+
+    console.log(`   📊 ${documentos.length} documentos pendientes de migrar`);
+
+    const resultados = {
+      total: documentos.length,
+      migrados: 0,
+      fallidos: 0,
+      omitidos: 0,
+      detalles: []
+    };
+
+    const uploadsDir = path.join(__dirname, '..', '..', 'uploads', 'documents');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    for (const doc of documentos) {
+      // Si la URL ya es local, marcarlo como migrado
+      if (doc.url && doc.url.includes('demoback.senado.gob.bo')) {
+        doc.migrado = true;
+        await doc.save();
+        resultados.omitidos++;
+        resultados.detalles.push({ titulo: doc.titulo, status: 'ya_local' });
+        continue;
+      }
+
+      try {
+        // Descargar el PDF desde la URL original
+        const fileName = `auditoria-${doc.modulo}-${doc._id}-${Date.now()}.pdf`;
+        const filePath = path.join(uploadsDir, fileName);
+
+        await downloadFile(doc.url, filePath);
+
+        // Actualizar el documento con la nueva URL
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        doc.urlOriginal = doc.urlOriginal || doc.url;
+        doc.url = `${baseUrl}/uploads/documents/${fileName}`;
+        doc.migrado = true;
+        await doc.save();
+
+        resultados.migrados++;
+        resultados.detalles.push({ titulo: doc.titulo, status: 'migrado' });
+        console.log(`   ✅ Migrado: ${doc.titulo}`);
+      } catch (err) {
+        console.error(`   ❌ Falló: ${doc.titulo} — ${err.message}`);
+        doc.migrado = true; // Marcamos para no reintentar
+        doc.estado = 'En Revisión';
+        await doc.save();
+        resultados.fallidos++;
+        resultados.detalles.push({ titulo: doc.titulo, status: 'fallido', error: err.message });
+      }
+    }
+
+    console.log(`\n   ✅ Migración completada: ${resultados.migrados} OK, ${resultados.fallidos} fallidos, ${resultados.omitidos} omitidos`);
+
+    res.json({
+      success: true,
+      message: 'Migración completada',
+      data: resultados
+    });
+
+  } catch (error) {
+    console.error('❌ Error en migrarPDFs:', error);
+    res.status(500).json({ success: false, message: 'Error en la migración' });
+  }
+};
+
+/**
+ * Helper: Descarga un archivo de una URL a un path local
+ */
+function downloadFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith('https') ? https : http;
+
+    const request = client.get(url, (response) => {
+      // Seguir redirecciones
+      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        return downloadFile(response.headers.location, dest).then(resolve).catch(reject);
+      }
+
+      if (response.statusCode !== 200) {
+        return reject(new Error(`HTTP ${response.statusCode}`));
+      }
+
+      const file = fs.createWriteStream(dest);
+      response.pipe(file);
+
+      file.on('finish', () => {
+        file.close();
+        resolve();
+      });
+
+      file.on('error', (err) => {
+        fs.unlink(dest, () => {});
+        reject(err);
+      });
+    });
+
+    request.on('error', reject);
+    request.setTimeout(30000, () => {
+      request.destroy();
+      reject(new Error('Timeout de descarga'));
+    });
+  });
+}
+
+// ============================================
+// EXPORTAR
+// ============================================
+module.exports = {
+  getDocumentosPublicos,
+  getDocumentosAdmin,
+  getDocumentoById,
+  createDocumento,
+  updateDocumento,
+  deleteDocumento,
+  getCategorias,
+  createCategoria,
+  updateCategoria,
+  deleteCategoria,
+  uploadPDF,
+  getStats,
+  migrarPDFs
+}; 
 ================================= 
 src\controllers\auth.controller.js 
 ================================= 
@@ -2538,11 +3332,13 @@ const uploadImage = async (req, res) => {
   try {
     console.log('\n📸 [ADMIN] Subiendo imagen de comunicado...');
     console.log('   👤 Usuario:', req.user?.email);
+    console.log('   📦 Archivo:', req.file?.originalname);
 
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        message: 'No se subió ninguna imagen'
+        message: 'No se subió ninguna imagen',
+        code: 'NO_FILE'
       });
     }
 
@@ -2564,9 +3360,14 @@ const uploadImage = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error en uploadImage:', error);
+
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+
     res.status(500).json({
       success: false,
-      message: 'Error al subir la imagen'
+      message: 'Error al subir la imagen',
+      code: 'UPLOAD_ERROR'
     });
   }
 };
@@ -2575,11 +3376,14 @@ const uploadPDF = async (req, res) => {
   try {
     console.log('\n📄 [ADMIN] Subiendo PDF de comunicado...');
     console.log('   👤 Usuario:', req.user?.email);
+    console.log('   📦 Archivo:', req.file?.originalname);
+    console.log('   📊 Tamaño:', req.file ? (req.file.size / 1024 / 1024).toFixed(2) + ' MB' : 'N/A');
 
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        message: 'No se subió ningún PDF'
+        message: 'No se subió ningún PDF',
+        code: 'NO_FILE'
       });
     }
 
@@ -2596,14 +3400,20 @@ const uploadPDF = async (req, res) => {
         filename: req.file.filename,
         originalName: req.file.originalname,
         size: req.file.size,
+        sizeMB: (req.file.size / 1024 / 1024).toFixed(2),
         mimetype: req.file.mimetype
       }
     });
   } catch (error) {
     console.error('❌ Error en uploadPDF:', error);
+
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+
     res.status(500).json({
       success: false,
-      message: 'Error al subir el PDF'
+      message: 'Error al subir el PDF',
+      code: 'UPLOAD_ERROR'
     });
   }
 };
@@ -3663,19 +4473,21 @@ class ContentController {
     try {
       console.log(`\n📸 [uploadImage] Subiendo imagen`);
       console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
-      
+      console.log(`   Archivo: ${req.file?.originalname}`);
+
       if (!req.file) {
         return res.status(400).json({
           success: false,
-          message: 'No se subió ninguna imagen'
+          message: 'No se subió ninguna imagen',
+          code: 'NO_FILE'
         });
       }
-      
+
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const imageUrl = `${baseUrl}/uploads/images/${req.file.filename}`;
-      
+
       console.log(`✅ Imagen subida: ${imageUrl}`);
-      
+
       res.json({
         success: true,
         message: 'Imagen subida exitosamente',
@@ -3689,28 +4501,41 @@ class ContentController {
       });
     } catch (error) {
       console.error(`❌ Error subiendo imagen: ${error.message}`);
+
+      res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+
       res.status(500).json({
         success: false,
-        message: 'Error al subir la imagen'
+        message: 'Error al subir la imagen',
+        code: 'UPLOAD_ERROR'
       });
     }
   }
 
   /**
-   * Subir documento
+   * Subir documento (PDF)
    */
   async uploadDocument(req, res) {
     try {
+      console.log(`\n📄 [uploadDocument] Subiendo documento`);
+      console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
+      console.log(`   Archivo: ${req.file?.originalname}`);
+      console.log(`   Tamaño: ${req.file ? (req.file.size / 1024 / 1024).toFixed(2) + ' MB' : 'N/A'}`);
+
       if (!req.file) {
         return res.status(400).json({
           success: false,
-          message: 'No se subió ningún documento'
+          message: 'No se subió ningún documento',
+          code: 'NO_FILE'
         });
       }
-      
+
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const documentUrl = `${baseUrl}/uploads/documents/${req.file.filename}`;
-      
+
+      console.log(`✅ Documento subido: ${documentUrl}`);
+
       res.json({
         success: true,
         message: 'Documento subido exitosamente',
@@ -3719,14 +4544,20 @@ class ContentController {
           filename: req.file.filename,
           originalName: req.file.originalname,
           size: req.file.size,
+          sizeMB: (req.file.size / 1024 / 1024).toFixed(2),
           mimetype: req.file.mimetype
         }
       });
     } catch (error) {
       console.error(`❌ Error subiendo documento: ${error.message}`);
+
+      res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+
       res.status(500).json({
         success: false,
-        message: 'Error al subir el documento'
+        message: 'Error al subir el documento',
+        code: 'UPLOAD_ERROR'
       });
     }
   }
@@ -6431,6 +7262,11 @@ const path = require('path');
 const fs = require('fs');
 
 // ============================================
+// 🔥 LÍMITE GLOBAL DE ARCHIVOS: 350 MB
+// ============================================
+const MAX_FILE_SIZE = 350 * 1024 * 1024; // 350 MB en bytes
+
+// ============================================
 // Crear directorios si no existen
 // ============================================
 const uploadDirs = {
@@ -6492,7 +7328,7 @@ const storage = multer.diskStorage({
 // Filtros de archivo
 // ============================================
 
-// ✅ Filtro mixto (imágenes + PDF) - el que se usa por defecto
+// ✅ Filtro mixto (imágenes + PDF)
 const fileFilter = (req, file, cb) => {
   const allowedTypes = [
     'image/jpeg',
@@ -6535,44 +7371,104 @@ const pdfFilter = (req, file, cb) => {
 // Instancias de multer
 // ============================================
 
-// Upload mixto (imágenes + PDF)
+// Upload mixto (imágenes + PDF) - LÍMITE 350 MB
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
+  limits: {
+    fileSize: MAX_FILE_SIZE,
+    fieldSize: MAX_FILE_SIZE
+  },
+});
+
+// Upload solo imágenes - LÍMITE 50 MB (las imágenes no necesitan más)
+const uploadImage = multer({
+  storage: storage,
+  fileFilter: imageFilter,
   limits: {
     fileSize: 50 * 1024 * 1024,
     fieldSize: 50 * 1024 * 1024
   },
 });
 
-// Upload solo imágenes
-const uploadImage = multer({
-  storage: storage,
-  fileFilter: imageFilter,
-  limits: {
-    fileSize: 10 * 1024 * 1024,
-    fieldSize: 10 * 1024 * 1024
-  },
-});
-
-// Upload solo PDFs
+// 🔥 Upload solo PDFs - LÍMITE 350 MB
 const uploadPDF = multer({
   storage: storage,
   fileFilter: pdfFilter,
   limits: {
-    fileSize: 20 * 1024 * 1024,
-    fieldSize: 20 * 1024 * 1024
+    fileSize: MAX_FILE_SIZE,
+    fieldSize: MAX_FILE_SIZE
   },
 });
+
+// ============================================
+// 🔥 MIDDLEWARE: Manejo de errores de Multer
+// Envuelve a Multer para convertir errores en respuestas JSON con CORS
+// ============================================
+const handleMulterError = (uploadMiddleware) => {
+  return (req, res, next) => {
+    uploadMiddleware(req, res, (err) => {
+      if (!err) return next();
+
+      // Headers CORS manuales por si acaso
+      res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+      if (err instanceof multer.MulterError) {
+        console.error('❌ [MulterError]', err.code, err.message);
+
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(413).json({
+            success: false,
+            message: `El archivo excede el tamaño máximo permitido (${MAX_FILE_SIZE / 1024 / 1024} MB)`,
+            code: 'FILE_TOO_LARGE'
+          });
+        }
+
+        if (err.code === 'LIMIT_FILE_COUNT') {
+          return res.status(400).json({
+            success: false,
+            message: 'Se excedió el número máximo de archivos',
+            code: 'TOO_MANY_FILES'
+          });
+        }
+
+        if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+          return res.status(400).json({
+            success: false,
+            message: `Campo de archivo inesperado: ${err.field}`,
+            code: 'UNEXPECTED_FIELD'
+          });
+        }
+
+        return res.status(400).json({
+          success: false,
+          message: `Error al subir archivo: ${err.message}`,
+          code: err.code
+        });
+      }
+
+      // Error del fileFilter (tipo no permitido)
+      console.error('❌ [FileFilter Error]', err.message);
+      return res.status(400).json({
+        success: false,
+        message: err.message || 'Error al procesar el archivo',
+        code: 'INVALID_FILE_TYPE'
+      });
+    });
+  };
+};
 
 // ============================================
 // Exportar
 // ============================================
 module.exports = {
-  upload,        // mixto (imágenes + PDF)
-  uploadImage,   // solo imágenes
-  uploadPDF,     // solo PDFs
+  upload,
+  uploadImage,
+  uploadPDF,
   uploadDirs,
+  MAX_FILE_SIZE,
+  handleMulterError
 }; 
 ================================= 
 src\middleware\validate.js 
@@ -6600,6 +7496,231 @@ const validate = (req, res, next) => {
 };
 
 module.exports = validate; 
+================================= 
+src\models\AuditoriaCategoria.js 
+================================= 
+ 
+// src/models/AuditoriaCategoria.js
+const mongoose = require('mongoose');
+
+/**
+ * Categorías/tabs de cada módulo de auditoría.
+ * Cada módulo tiene SUS PROPIAS categorías (aisladas por campo `modulo`).
+ */
+const auditoriaCategoriaSchema = new mongoose.Schema({
+  modulo: {
+    type: String,
+    required: true,
+    enum: ['auditorias-ejecutadas', 'informes-actividades', 'otras-actividades'],
+    index: true
+  },
+  key: {
+    type: String,
+    required: true,
+    trim: true,
+    lowercase: true,
+    match: [/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Key inválido. Use solo letras minúsculas, números y guiones']
+  },
+  nombre: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  icono: {
+    type: String,
+    default: 'mdi:file-document',
+    trim: true
+  },
+  orden: {
+    type: Number,
+    default: 0
+  },
+  activo: {
+    type: Boolean,
+    default: true,
+    index: true
+  },
+  creadoPor: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  actualizadoPor: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }
+}, {
+  timestamps: true
+});
+
+// Un mismo `key` no puede repetirse dentro del MISMO módulo
+// pero SÍ puede existir en módulos diferentes
+auditoriaCategoriaSchema.index({ modulo: 1, key: 1 }, { unique: true });
+auditoriaCategoriaSchema.index({ modulo: 1, orden: 1 });
+
+module.exports = mongoose.model('AuditoriaCategoria', auditoriaCategoriaSchema); 
+================================= 
+src\models\AuditoriaDocumento.js 
+================================= 
+ 
+// src/models/AuditoriaDocumento.js
+const mongoose = require('mongoose');
+
+/**
+ * Documentos de auditoría (PDFs) asociados a una categoría de un módulo.
+ */
+const auditoriaDocumentoSchema = new mongoose.Schema({
+  modulo: {
+    type: String,
+    required: true,
+    enum: ['auditorias-ejecutadas', 'informes-actividades', 'otras-actividades'],
+    index: true
+  },
+  categoria: {
+    type: String,
+    required: true,
+    trim: true,
+    lowercase: true,
+    index: true
+    // FK lógica a AuditoriaCategoria.key (dentro del mismo módulo)
+  },
+  titulo: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: [255, 'El título no puede exceder 255 caracteres']
+  },
+  descripcion: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  gestion: {
+    type: Number,
+    required: true,
+    index: true
+  },
+  url: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  estado: {
+    type: String,
+    enum: ['Publicado', 'En Revisión', 'Borrador'],
+    default: 'Publicado'
+  },
+  activo: {
+    type: Boolean,
+    default: true,
+    index: true
+  },
+  orden: {
+    type: Number,
+    default: 0
+  },
+  // 🔥 Marca para saber si el PDF ya fue migrado al backend
+  migrado: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  // 🔥 URL original (para auditoría de migración)
+  urlOriginal: {
+    type: String,
+    default: null
+  },
+  creadoPor: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  actualizadoPor: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }
+}, {
+  timestamps: true
+});
+
+auditoriaDocumentoSchema.index({ modulo: 1, categoria: 1, gestion: -1 });
+auditoriaDocumentoSchema.index({ modulo: 1, activo: 1 });
+
+module.exports = mongoose.model('AuditoriaDocumento', auditoriaDocumentoSchema); 
+================================= 
+src\models\AuditoriaPOA.js 
+================================= 
+ 
+// src/models/AuditoriaPOA.js
+const mongoose = require('mongoose');
+
+/**
+ * POA-UAI: Plan Operativo Anual de la Unidad de Auditoría Interna
+ * Cada POA corresponde a un año y tiene su PDF asociado.
+ */
+const auditoriaPOASchema = new mongoose.Schema({
+  anio: {
+    type: Number,
+    required: [true, 'El año es requerido'],
+    unique: true,
+    index: true,
+    min: [2000, 'El año debe ser mayor a 2000'],
+    max: [2100, 'El año debe ser menor a 2100']
+  },
+  titulo: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: [255, 'El título no puede exceder 255 caracteres']
+  },
+  fecha: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  estado: {
+    type: String,
+    enum: ['Publicado', 'En Revisión', 'Borrador'],
+    default: 'Publicado'
+  },
+  activo: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  pdfUrl: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  creadoPor: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  actualizadoPor: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }
+}, {
+  timestamps: true
+});
+
+/**
+ * Solo un POA puede estar activo a la vez.
+ * Al marcar uno como activo, desmarcamos los demás automáticamente.
+ */
+auditoriaPOASchema.pre('save', async function(next) {
+  if (this.isModified('activo') && this.activo === true) {
+    await this.constructor.updateMany(
+      { _id: { $ne: this._id }, activo: true },
+      { $set: { activo: false } }
+    );
+  }
+  next();
+});
+
+auditoriaPOASchema.index({ anio: -1 });
+auditoriaPOASchema.index({ estado: 1, activo: 1 });
+
+module.exports = mongoose.model('AuditoriaPOA', auditoriaPOASchema); 
 ================================= 
 src\models\Aviso.js 
 ================================= 
@@ -8011,6 +9132,73 @@ userSchema.methods = {
 
 module.exports = mongoose.model('User', userSchema); 
 ================================= 
+src\routes\auditoria.routes.js 
+================================= 
+ 
+// src/routes/auditoria.routes.js
+const express = require('express');
+const router = express.Router();
+const auditoriaController = require('../controllers/auditoria.controller');
+const { authenticate, authorize } = require('../middleware/auth');
+const { uploadPDF: uploadPDFMiddleware } = require('../middleware/upload');
+
+console.log('✅ Cargando rutas de auditoría...');
+
+// ============================================
+// 📡 RUTAS PÚBLICAS
+// ============================================
+router.get('/:modulo', auditoriaController.getDocumentosPublicos);
+
+// ============================================
+// 🔐 RUTAS PROTEGIDAS (ADMIN)
+// ============================================
+router.use(authenticate);
+router.use(authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'));
+
+// -------- MIGRACIÓN DE PDFs (operación especial) --------
+// POST /api/auditoria/migrar-pdfs
+router.post('/migrar-pdfs', auditoriaController.migrarPDFs);
+
+// -------- UPLOADS (deben ir antes de /:id) --------
+// POST /api/auditoria/:modulo/upload-pdf
+router.post(
+  '/:modulo/upload-pdf',
+  uploadPDFMiddleware.single('pdf'),
+  auditoriaController.uploadPDF
+);
+
+// -------- ESTADÍSTICAS --------
+// GET /api/auditoria/:modulo/stats
+router.get('/:modulo/stats', auditoriaController.getStats);
+
+// -------- LISTADO ADMIN --------
+// GET /api/auditoria/:modulo/admin
+router.get('/:modulo/admin', auditoriaController.getDocumentosAdmin);
+
+// -------- CATEGORÍAS (solo módulos con tabs) --------
+// GET    /api/auditoria/:modulo/categorias
+// POST   /api/auditoria/:modulo/categorias
+// PUT    /api/auditoria/:modulo/categorias/:key
+// DELETE /api/auditoria/:modulo/categorias/:key
+router.get('/:modulo/categorias', auditoriaController.getCategorias);
+router.post('/:modulo/categorias', auditoriaController.createCategoria);
+router.put('/:modulo/categorias/:key', auditoriaController.updateCategoria);
+router.delete('/:modulo/categorias/:key', auditoriaController.deleteCategoria);
+
+// -------- CRUD DOCUMENTOS --------
+// GET    /api/auditoria/:modulo/:id
+// POST   /api/auditoria/:modulo
+// PUT    /api/auditoria/:modulo/:id
+// DELETE /api/auditoria/:modulo/:id
+router.get('/:modulo/:id', auditoriaController.getDocumentoById);
+router.post('/:modulo', auditoriaController.createDocumento);
+router.put('/:modulo/:id', auditoriaController.updateDocumento);
+router.delete('/:modulo/:id', auditoriaController.deleteDocumento);
+
+console.log('✅ Rutas de auditoría configuradas correctamente');
+
+module.exports = router; 
+================================= 
 src\routes\auth.routes.js 
 ================================= 
  
@@ -8426,6 +9614,331 @@ router.delete(
 );
 
 module.exports = router; 
+================================= 
+src\scripts\cleanAuditoria.js 
+================================= 
+ 
+// src/scripts/cleanAuditoria.js
+// Borra TODAS las categorías, documentos y PDFs de auditoría
+// Ejecutar: node src/scripts/cleanAuditoria.js
+
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+const fs = require('fs');
+const path = require('path');
+
+dotenv.config();
+
+const AuditoriaCategoria = require('../models/AuditoriaCategoria');
+const AuditoriaDocumento = require('../models/AuditoriaDocumento');
+const AuditoriaPOA = require('../models/AuditoriaPOA');
+
+const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads', 'documents');
+
+async function cleanAuditoria() {
+  console.log('\n' + '═'.repeat(80));
+  console.log('🧹 LIMPIEZA DE DATOS DE AUDITORÍA');
+  console.log('═'.repeat(80) + '\n');
+
+  try {
+    console.log('🔌 Conectando a MongoDB...');
+    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/senado_bolivia');
+    console.log('✅ Conectado\n');
+
+    // ============================================
+    // 1. Borrar categorías
+    // ============================================
+    const categoriasBorradas = await AuditoriaCategoria.deleteMany({});
+    console.log(`🗑️  Categorías borradas: ${categoriasBorradas.deletedCount}`);
+
+    // ============================================
+    // 2. Borrar documentos
+    // ============================================
+    const docsBorrados = await AuditoriaDocumento.deleteMany({});
+    console.log(`🗑️  Documentos borrados: ${docsBorrados.deletedCount}`);
+
+    // ============================================
+    // 3. Borrar POAs
+    // ============================================
+    const poasBorrados = await AuditoriaPOA.deleteMany({});
+    console.log(`🗑️  POAs borrados: ${poasBorrados.deletedCount}`);
+
+    // ============================================
+    // 4. Borrar PDFs físicos
+    // ============================================
+    if (fs.existsSync(UPLOADS_DIR)) {
+      const archivos = fs.readdirSync(UPLOADS_DIR);
+      const pdfsAuditoria = archivos.filter(f => f.startsWith('auditoria-') && f.endsWith('.pdf'));
+
+      console.log(`\n📁 Borrando ${pdfsAuditoria.length} PDFs de auditoría...`);
+
+      let borrados = 0;
+      for (const archivo of pdfsAuditoria) {
+        try {
+          fs.unlinkSync(path.join(UPLOADS_DIR, archivo));
+          borrados++;
+        } catch (err) {
+          console.log(`   ⚠️  No se pudo borrar: ${archivo} — ${err.message}`);
+        }
+      }
+      console.log(`🗑️  PDFs borrados: ${borrados}/${pdfsAuditoria.length}`);
+    } else {
+      console.log('ℹ️  La carpeta uploads/documents no existe (nada que borrar)');
+    }
+
+    // ============================================
+    // 5. Resumen
+    // ============================================
+    console.log('\n' + '═'.repeat(80));
+    console.log('✅ LIMPIEZA COMPLETADA');
+    console.log('═'.repeat(80));
+    console.log(`   Categorías:  ${categoriasBorradas.deletedCount}`);
+    console.log(`   Documentos:  ${docsBorrados.deletedCount}`);
+    console.log(`   POAs:        ${poasBorrados.deletedCount}`);
+    console.log('═'.repeat(80) + '\n');
+
+    await mongoose.disconnect();
+    process.exit(0);
+
+  } catch (error) {
+    console.error('\n❌ ERROR:', error.message);
+    console.error(error.stack);
+    await mongoose.disconnect().catch(() => {});
+    process.exit(1);
+  }
+}
+
+cleanAuditoria(); 
+================================= 
+src\scripts\migrateAuditoriaPDFs.js 
+================================= 
+ 
+// src/scripts/migrateAuditoriaPDFs.js
+// Descarga todos los PDFs externos y los sube al backend
+// Ejecutar: node src/scripts/migrateAuditoriaPDFs.js
+
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+dotenv.config();
+
+const AuditoriaDocumento = require('../models/AuditoriaDocumento');
+
+// ============================================
+// CONFIGURACIÓN
+// ============================================
+const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads', 'documents');
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
+const CONCURRENT_DOWNLOADS = 3;
+
+// ============================================
+// HELPER: Descarga un archivo
+// ============================================
+function downloadFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith('https') ? https : http;
+
+    const request = client.get(url, { timeout: 30000 }, (response) => {
+      // Redirecciones
+      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        return downloadFile(response.headers.location, dest).then(resolve).catch(reject);
+      }
+
+      if (response.statusCode !== 200) {
+        return reject(new Error(`HTTP ${response.statusCode}`));
+      }
+
+      const file = fs.createWriteStream(dest);
+      response.pipe(file);
+
+      file.on('finish', () => {
+        file.close();
+        resolve();
+      });
+
+      file.on('error', (err) => {
+        fs.unlink(dest, () => {});
+        reject(err);
+      });
+    });
+
+    request.on('error', reject);
+    request.on('timeout', () => {
+      request.destroy();
+      reject(new Error('Timeout'));
+    });
+  });
+}
+
+// ============================================
+// GENERAR NOMBRE ÚNICO DE ARCHIVO
+// Usa el _id del documento para garantizar unicidad
+// ============================================
+function generarNombreArchivo(doc) {
+  const slug = (doc.titulo || 'sin-titulo')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ñ/g, 'n')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .substring(0, 40);
+
+  // 🔥 Usar _id garantiza unicidad absoluta
+  return `auditoria-${doc.modulo}-${slug}-${doc._id}.pdf`;
+}
+
+// ============================================
+// MIGRAR UN DOCUMENTO
+// ============================================
+async function migrarDocumento(doc) {
+  // Si ya está local, marcar como migrado
+  if (doc.url && doc.url.includes('/uploads/documents/')) {
+    doc.migrado = true;
+    await doc.save();
+    return { status: 'ya_local', doc };
+  }
+
+  // Validar URL
+  if (!doc.url || !doc.url.startsWith('http')) {
+    doc.migrado = true;
+    await doc.save();
+    throw new Error('URL inválida o vacía');
+  }
+
+  const fileName = generarNombreArchivo(doc);
+  const filePath = path.join(UPLOADS_DIR, fileName);
+
+  try {
+    await downloadFile(doc.url, filePath);
+
+    // Verificar tamaño mínimo
+    const stats = fs.statSync(filePath);
+    if (stats.size < 1024) {
+      fs.unlinkSync(filePath);
+      throw new Error('Archivo muy pequeño (posible error 404)');
+    }
+
+    // Actualizar documento
+    doc.urlOriginal = doc.urlOriginal || doc.url;
+    doc.url = `${BACKEND_URL}/uploads/documents/${fileName}`;
+    doc.migrado = true;
+    await doc.save();
+
+    return { status: 'ok', doc, size: stats.size, fileName };
+  } catch (err) {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    // Marcar como migrado aunque haya fallado
+    doc.migrado = true;
+    doc.estado = 'En Revisión';
+    await doc.save();
+
+    throw err;
+  }
+}
+
+// ============================================
+// SCRIPT PRINCIPAL
+// ============================================
+async function migrateAuditoriaPDFs() {
+  console.log('\n' + '═'.repeat(80));
+  console.log('🚚 MIGRACIÓN DE PDFs DE AUDITORÍA');
+  console.log('═'.repeat(80) + '\n');
+
+  try {
+    console.log('🔌 Conectando a MongoDB...');
+    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/senado_bolivia');
+    console.log('✅ Conectado\n');
+
+    if (!fs.existsSync(UPLOADS_DIR)) {
+      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+      console.log(`📁 Carpeta creada: ${UPLOADS_DIR}\n`);
+    }
+
+    const documentos = await AuditoriaDocumento.find({
+      migrado: false,
+      url: { $ne: null }
+    });
+
+    console.log(`📊 ${documentos.length} documentos pendientes de migrar`);
+    console.log(`⚙️  Descargas concurrentes: ${CONCURRENT_DOWNLOADS}`);
+    console.log(`📍 Backend URL: ${BACKEND_URL}\n`);
+
+    if (documentos.length === 0) {
+      console.log('✅ No hay documentos pendientes de migrar\n');
+      await mongoose.disconnect();
+      process.exit(0);
+    }
+
+    const resultados = { ok: 0, fallidos: 0, omitidos: 0, total: documentos.length };
+    const errores = [];
+
+    for (let i = 0; i < documentos.length; i += CONCURRENT_DOWNLOADS) {
+      const lote = documentos.slice(i, i + CONCURRENT_DOWNLOADS);
+      const promesas = lote.map(doc => migrarDocumento(doc));
+      const resultadosLote = await Promise.allSettled(promesas);
+
+      resultadosLote.forEach((result, idx) => {
+        const doc = lote[idx];
+        const contador = resultados.ok + resultados.fallidos + resultados.omitidos;
+
+        if (result.status === 'fulfilled') {
+          if (result.value.status === 'ya_local') {
+            resultados.omitidos++;
+            console.log(`   ⏭️  [${contador + 1}/${documentos.length}] ${doc.titulo} (ya local)`);
+          } else {
+            resultados.ok++;
+            const sizeMB = (result.value.size / 1024 / 1024).toFixed(2);
+            console.log(`   ✅ [${contador + 1}/${documentos.length}] ${doc.titulo} (${sizeMB} MB)`);
+          }
+        } else {
+          resultados.fallidos++;
+          errores.push({ titulo: doc.titulo, url: doc.urlOriginal || doc.url, error: result.reason.message });
+          console.log(`   ❌ [${contador + 1}/${documentos.length}] ${doc.titulo} — ${result.reason.message}`);
+        }
+      });
+    }
+
+    console.log('\n' + '═'.repeat(80));
+    console.log('📊 RESUMEN DE MIGRACIÓN');
+    console.log('═'.repeat(80));
+    console.log(`   ✅ Migrados:  ${resultados.ok}`);
+    console.log(`   ⏭️  Omitidos:  ${resultados.omitidos}`);
+    console.log(`   ❌ Fallidos:  ${resultados.fallidos}`);
+    console.log(`   📊 Total:     ${resultados.total}`);
+
+    if (errores.length > 0) {
+      console.log('\n❌ ERRORES DETALLADOS:');
+      errores.forEach((e, i) => {
+        console.log(`   ${i + 1}. ${e.titulo}`);
+        console.log(`      URL: ${e.url}`);
+        console.log(`      ${e.error}`);
+      });
+    }
+
+    await mongoose.disconnect();
+    console.log('\n' + '═'.repeat(80));
+    console.log('🎉 MIGRACIÓN COMPLETADA');
+    console.log('═'.repeat(80) + '\n');
+
+    process.exit(0);
+
+  } catch (error) {
+    console.error('\n❌ ERROR GENERAL:', error.message);
+    console.error(error.stack);
+    await mongoose.disconnect().catch(() => {});
+    process.exit(1);
+  }
+}
+
+migrateAuditoriaPDFs(); 
 ================================= 
 src\scripts\seedAll.js 
 ================================= 
@@ -9002,6 +10515,273 @@ async function seedAll() {
 }
 
 seedAll(); 
+================================= 
+src\scripts\seedAuditoria.js 
+================================= 
+ 
+// src/scripts/seedAuditoria.js
+// Ejecutar: node src/scripts/seedAuditoria.js --force
+
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+
+dotenv.config();
+
+const AuditoriaCategoria = require('../models/AuditoriaCategoria');
+const AuditoriaDocumento = require('../models/AuditoriaDocumento');
+const User = require('../models/User');
+
+// ============================================
+// CATEGORÍAS POR MÓDULO
+// ============================================
+const CATEGORIAS_DATA = {
+  'auditorias-ejecutadas': [
+    { key: 'cumplimiento',  nombre: 'Auditoría de Cumplimiento', icono: 'mdi:clipboard-check', orden: 10 },
+    { key: 'operacionales', nombre: 'Auditoría de Operativa',    icono: 'mdi:cog',             orden: 20 },
+    { key: 'confiabilidad', nombre: 'Auditoría de Confiabilidad', icono: 'mdi:shield-check',   orden: 30 }
+  ],
+  'informes-actividades': [
+    { key: 'anuales',     nombre: 'Informes Anuales',      icono: 'mdi:calendar-year',  orden: 10 },
+    { key: 'semestrales', nombre: 'Informes Semestrales',  icono: 'mdi:calendar-split', orden: 20 }
+  ],
+  'otras-actividades': [
+    { key: 'relevamientos', nombre: 'Relevamientos de Información', icono: 'mdi:clipboard-search', orden: 10 },
+    { key: 'seguimientos',  nombre: 'Informes de Seguimientos',     icono: 'mdi:file-check',       orden: 20 }
+  ]
+};
+
+// ============================================
+// DOCUMENTOS POR MÓDULO Y CATEGORÍA
+// ============================================
+const DOCUMENTOS_DATA = {
+  'auditorias-ejecutadas': {
+    cumplimiento: [
+      { titulo: 'UAI/ACU/CI-002/2025', gestion: 2025, descripcion: 'INFORME DE CONTROL INTERNO PRODUCTO DE LA AUDITORIA DE CUMPLIMIENTO AL SISTEMA DE PRESUPUESTOS DE LA CAMARA DE SENADORES - GESTION 2024', url: 'https://apisi.senado.gob.bo/images/a0d5e3d0-afea-4234-b721-73aba2c82986_1768405105.pdf' },
+      { titulo: 'UAI/ACU/CI-001/2025', gestion: 2025, descripcion: 'INFORME DE CONTROL INTERNO PRODUCTO DE LA AUDITORIA DE CUMPLIMIENTO AL PROCEDIMIENTO ESPECÍFICO PARA EL CONTROL Y CONCILIACIÓN DE DATOS LIQUIDADOS EN LAS PLANILLAS SALARIALES Y LOS REGISTROS INDIVIDUALES Y PROCEDIMIENTOS IMPLANTADOS PARA EVITAR LA DOBLE PERCEPCIÓN POR PARTE DEL PERSONAL PERMANENTE Y EVENTUAL DE LA CÁMARA DE SENADORES - GESTIÓN 2024', url: 'https://apisi.senado.gob.bo/images/a0d5cb1f-dd71-4746-aeec-5a3ca20910ff_1768400963.pdf' },
+      { titulo: 'INF-UAI-VC-N° 001-2024', gestion: 2024, descripcion: 'VERIFICACIÓN DEL CUMPLIMIENTO DEL CONTROL Y CONCILIACIÓN DE DATOS LIQUIDADOS', url: 'https://apisi.senado.gob.bo/images/9d5b0d1c-28d8-4a78-a377-36b309db9635_1730143875.pdf' },
+      { titulo: 'INF-UAI-VC-N° 002-2023', gestion: 2023, descripcion: 'REVISIÓN ANUAL DJBR 2022', url: 'https://apisi.senado.gob.bo/images/9d5b0caf-6b89-4b72-8e39-bf10ad13ab71_1730143804.pdf' },
+      { titulo: 'INF-UAI-VC-N° 001-2023', gestion: 2023, descripcion: 'VERIFICACION DEL CUMPLIMIENTO DEL CONTROL Y CONCILIACION DE DATOS LIQUIDADOS', url: 'https://apisi.senado.gob.bo/images/9d5afa5c-ae15-40eb-8a5f-4fa1c4f24771_1730140729.pdf' },
+      { titulo: 'INF-UAI-CI-N° 004-2023', gestion: 2023, descripcion: 'INF. CONTROL INTERNO AUD. CUMP. FONDOS EN AVANCE Y FONDO ROTATIVO GESTIÓN 2022', url: 'https://apisi.senado.gob.bo/images/9d5ab1fe-76ae-48c1-a5f4-86e1b04d6d75_1730128588.pdf' },
+      { titulo: 'INF-UAI-VC-N° 002-2022', gestion: 2022, descripcion: 'REVISIÓN ANUAL DJBR 2021', url: 'https://apisi.senado.gob.bo/images/9d5af795-2ff7-48ff-90a7-657939ad3c62_1730140263.pdf' },
+      { titulo: 'INF-UAI-VC-N° 001-2022', gestion: 2022, descripcion: 'VERIFICACIÓN DEL CUMPLIMIENTO DEL CONTROL Y CONCILIACIÓN DE DATOS LIQUIDADOS', url: 'https://apisi.senado.gob.bo/images/9d5af73e-f59b-46f9-8ebb-42a2700e7817_1730140207.pdf' },
+      { titulo: 'INF-UAI-CV-N° 002-2021', gestion: 2021, descripcion: 'REVISIÓN ANUAL DJBR 2020', url: 'https://apisi.senado.gob.bo/images/9d5abe36-2b2b-48ac-9512-3a482e3d8c84_1730130638.pdf' },
+      { titulo: 'INF-UAI-CV N° 001-2021', gestion: 2021, descripcion: 'VERIFICACIÓN DEL CUMPLIMIENTO DEL CONTROL Y CONCILIACIÓN DE DATOS LIQUIDADOS', url: 'https://apisi.senado.gob.bo/images/9d5abd2f-0c34-40ad-8cc9-ca123b674a75_1730130465.pdf' },
+      { titulo: 'INF-UAI-VC-N° 002-2020', gestion: 2020, descripcion: 'VERIFICACIÓN DEL CUMPLIMIENTO DEL PROCEDIMIENTO ESPECIFICO PARA EL CONTROL Y', url: 'https://apisi.senado.gob.bo/images/9d5abb94-a6cf-4238-ae36-fb185229124f_1730130196.pdf' },
+      { titulo: 'INF-UAI-VC-N° 001-2020', gestion: 2020, descripcion: 'REVISIÓN ANUAL DECLARACIONES JURADAS DE BIENES Y RENTAS GESTIÓN 2019', url: 'https://apisi.senado.gob.bo/images/9d5abaff-0b09-4bbd-b21f-a85e84f25fd8_1730130098.pdf' },
+      { titulo: 'INF-UAI-PREL.-N° 001-2020', gestion: 2020, descripcion: 'INF. PREL. AUDITORIA ESPECIAL AL PROCESO DE CONCENTRACIÓN Y PAGOS EMERGENTES DE', url: 'https://apisi.senado.gob.bo/images/9d5ab19f-8160-413a-bb39-471324eaa14f_1730128526.pdf' },
+      { titulo: 'INF-UAI-VC-N° 002-2019', gestion: 2019, descripcion: 'REVISIÓN ANUAL-DECLARACIONES JURADAS DE BIENES Y RENTAS, GESTION 2018', url: 'https://apisi.senado.gob.bo/images/9d5ab7c9-9bfc-4b8f-af41-a503ecfbb977_1730129560.pdf' },
+      { titulo: 'INF-UAI-VC-N° 001-2019', gestion: 2019, descripcion: 'VERIFICACIÓN DEL CUMPLIMIENTO DEL CONTROL Y CONCILIACIÓN DE DATOS LIQUIDADOS', url: 'https://apisi.senado.gob.bo/images/9d5ab598-7fc1-42ae-8abc-45ea967c832a_1730129192.pdf' },
+      { titulo: 'INF-UAI-PREL.-N° 001-2019', gestion: 2019, descripcion: 'INF. PREL. AUDITORIA ESPECIAL PAGO POR DEMANDA DE REINCORPORACIÓN', url: 'https://apisi.senado.gob.bo/images/9d5ab0c6-1230-4c0a-a856-3db5fd93044d_1730128383.pdf' },
+      { titulo: 'INF-UAI-COM-N° 001-2019', gestion: 2019, descripcion: 'INF. COMPLEMENTARIO AUDITORIA ESPECIAL IMPUESTOS RC-IVA 1994', url: 'https://apisi.senado.gob.bo/images/9d5ab131-f369-4fb8-b3c7-f4fb33b9af3e_1730128454.pdf' },
+      { titulo: 'INF-UAI-AE-N° 001-2018', gestion: 2018, descripcion: 'AUDITORIA ESPECIAL SOBRE EL CUMPLIMIENTO DE DATOS LIQUIDADOS DE PLANILLAS SALA', url: 'https://apisi.senado.gob.bo/images/9d5ab051-6c6d-4a4c-a9dd-7a40648584c4_1730128307.pdf' },
+      { titulo: 'INF-UAI-CI-N° 003-2016', gestion: 2016, descripcion: 'AUDITORIA ESPECIAL PROCEDIMIENTO DJBR 2015', url: 'https://apisi.senado.gob.bo/images/9d5aafdf-be99-4667-8272-c6dd1414d57a_1730128232.pdf' },
+      { titulo: 'INF-UAI-CI-N° 005-2015', gestion: 2015, descripcion: 'AUDITORIA ESPECIAL PROCEDIMIENTO DJBR 2014', url: 'https://apisi.senado.gob.bo/images/9d5aaf85-bfb9-4a95-8cdd-0c70f49e66c8_1730128173.pdf' }
+    ],
+    operacionales: [
+      { titulo: 'INF-UAI-SY-N° 002-2016', gestion: 2017, descripcion: 'EVALUACIÓN DEL SISTEMA DE PROGRAMACIÓN DE OPERACIÓN 2015', url: 'https://apisi.senado.gob.bo/images/9d5b0e7b-237d-4a6e-858a-50fd8a7c907a_1730144105.pdf' },
+      { titulo: 'INF-UAI-SY-N° 001-2016', gestion: 2017, descripcion: 'EVALUACIÓN DEL SISTEMA DE PRESUPUESTOS 2015, 2016', url: 'https://apisi.senado.gob.bo/images/9d5b0dfd-cb33-4c3e-9917-a2c9d33cb3ad_1730144023.pdf' },
+      { titulo: 'INF-UAI-SY-N° 001-2015', gestion: 2015, descripcion: 'EVALUACIÓN DEL SISTEMA DE PROGRAMACIÓN DE OPERACINES 2014, FORMULACIÓN DEL', url: 'https://apisi.senado.gob.bo/images/9d5b0d9b-9ece-4210-ac38-574cbfe51ca6_1730143958.pdf' },
+      { titulo: 'INF-UAI-P-N° 002-2023', gestion: 2023, descripcion: 'PRONUNCIAMENTO SOBRE LA AUD. OP. SOBRE LA EFICACIA DE LAS ACTIVIDADES DE LA UNI.', url: 'https://apisi.senado.gob.bo/images/9d7acf94-c14d-4ca1-948d-153eb2090bbf_1731507942.pdf' },
+      { titulo: 'INF-UAI-OP-N° 001-2016', gestion: 2016, descripcion: 'AUDITORIA OPERATIVA AL PROCESO DE ASESORAMIENTO EN LOS PROCESOS DE COMPRAS Y', url: 'https://apisi.senado.gob.bo/images/9d5ab2fb-415b-44f5-825e-dc987bcf6976_1730128754.pdf' },
+      { titulo: 'INF-UAI-OP-N° 001-2015', gestion: 2016, descripcion: 'AUDITORIA OPERATIVA A LA UNIDAD DE ANÁLISIS LEGISLATIVO 2014', url: 'https://apisi.senado.gob.bo/images/9d5ab2a7-d81e-48f4-9f37-6b15103eb007_1730128699.pdf' },
+      { titulo: 'INF-UAI-CI-N° 003/2023', gestion: 2023, descripcion: 'INF. CONTROL INTERNO AUD. OP. SOBRE LA EFICACIA DE LAS ACTIVIDADES DE LA UNI', url: 'https://apisi.senado.gob.bo/images/9d7ad34c-cb88-4a57-a202-ea4d1235def4_1731508565.pdf' }
+    ],
+    confiabilidad: [
+      { titulo: 'UAI/CI/01/2026', gestion: 2026, descripcion: 'INFORME DE CONFIABILIDAD DE LOS REGISTROS DE LA CÁMARA DE SENADORES Y DEFICIENCIAS DE CONTROL INTERNO EMERGENTES DE SU EVALUACIÓN CORRESPONDIENTES A LA GESTIÓN 2025', url: 'https://apisi.senado.gob.bo/images/a0da7af6-18f9-436f-8982-020318f3aac5_1768602262.pdf' },
+      { titulo: 'INF-UAI-P-N°002-2025', gestion: 2025, descripcion: 'INFORME DE CONFIABILIDAD DE LOS ESTADOS FINANCIEROS Y LAS DEFICIENCIAS DE CONTROL INTERNO DE LA ASAMBLEA LEGISLATIVA PLURINACIONAL DE BOLIVIA, GESTION 2024', url: 'https://apisi.senado.gob.bo/images/a03b88eb-ecac-42b9-a5b3-32ae7246a441_1761775606.pdf' },
+      { titulo: 'INF-UAI-P-N°001-2025', gestion: 2025, descripcion: 'PRONUNCIAMIENTO SOBRE LA CONFIABILIDAD, GESTIÓN 2024', url: 'https://apisi.senado.gob.bo/images/9e847cc1-8414-4586-bd7c-8ff1e6e4c9e4_1742918659.pdf' },
+      { titulo: 'INF-UAI-CI-N°002-2025', gestion: 2025, descripcion: 'INFORME DE CONFIABILIDAD DE ESTADOS FINANCIEROS 2024', url: 'https://apisi.senado.gob.bo/images/9e662b8a-f1f6-46b7-b8b3-b4101ba89da6_1741616543.pdf' },
+      { titulo: 'INF-UAI-CI-N°001-2025', gestion: 2025, descripcion: 'INFORME DE CONFIABILIDAD DE REGISTROS 2024', url: 'https://apisi.senado.gob.bo/images/9ecb78b9-1434-4fa5-95e2-06ee6e44e504_1745967409.pdf' },
+      { titulo: 'INF-UAI-CI-N° 002-2024', gestion: 2024, descripcion: 'EXAMEN DE CONFIABILIDAD 2023', url: 'https://apisi.senado.gob.bo/images/9d347046-25e2-4b64-9733-21ceb896f36c_1728485475.pdf' },
+      { titulo: 'INF-UAI-P-N° 001-2023', gestion: 2023, descripcion: 'PRONUNCIAMIENTO DEL EXAMEN DE CONFIABILIDAD 2022', url: 'https://apisi.senado.gob.bo/images/9d34945e-d84e-4f70-ac74-24f92de83766_1728491531.pdf' },
+      { titulo: 'INF-UAI-CI-N° 002-2023', gestion: 2023, descripcion: 'EXAMEN DE CONFIABILIDAD 2022', url: 'https://apisi.senado.gob.bo/images/9d34943f-9c24-4624-8f44-60a3f387a140_1728491510.pdf' },
+      { titulo: 'INF-UAI-OP-N° 001-2022', gestion: 2022, descripcion: 'OPINIÓN CONFIA 2021', url: 'https://apisi.senado.gob.bo/images/9d3493d8-a76e-4f6d-ba3f-f9cd4bac3bb7_1728491443.pdf' },
+      { titulo: 'INF-UAI-CI-N° 001-2022', gestion: 2022, descripcion: 'EXAMEN DE CONFIABILIDAD 2021', url: 'https://apisi.senado.gob.bo/images/9d3493ff-4647-45b8-a001-e94d39d1761e_1728491468.pdf' },
+      { titulo: 'INF-UAI-OP-N° 002-2021', gestion: 2021, descripcion: 'OPINIÓN CONFIA 2020-2019 (CONSOLIDADO)', url: 'https://apisi.senado.gob.bo/images/9d3493b2-ca1b-4f69-80ab-5202e6ba2d57_1728491418.pdf' },
+      { titulo: 'INF-UAI-OP-N° 001-2021', gestion: 2021, descripcion: 'OPINIÓN CONFIA 2020-2019', url: 'https://apisi.senado.gob.bo/images/9d349374-40e3-4ff5-907a-0696fced4828_1728491377.pdf' },
+      { titulo: 'INF-UAI-CI-N° 001-2021', gestion: 2021, descripcion: 'EXAMEN DE CONFIABILIDAD 2020', url: 'https://apisi.senado.gob.bo/images/9d3492ff-2144-46e0-a924-27e0877b3d8e_1728491300.pdf' },
+      { titulo: 'INF-UAI-OP-N° 001-2020', gestion: 2020, descripcion: 'OPINIÓN CONFIA 2019-2018', url: 'https://apisi.senado.gob.bo/images/9d3492cd-cfe7-4a89-b006-ad8ee4c8f27f_1728491268.pdf' },
+      { titulo: 'INF-UAI-CI-N° 001-2020', gestion: 2020, descripcion: 'INF.CONTROL INTERNO DEL EXAMEN DE CONF, EJECUCIÓN PRESUPUESTARIA DE RECURSOS', url: 'https://apisi.senado.gob.bo/images/9d3492a6-c620-4f27-a213-cf6475d69b40_1728491242.pdf' },
+      { titulo: 'INF-UAI-CI-N° 001-2019', gestion: 2019, descripcion: 'EXAMEN DE CONFIABILIDAD-REGISTRO DE EJECUCIÓN PRESUPUESTARIA DE RECURSOS, GAST', url: 'https://apisi.senado.gob.bo/images/9d34927f-9589-4391-9c10-37213309f15b_1728491216.pdf' },
+      { titulo: 'INF-UAI-CI-N° 001-2018', gestion: 2018, descripcion: 'INF. EXAMEN DE CONFIABILIDAD 2017', url: 'https://apisi.senado.gob.bo/images/9d34920b-bed4-4006-8554-386d00c5ece0_1728491141.pdf' },
+      { titulo: 'INF-UAI-CI-N° 001-2017', gestion: 2017, descripcion: 'INF. CONTROL INTERNO DEL EXAMEN DE CONF. EJECUCIÓN PRESUPUESTARIO DE RECURSOS', url: 'https://apisi.senado.gob.bo/images/9d34918d-07f6-4ecd-b72c-aeff8b9a4057_1728491057.pdf' },
+      { titulo: 'INF-UAI-CI-N° 001-2016', gestion: 2016, descripcion: 'INF. CONTROL INTERNO DEL EXAMEN DE CONF. EJECUCIÓN PRESUPUESTARIO DE RECURSOS', url: 'https://apisi.senado.gob.bo/images/9d349131-6c6a-466f-b338-5059c2c03dd3_1728490997.pdf' },
+      { titulo: 'UAI-INF-O-01-2016', gestion: 2016, descripcion: 'OPINIÓN CONFIA 2015-2014', url: 'https://apisi.senado.gob.bo/images/9d349161-cb39-4c53-bbba-d64415e4de49_1728491029.pdf' },
+      { titulo: 'UAI-N° 02-2015', gestion: 2015, descripcion: 'INF. AUDITOR INTERNO, EXAMEN DE CONFIABILIDAD DE LOS ESTADOS FINANCIEROS 2014', url: 'https://apisi.senado.gob.bo/images/9d3490b1-4bc5-411f-8a8b-830fc81be9cd_1728490913.pdf' },
+      { titulo: 'INF-UAI-CI-N° 003-2015', gestion: 2015, descripcion: 'INF. CONTROL INTERNO, REGISTROS DE EJECUCIÓN PRESUPUESTARIA DE RECURSOS, GASTOS', url: 'https://apisi.senado.gob.bo/images/9d3490db-7860-4bc7-b8a2-83ed043f3326_1728490941.pdf' },
+      { titulo: 'UAI-N° 003-2014', gestion: 2014, descripcion: 'EXAMEN DE CONFIABILIDAD DE LOS ESTADOS FINANCIEROS 2013', url: 'https://apisi.senado.gob.bo/images/9d349005-e0ad-457f-bc99-9f8563b6f728_1728490801.pdf' }
+    ]
+  },
+  'informes-actividades': {
+    anuales: [
+      // Agregar aquí los informes anuales si los tienes
+    ],
+    semestrales: [
+      // Agregar aquí los informes semestrales si los tienes
+    ]
+  },
+  'otras-actividades': {
+    relevamientos: [
+      { titulo: 'INF-UAI-REL-N°001-2025', gestion: 2025, descripcion: 'RELEVAMIENTO DE INFORMACIÓN ESPECIFICA – ADMINISTRACIÓN Y REPOSICIÓN DE ACTIVOS FIJOS', url: 'https://apisi.senado.gob.bo/images/a01d7987-0118-4533-878a-911a49e059fd_1760484533.pdf' },
+      { titulo: 'INF-UAI-REL.-N°002-2024', gestion: 2024, descripcion: 'RELEVAMIENTO DE INFORMACION AL SERVICIO DE SEGURIDAD FISICA ESTATAL, GESTION 2023', url: 'https://apisi.senado.gob.bo/images/9dfc2285-f565-4475-8812-e326d653cf05_1737062365.pdf' },
+      { titulo: 'INF-UAI-REL.-N° 001-2024', gestion: 2024, descripcion: 'RELEVAMIENTO DE INFORMACIÓN AL SERVICIO DE FOTOCOPIAS, GESTIÓN 2023', url: 'https://apisi.senado.gob.bo/images/9dfb8dec-2166-4196-b2e7-a056ee8306f7_1737037434.pdf' }
+    ],
+    seguimientos: [
+      { titulo: 'INF/UAI/SCI/N°006/2026', gestion: 2026, descripcion: 'SEGUNDO SEGUIMIENTO AL INFORME DE CONFIABILIDAD DE ESTADOS FINANCIEROS Y DEFICIENCIAS DE CONTROL INTERNO DE LA CÁMARA DE SENADORES, GESTIÓN 2023', url: 'https://apisi.senado.gob.bo/images/a253fd6e-f2f0-43be-89b7-63bafe2a5a23_1784816178.pdf' },
+      { titulo: 'INF/UAI/SCI/N°005/2026', gestion: 2026, descripcion: 'PRIMER SEGUIMIENTO AL INFORME DE CONFIABILIDAD DE LOS ESTADOS FINANCIEROS Y LAS DEFICIENCIAS DE CONTROL INTERNO DE LA CÁMARA DE SENADORES, GESTIÓN 2024', url: 'https://apisi.senado.gob.bo/images/a253fb9f-c3aa-4a30-8576-9d289add9a0f_1784815875.pdf' },
+      { titulo: 'INF/UAI/SCI/N°004/2026', gestion: 2026, descripcion: 'SEGUNDO SEGUIMIENTO AL INFORME DE CONTROL INTERNO DE LA AUDITORIA OPERACIONAL SOBRE LA EFICACIA DE LAS ACTIVIDADES PROGRAMADAS QUE EJECUTO LA UNIDAD DE EVALUACIÓN, DESARROLLO Y CAPACITACIÓN DEL PERSONAL DE LA CÁMARA DE SENADORES, GESTIÓN 2022', url: 'https://apisi.senado.gob.bo/images/a253fa4c-9669-4019-82f7-0c8682780024_1784815653.pdf' },
+      { titulo: 'INF/UAI/SCI/N°003/2026', gestion: 2026, descripcion: 'SEGUNDO SEGUIMIENTO AL INFORME DE CONTROL INTERNO RESULTADO DE LA AUDITORIA DE CUMPLIMIENTO A LOS GASTOS EJECUTADOS CON FONDOS EN AVANCE Y FONDO ROTATIVO DE LA CAMARA DE SENADORES, GESTION 2022', url: 'https://apisi.senado.gob.bo/images/a253f910-b994-4de7-813c-31a34cf54dfe_1784815446.pdf' },
+      { titulo: 'INF/UAI/SCI/N°002/2026', gestion: 2026, descripcion: 'SEGUNDO SEGUIMIENTO AL INFORME DE CONFIABILIDAD DE REGISTROS Y DEFICIENCIAS DE CONTROL INTERNO DE LA CAMARA DE SENADORES, GESTION 2023', url: 'https://apisi.senado.gob.bo/images/a253f754-b5ff-457c-8683-ec588ca99c1e_1784815155.pdf' },
+      { titulo: 'INF/UAI/SCI/N°001/2026', gestion: 2026, descripcion: 'PRIMER SEGUIMIENTO AL INFORME DE CONFIABILIDAD DE REGISTROS Y DEFICIENCIAS DE CONTROL INTERNO DE LA CAMARA DE SENADORES, GESTION 2024', url: 'https://apisi.senado.gob.bo/images/a253f630-5f57-493d-b332-39ed086f6383_1784814963.pdf' },
+      { titulo: 'POA 2026 (REFORMULADO)', gestion: 2026, descripcion: 'PLAN OPERATIVO ANUAL (POA 2026 - REFORMULADO)', url: 'https://apisi.senado.gob.bo/images/a2540509-cabb-492b-b139-2aab331738a8_1784817454.pdf' },
+      { titulo: 'INF-UAI-SCI-N°007-2025', gestion: 2025, descripcion: 'SEGUNDO SEGUIMIENTO AL INFORME DE CONFIABILIDAD DE LOS ESTADOS FINANCIEROS Y LAS DEFICIENCIAS DE CONTROL INTERNO DE LA CÁMARA DE SENADORES, GESTIÓN 2022', url: 'https://apisi.senado.gob.bo/images/a03b868a-b47b-45b3-9513-1d8aeec2971d_1761775207.pdf' },
+      { titulo: 'INF-UAI-SCI-N°006-2025', gestion: 2025, descripcion: 'SEGUNDO SEGUIMIENTO AL INFORME DE REVISIÓN ANUAL AL CUMPLIMIENTO DEL PROCEDIMIENTO PARA EL CONTROL OPORTUNO DE LAS DECLARACIONES JURADAS DE BIENES Y RENTAS DE LA CÁMARA DE SENADORES, GESTIÓN 2022', url: 'https://apisi.senado.gob.bo/images/a02b7552-fafc-4be9-a7bc-e5a2bb9d3a2c_1761085124.pdf' },
+      { titulo: 'INF-UAI-SCI-N°005-2025', gestion: 2025, descripcion: 'PRIMER SEGUIMIENTO AL INFORME DE CONTROL INTERNO DE LA AUDITORÍA OPERACIONAL SOBRE LA EFICACIA DE LAS ACTIVIDADES PROGRAMADAS QUE EJECUTO LA UNIDAD DE EVALUACIÓN, DESARROLLO Y CAPACITACIÓN DEL PERSONAL DE LA CÁMARA DE SENADORES, GESTIÓN 2022', url: 'https://apisi.senado.gob.bo/images/9fe4e65a-401f-4358-9d8c-616e0e75a1cd_1758054660.pdf' },
+      { titulo: 'UAI-NRO225/2025', gestion: 2025, descripcion: '1er Seguimiento al Informe de Confiabilidad de los Estados Financieros y las Deficiencias de Control Interno de la CS, 2023', url: 'https://apisi.senado.gob.bo/images/9f59bff2-014c-421c-b7c5-3b0d79e551a3_1752078212.pdf' },
+      { titulo: 'POA 2026', gestion: 2025, descripcion: 'PLAN OPERATIVO ANUAL - GESTION 2026', url: 'https://apisi.senado.gob.bo/images/a0dff120-d778-4550-9276-31221fbec2df_1768836836.pdf' },
+      { titulo: 'INF-UAI-SCI-N°004-2024', gestion: 2024, descripcion: 'PRIMER SEGUIMIENTO A DECLARACIONES JURADAS DE BIENES Y RENTAS , GESTION 2022', url: 'https://apisi.senado.gob.bo/images/9ecb6d3a-458c-464a-8c53-059b0eff8b52_1745965480.pdf' },
+      { titulo: 'UAI-NRO224/2025', gestion: 2023, descripcion: '1er Seguimiento al Informe de Confiabilidad de los Registros y Deficiencia de control interno Camara Senadores 2023', url: 'https://apisi.senado.gob.bo/images/9f59be72-6329-4d56-ad08-e995f3440b99_1752077960.pdf' },
+      { titulo: 'UAI-NRO226/2025', gestion: 2022, descripcion: '2do Seguimiento al Informe de Confiabilidad de los Registros y Deficiencia de control interno Camara Senadores 2022', url: 'https://apisi.senado.gob.bo/images/9f59c29c-486a-4642-8f05-69ab3f784345_1752078659.pdf' },
+      { titulo: 'UAI-NRO226/2025', gestion: 2022, descripcion: '1er Seguimiento al Informe de Control interno cumplimiento de gastos ejecutados con fondos en avance y fondo rotativo de la Camara Senadores 2022', url: 'https://apisi.senado.gob.bo/images/9f59c666-e38d-4337-be56-123c584ce031_1752079295.pdf' },
+      { titulo: 'UAI-N° 008-2014', gestion: 2014, descripcion: 'PRIMER SEGUIMIENTO A LA IMPLANTACIÓN, INF. UAI-N° 002-2012 2011 Y 30 DE JUNIO DE', url: 'https://apisi.senado.gob.bo/images/9d5c90ed-034a-4350-8d53-5c5e2c75c3b1_1730208940.pdf' }
+    ]
+  }
+};
+
+// ============================================
+// SCRIPT PRINCIPAL
+// ============================================
+async function seedAuditoria() {
+  console.log('\n' + '═'.repeat(80));
+  console.log('📋 SEED DE AUDITORÍA');
+  console.log('   Cargando categorías y documentos con URLs originales');
+  console.log('═'.repeat(80) + '\n');
+
+  try {
+    console.log('🔌 Conectando a MongoDB...');
+    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/senado_bolivia');
+    console.log('✅ Conectado a MongoDB\n');
+
+    // Buscar admin
+    let adminUser = await User.findOne({ role: 'SUPER_ADMIN' });
+    if (!adminUser) adminUser = await User.findOne({ role: 'ADMIN' });
+    if (!adminUser) adminUser = await User.findOne({});
+
+    if (!adminUser) {
+      console.error('❌ No se encontró usuario. Ejecuta: node src/check-admin.js');
+      process.exit(1);
+    }
+
+    console.log(`👤 Usuario asignado: ${adminUser.email}\n`);
+
+    const force = process.argv.includes('--force');
+
+    // Limpiar si se pide force
+    const existingCats = await AuditoriaCategoria.countDocuments();
+    const existingDocs = await AuditoriaDocumento.countDocuments();
+
+    if (existingCats > 0 || existingDocs > 0) {
+      if (!force) {
+        console.log(`⚠️ Ya existen ${existingCats} categorías y ${existingDocs} documentos.`);
+        console.log('   Usa --force para sobrescribir.');
+        await mongoose.disconnect();
+        process.exit(0);
+      }
+      console.log('🗑️ Limpiando colecciones...');
+      await AuditoriaCategoria.deleteMany({});
+      await AuditoriaDocumento.deleteMany({});
+      console.log('✅ Limpiado\n');
+    }
+
+    // ============================================
+    // Insertar categorías
+    // ============================================
+    console.log('📝 Insertando categorías...\n');
+
+    let totalCategorias = 0;
+    for (const [modulo, categorias] of Object.entries(CATEGORIAS_DATA)) {
+      for (const cat of categorias) {
+        await AuditoriaCategoria.create({
+          modulo,
+          ...cat,
+          creadoPor: adminUser._id,
+          actualizadoPor: adminUser._id
+        });
+        totalCategorias++;
+        console.log(`   ✅ [${modulo}] ${cat.key} → ${cat.nombre}`);
+      }
+    }
+
+    console.log(`\n✅ ${totalCategorias} categorías insertadas\n`);
+
+    // ============================================
+    // Insertar documentos
+    // ============================================
+    console.log('📝 Insertando documentos...\n');
+
+    let totalDocs = 0;
+    for (const [modulo, categorias] of Object.entries(DOCUMENTOS_DATA)) {
+      for (const [categoria, documentos] of Object.entries(categorias)) {
+        for (let i = 0; i < documentos.length; i++) {
+          const doc = documentos[i];
+          await AuditoriaDocumento.create({
+            modulo,
+            categoria,
+            titulo: doc.titulo,
+            descripcion: doc.descripcion,
+            gestion: doc.gestion,
+            url: doc.url,
+            urlOriginal: doc.url, // Guardar URL original
+            estado: 'Publicado',
+            activo: true,
+            orden: i,
+            migrado: false, // Pendiente de migrar
+            creadoPor: adminUser._id,
+            actualizadoPor: adminUser._id
+          });
+          totalDocs++;
+        }
+        console.log(`   ✅ [${modulo}/${categoria}] ${documentos.length} documentos`);
+      }
+    }
+
+    console.log(`\n✅ ${totalDocs} documentos insertados\n`);
+
+    // ============================================
+    // Resumen
+    // ============================================
+    console.log('═'.repeat(80));
+    console.log('📊 RESUMEN');
+    console.log('═'.repeat(80));
+
+    for (const modulo of Object.keys(CATEGORIAS_DATA)) {
+      const catsCount = await AuditoriaCategoria.countDocuments({ modulo });
+      const docsCount = await AuditoriaDocumento.countDocuments({ modulo });
+      console.log(`   ${modulo}: ${catsCount} categorías, ${docsCount} documentos`);
+    }
+
+    console.log('\n💡 SIGUIENTE PASO:');
+    console.log('   Los documentos tienen las URLs originales de apisi.senado.gob.bo');
+    console.log('   Para migrar los PDFs al backend, ejecuta:');
+    console.log('   POST /api/auditoria/migrar-pdfs (desde el CMS o Postman con token admin)');
+    console.log('   O ejecuta el script: node src/scripts/migrateAuditoriaPDFs.js\n');
+
+    await mongoose.disconnect();
+    console.log('═'.repeat(80));
+    console.log('🎉 SEED COMPLETADO');
+    console.log('═'.repeat(80) + '\n');
+
+    process.exit(0);
+
+  } catch (error) {
+    console.error('\n❌ ERROR:', error.message);
+    console.error(error.stack);
+    await mongoose.disconnect().catch(() => {});
+    process.exit(1);
+  }
+}
+
+seedAuditoria(); 
 ================================= 
 src\scripts\seedComisiones.js 
 ================================= 
@@ -9629,6 +11409,124 @@ async function seedContent() {
 }
 
 seedContent(); 
+================================= 
+src\scripts\seedPOA.js 
+================================= 
+ 
+// src/scripts/seedPOA.js
+// Carga los POAs existentes en la base de datos
+// Ejecutar: node src/scripts/seedPOA.js
+
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+
+dotenv.config();
+
+const AuditoriaPOA = require('../models/AuditoriaPOA');
+const User = require('../models/User');
+
+// ============================================
+// 🔥 DATA DE POAs
+// Agrega aquí los POAs que ya existen
+// ============================================
+const POAS_DATA = [
+  // Ejemplo:
+  // {
+  //   anio: 2026,
+  //   titulo: 'Plan Operativo Anual - UAI 2026',
+  //   fecha: '15/01/2026',
+  //   estado: 'Publicado',
+  //   activo: true,
+  //   pdfUrl: '/uploads/documents/poa-2026.pdf'
+  // },
+  // {
+  //   anio: 2025,
+  //   titulo: 'Plan Operativo Anual - UAI 2025',
+  //   fecha: '10/01/2025',
+  //   estado: 'Publicado',
+  //   activo: false,
+  //   pdfUrl: '/uploads/documents/poa-2025.pdf'
+  // }
+];
+
+// ============================================
+// SCRIPT PRINCIPAL
+// ============================================
+async function seedPOA() {
+  console.log('\n' + '═'.repeat(80));
+  console.log('📋 SEED DE POA - UAI');
+  console.log('═'.repeat(80) + '\n');
+
+  try {
+    console.log('🔌 Conectando a MongoDB...');
+    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/senado_bolivia');
+    console.log('✅ Conectado a MongoDB\n');
+
+    // Buscar un usuario admin para asignar como creador
+    let adminUser = await User.findOne({ role: 'SUPER_ADMIN' });
+    if (!adminUser) adminUser = await User.findOne({ role: 'ADMIN' });
+    if (!adminUser) adminUser = await User.findOne({});
+
+    if (!adminUser) {
+      console.error('❌ No se encontró ningún usuario. Ejecuta primero: node src/check-admin.js');
+      process.exit(1);
+    }
+
+    console.log(`👤 Usuario asignado: ${adminUser.email}\n`);
+
+    if (POAS_DATA.length === 0) {
+      console.log('ℹ️  No hay POAs en POAS_DATA. Agrega datos al array y vuelve a ejecutar.');
+      console.log('   O usa el CMS para crear los POAs manualmente.');
+      await mongoose.disconnect();
+      process.exit(0);
+    }
+
+    const force = process.argv.includes('--force');
+
+    const existingCount = await AuditoriaPOA.countDocuments();
+    if (existingCount > 0) {
+      if (!force) {
+        console.log(`⚠️ Ya existen ${existingCount} POAs.`);
+        console.log('   Usa --force para sobrescribir: node src/scripts/seedPOA.js --force');
+        await mongoose.disconnect();
+        process.exit(0);
+      }
+      console.log('🗑️ Eliminando POAs existentes...');
+      await AuditoriaPOA.deleteMany({});
+      console.log('✅ Eliminados\n');
+    }
+
+    console.log(`📝 Insertando ${POAS_DATA.length} POAs...\n`);
+
+    for (const poaData of POAS_DATA) {
+      const poa = new AuditoriaPOA({
+        ...poaData,
+        creadoPor: adminUser._id,
+        actualizadoPor: adminUser._id
+      });
+      await poa.save();
+      console.log(`   ✅ POA ${poa.anio} creado`);
+    }
+
+    const total = await AuditoriaPOA.countDocuments();
+    console.log(`\n✅ ${total} POAs insertados exitosamente`);
+
+    await mongoose.disconnect();
+    console.log('\n' + '═'.repeat(80));
+    console.log('🎉 SEED COMPLETADO');
+    console.log('═'.repeat(80) + '\n');
+
+    process.exit(0);
+
+  } catch (error) {
+    console.error('\n❌ ERROR:', error.message);
+    console.error(error.stack);
+    await mongoose.disconnect().catch(() => {});
+    process.exit(1);
+  }
+}
+
+seedPOA(); 
 ================================= 
 src\scripts\seedSenadores.js 
 ================================= 
@@ -11875,4 +13773,442 @@ const userValidators = {
 };
 
 module.exports = userValidators; 
-Total archivos: 122 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ae-n-001-2018-6aabe469dfbcdca54cfaf457.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ci-n-001-2016-6aabe469dfbcdca54cfaf48f.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ci-n-001-2017-6aabe469dfbcdca54cfaf48d.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ci-n-001-2018-6aabe469dfbcdca54cfaf48b.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ci-n-001-2019-6aabe469dfbcdca54cfaf489.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ci-n-001-2020-6aabe469dfbcdca54cfaf487.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ci-n-001-2021-6aabe469dfbcdca54cfaf483.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ci-n-001-2022-6aabe469dfbcdca54cfaf47d.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ci-n-001-2025-6aabe469dfbcdca54cfaf473.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ci-n-002-2023-6aabe469dfbcdca54cfaf479.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ci-n-002-2024-6aabe469dfbcdca54cfaf475.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ci-n-002-2025-6aabe469dfbcdca54cfaf471.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ci-n-003-2015-6aabe469dfbcdca54cfaf495.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ci-n-003-2016-6aabe469dfbcdca54cfaf459.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ci-n-003-2023-6aabe469dfbcdca54cfaf469.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ci-n-004-2023-6aabe469dfbcdca54cfaf43f.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-ci-n-005-2015-6aabe469dfbcdca54cfaf45b.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-com-n-001-2019-6aabe469dfbcdca54cfaf455.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-cv-n-001-2021-6aabe469dfbcdca54cfaf447.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-cv-n-002-2021-6aabe469dfbcdca54cfaf445.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-op-n-001-2015-6aabe469dfbcdca54cfaf467.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-op-n-001-2016-6aabe469dfbcdca54cfaf465.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-op-n-001-2020-6aabe469dfbcdca54cfaf485.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-op-n-001-2021-6aabe469dfbcdca54cfaf481.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-op-n-001-2022-6aabe469dfbcdca54cfaf47b.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-op-n-002-2021-6aabe469dfbcdca54cfaf47f.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-p-n-001-2023-6aabe469dfbcdca54cfaf477.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-p-n-001-2025-6aabe469dfbcdca54cfaf46f.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-p-n-002-2023-6aabe469dfbcdca54cfaf463.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-p-n-002-2025-6aabe469dfbcdca54cfaf46d.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-prel-n-001-2019-6aabe469dfbcdca54cfaf453.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-prel-n-001-2020-6aabe469dfbcdca54cfaf44d.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-sy-n-001-2015-6aabe469dfbcdca54cfaf461.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-sy-n-001-2016-6aabe469dfbcdca54cfaf45f.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-sy-n-002-2016-6aabe469dfbcdca54cfaf45d.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-vc-n-001-2019-6aabe469dfbcdca54cfaf451.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-vc-n-001-2020-6aabe469dfbcdca54cfaf44b.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-vc-n-001-2022-6aabe469dfbcdca54cfaf443.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-vc-n-001-2023-6aabe469dfbcdca54cfaf43d.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-vc-n-001-2024-6aabe469dfbcdca54cfaf439.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-vc-n-002-2019-6aabe469dfbcdca54cfaf44f.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-vc-n-002-2020-6aabe469dfbcdca54cfaf449.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-vc-n-002-2022-6aabe469dfbcdca54cfaf441.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-inf-uai-vc-n-002-2023-6aabe469dfbcdca54cfaf43b.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-uai-acu-ci-001-2025-6aabe469dfbcdca54cfaf437.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-uai-acu-ci-002-2025-6aabe469dfbcdca54cfaf435.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-uai-ci-01-2026-6aabe469dfbcdca54cfaf46b.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-uai-inf-o-01-2016-6aabe469dfbcdca54cfaf491.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-uai-n-003-2014-6aabe469dfbcdca54cfaf497.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-auditorias-ejecutadas-uai-n-02-2015-6aabe469dfbcdca54cfaf493.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-inf-uai-rel-n-001-2024-6aabe469dfbcdca54cfaf49d.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-inf-uai-rel-n-001-2025-6aabe469dfbcdca54cfaf499.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-inf-uai-rel-n-002-2024-6aabe469dfbcdca54cfaf49b.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-inf-uai-sci-n-001-2026-6aabe469dfbcdca54cfaf4a9.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-inf-uai-sci-n-002-2026-6aabe469dfbcdca54cfaf4a7.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-inf-uai-sci-n-003-2026-6aabe469dfbcdca54cfaf4a5.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-inf-uai-sci-n-004-2024-6aabe469dfbcdca54cfaf4b7.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-inf-uai-sci-n-004-2026-6aabe469dfbcdca54cfaf4a3.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-inf-uai-sci-n-005-2025-6aabe469dfbcdca54cfaf4b1.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-inf-uai-sci-n-005-2026-6aabe469dfbcdca54cfaf4a1.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-inf-uai-sci-n-006-2025-6aabe469dfbcdca54cfaf4af.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-inf-uai-sci-n-006-2026-6aabe469dfbcdca54cfaf49f.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-inf-uai-sci-n-007-2025-6aabe469dfbcdca54cfaf4ad.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-poa-2026-6aabe469dfbcdca54cfaf4b5.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-poa-2026-reformulado-6aabe469dfbcdca54cfaf4ab.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-uai-n-008-2014-6aabe469dfbcdca54cfaf4bf.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-uai-nro224-2025-6aabe469dfbcdca54cfaf4b9.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-uai-nro225-2025-6aabe469dfbcdca54cfaf4b3.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-uai-nro226-2025-6aabe469dfbcdca54cfaf4bb.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\auditoria-otras-actividades-uai-nro226-2025-6aabe469dfbcdca54cfaf4bd.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\camscanner-01-04-2026-15-17-1789070285942-391675867.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\cs-dir-rrhh-com-n---0412025-2026-1789055457203-303839813.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+================================= 
+uploads\documents\solicitud-de-permisos-1789162623743-314145658.pdf 
+================================= 
+ 
+[ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
+ 
+Total archivos: 204 

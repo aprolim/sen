@@ -4,6 +4,11 @@ const path = require('path');
 const fs = require('fs');
 
 // ============================================
+// 🔥 LÍMITE GLOBAL DE ARCHIVOS: 350 MB
+// ============================================
+const MAX_FILE_SIZE = 350 * 1024 * 1024; // 350 MB en bytes
+
+// ============================================
 // Crear directorios si no existen
 // ============================================
 const uploadDirs = {
@@ -65,7 +70,7 @@ const storage = multer.diskStorage({
 // Filtros de archivo
 // ============================================
 
-// ✅ Filtro mixto (imágenes + PDF) - el que se usa por defecto
+// ✅ Filtro mixto (imágenes + PDF)
 const fileFilter = (req, file, cb) => {
   const allowedTypes = [
     'image/jpeg',
@@ -108,42 +113,102 @@ const pdfFilter = (req, file, cb) => {
 // Instancias de multer
 // ============================================
 
-// Upload mixto (imágenes + PDF)
+// Upload mixto (imágenes + PDF) - LÍMITE 350 MB
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
+  limits: {
+    fileSize: MAX_FILE_SIZE,
+    fieldSize: MAX_FILE_SIZE
+  },
+});
+
+// Upload solo imágenes - LÍMITE 50 MB (las imágenes no necesitan más)
+const uploadImage = multer({
+  storage: storage,
+  fileFilter: imageFilter,
   limits: {
     fileSize: 50 * 1024 * 1024,
     fieldSize: 50 * 1024 * 1024
   },
 });
 
-// Upload solo imágenes
-const uploadImage = multer({
-  storage: storage,
-  fileFilter: imageFilter,
-  limits: {
-    fileSize: 10 * 1024 * 1024,
-    fieldSize: 10 * 1024 * 1024
-  },
-});
-
-// Upload solo PDFs
+// 🔥 Upload solo PDFs - LÍMITE 350 MB
 const uploadPDF = multer({
   storage: storage,
   fileFilter: pdfFilter,
   limits: {
-    fileSize: 20 * 1024 * 1024,
-    fieldSize: 20 * 1024 * 1024
+    fileSize: MAX_FILE_SIZE,
+    fieldSize: MAX_FILE_SIZE
   },
 });
+
+// ============================================
+// 🔥 MIDDLEWARE: Manejo de errores de Multer
+// Envuelve a Multer para convertir errores en respuestas JSON con CORS
+// ============================================
+const handleMulterError = (uploadMiddleware) => {
+  return (req, res, next) => {
+    uploadMiddleware(req, res, (err) => {
+      if (!err) return next();
+
+      // Headers CORS manuales por si acaso
+      res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+      if (err instanceof multer.MulterError) {
+        console.error('❌ [MulterError]', err.code, err.message);
+
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(413).json({
+            success: false,
+            message: `El archivo excede el tamaño máximo permitido (${MAX_FILE_SIZE / 1024 / 1024} MB)`,
+            code: 'FILE_TOO_LARGE'
+          });
+        }
+
+        if (err.code === 'LIMIT_FILE_COUNT') {
+          return res.status(400).json({
+            success: false,
+            message: 'Se excedió el número máximo de archivos',
+            code: 'TOO_MANY_FILES'
+          });
+        }
+
+        if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+          return res.status(400).json({
+            success: false,
+            message: `Campo de archivo inesperado: ${err.field}`,
+            code: 'UNEXPECTED_FIELD'
+          });
+        }
+
+        return res.status(400).json({
+          success: false,
+          message: `Error al subir archivo: ${err.message}`,
+          code: err.code
+        });
+      }
+
+      // Error del fileFilter (tipo no permitido)
+      console.error('❌ [FileFilter Error]', err.message);
+      return res.status(400).json({
+        success: false,
+        message: err.message || 'Error al procesar el archivo',
+        code: 'INVALID_FILE_TYPE'
+      });
+    });
+  };
+};
 
 // ============================================
 // Exportar
 // ============================================
 module.exports = {
-  upload,        // mixto (imágenes + PDF)
-  uploadImage,   // solo imágenes
-  uploadPDF,     // solo PDFs
+  upload,
+  uploadImage,
+  uploadPDF,
   uploadDirs,
+  MAX_FILE_SIZE,
+  handleMulterError
 };

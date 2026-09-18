@@ -1029,19 +1029,21 @@ class ContentController {
     try {
       console.log(`\n📸 [uploadImage] Subiendo imagen`);
       console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
-      
+      console.log(`   Archivo: ${req.file?.originalname}`);
+
       if (!req.file) {
         return res.status(400).json({
           success: false,
-          message: 'No se subió ninguna imagen'
+          message: 'No se subió ninguna imagen',
+          code: 'NO_FILE'
         });
       }
-      
+
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const imageUrl = `${baseUrl}/uploads/images/${req.file.filename}`;
-      
+
       console.log(`✅ Imagen subida: ${imageUrl}`);
-      
+
       res.json({
         success: true,
         message: 'Imagen subida exitosamente',
@@ -1055,28 +1057,41 @@ class ContentController {
       });
     } catch (error) {
       console.error(`❌ Error subiendo imagen: ${error.message}`);
+
+      res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+
       res.status(500).json({
         success: false,
-        message: 'Error al subir la imagen'
+        message: 'Error al subir la imagen',
+        code: 'UPLOAD_ERROR'
       });
     }
   }
 
   /**
-   * Subir documento
+   * Subir documento (PDF)
    */
   async uploadDocument(req, res) {
     try {
+      console.log(`\n📄 [uploadDocument] Subiendo documento`);
+      console.log(`   Usuario: ${req.user ? req.user.email : 'NO AUTENTICADO'}`);
+      console.log(`   Archivo: ${req.file?.originalname}`);
+      console.log(`   Tamaño: ${req.file ? (req.file.size / 1024 / 1024).toFixed(2) + ' MB' : 'N/A'}`);
+
       if (!req.file) {
         return res.status(400).json({
           success: false,
-          message: 'No se subió ningún documento'
+          message: 'No se subió ningún documento',
+          code: 'NO_FILE'
         });
       }
-      
+
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const documentUrl = `${baseUrl}/uploads/documents/${req.file.filename}`;
-      
+
+      console.log(`✅ Documento subido: ${documentUrl}`);
+
       res.json({
         success: true,
         message: 'Documento subido exitosamente',
@@ -1085,14 +1100,20 @@ class ContentController {
           filename: req.file.filename,
           originalName: req.file.originalname,
           size: req.file.size,
+          sizeMB: (req.file.size / 1024 / 1024).toFixed(2),
           mimetype: req.file.mimetype
         }
       });
     } catch (error) {
       console.error(`❌ Error subiendo documento: ${error.message}`);
+
+      res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+
       res.status(500).json({
         success: false,
-        message: 'Error al subir el documento'
+        message: 'Error al subir el documento',
+        code: 'UPLOAD_ERROR'
       });
     }
   }

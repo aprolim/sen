@@ -485,11 +485,14 @@ const uploadPDF = async (req, res) => {
   try {
     console.log('\n📄 [ADMIN] Subiendo PDF de auditoría...');
     console.log(`   👤 Usuario: ${req.user?.email}`);
+    console.log(`   📦 Archivo: ${req.file?.originalname}`);
+    console.log(`   📊 Tamaño: ${req.file ? (req.file.size / 1024 / 1024).toFixed(2) + ' MB' : 'N/A'}`);
 
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        message: 'No se subió ningún PDF'
+        message: 'No se subió ningún PDF',
+        code: 'NO_FILE'
       });
     }
 
@@ -506,14 +509,21 @@ const uploadPDF = async (req, res) => {
         filename: req.file.filename,
         originalName: req.file.originalname,
         size: req.file.size,
+        sizeMB: (req.file.size / 1024 / 1024).toFixed(2),
         mimetype: req.file.mimetype
       }
     });
   } catch (error) {
     console.error('❌ Error en uploadPDF:', error);
+
+    // Headers CORS manuales
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+
     res.status(500).json({
       success: false,
-      message: 'Error al subir el PDF'
+      message: 'Error al subir el PDF',
+      code: 'UPLOAD_ERROR'
     });
   }
 };
