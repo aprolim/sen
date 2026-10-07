@@ -27,18 +27,18 @@ router.post('/senadores', contentController.getContentsBySenadores);
 // ============================================
 router.use(authenticate);
 
-router.get('/admin', contentController.getContentsAdmin);
+router.get('/admin', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR', 'EDITOR_NOTICIAS'), contentController.getContentsAdmin);
 router.get('/:id', contentController.getContentById);
 
-router.post('/', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.createContent);
-router.put('/:id', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.updateContent);
-router.patch('/:id/status', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.changeStatus);
-router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN'), contentController.deleteContent);
+router.post('/', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR', 'EDITOR_NOTICIAS'), contentController.createContent);
+router.put('/:id', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR', 'EDITOR_NOTICIAS'), contentController.updateContent);
+router.patch('/:id/status', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR', 'EDITOR_NOTICIAS'), contentController.changeStatus);
+router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR_NOTICIAS'), contentController.deleteContent);
 
 // Ruta para publicar contenido programado (puede ser llamada por cron o manualmente)
-router.post('/publish-scheduled', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), contentController.publishScheduledContent);
+router.post('/publish-scheduled', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR', 'EDITOR_NOTICIAS'), contentController.publishScheduledContent);
 
-router.post('/upload/image', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), upload.single('image'), contentController.uploadImage);
-router.post('/upload/document', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'), upload.single('document'), contentController.uploadDocument);
+router.post('/upload/image', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR', 'EDITOR_NOTICIAS'), upload.single('image'), contentController.uploadImage);
+router.post('/upload/document', authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR', 'EDITOR_NOTICIAS'), upload.single('document'), contentController.uploadDocument);
 
 module.exports = router;

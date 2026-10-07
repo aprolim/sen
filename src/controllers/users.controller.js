@@ -34,7 +34,7 @@ class UsersController {
    *                 format: password
    *               role:
    *                 type: string
-   *                 enum: [ADMIN, EDITOR, MODERATOR, VIEWER, CITIZEN]
+   *                 enum: [ADMIN, EDITOR, EDITOR_NOTICIAS, EDITOR_SESIONES, EDITOR_COMUNICADOS, EDITOR_AUDITORIA, MODERATOR, VIEWER, CITIZEN]
    *               status:
    *                 type: string
    *                 enum: [ACTIVE, INACTIVE, SUSPENDED, PENDING]
@@ -194,7 +194,7 @@ class UsersController {
    *                 type: object
    *               role:
    *                 type: string
-   *                 enum: [ADMIN, EDITOR, MODERATOR, VIEWER, CITIZEN]
+   *                 enum: [ADMIN, EDITOR, EDITOR_NOTICIAS, EDITOR_SESIONES, EDITOR_COMUNICADOS, EDITOR_AUDITORIA, MODERATOR, VIEWER, CITIZEN]
    *               status:
    *                 type: string
    *                 enum: [ACTIVE, INACTIVE, SUSPENDED, PENDING]
@@ -212,7 +212,7 @@ class UsersController {
       const updateData = req.body;
       const updaterRole = req.user.role;
       
-      const user = await usersService.updateUser(id, updateData, updaterRole);
+      const user = await usersService.updateUser(id, updateData, updaterRole, req.user._id);
       
       res.json({
         success: true,

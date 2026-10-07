@@ -16,7 +16,7 @@ router.get('/:modulo', auditoriaController.getDocumentosPublicos);
 // 🔐 RUTAS PROTEGIDAS (ADMIN)
 // ============================================
 router.use(authenticate);
-router.use(authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'));
+router.use(authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR', 'EDITOR_AUDITORIA'));
 
 // -------- MIGRACIÓN DE PDFs (operación especial) --------
 // POST /api/auditoria/migrar-pdfs

@@ -122,7 +122,7 @@ app.use((req, res, next) => {
 // ============================================
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10000,
+  max: 900,
   message: {
     success: false,
     message: 'Demasiadas peticiones desde esta IP. Intenta más tarde.'
@@ -494,7 +494,7 @@ const startServer = async () => {
       console.log(`🔌 Health Check:  http://localhost:${PORT}/api/health`);
       console.log('═'.repeat(60));
       console.log('\n🛡️  MEDIDAS DE SEGURIDAD ACTIVAS:');
-      console.log('   • Rate Limiting (10000 req/15min)');
+      console.log('   • Rate Limiting (900 req/15min)');
       console.log('   • Login Limiting (5 intentos/5min)');
       console.log('   • Helmet.js (Headers seguridad)');
       console.log('   • CORS restringido (con headers en errores)');

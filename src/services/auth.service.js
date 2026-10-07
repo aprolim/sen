@@ -91,6 +91,28 @@ class AuthService {
     }
   }
   
+  /**
+   * Datos del usuario autenticado (el frontend los usa para refrescar el rol
+   * cuando un administrador se lo cambia).
+   */
+  async getCurrentUser(userId) {
+    const user = await User.findById(userId).select('-password -refreshToken');
+
+    if (!user) {
+      throw new Error('Usuario no encontrado');
+    }
+
+    return {
+      id: user._id,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      profile: user.profile,
+      lastLogin: user.lastLogin,
+      requiresPasswordChange: user.isPasswordExpired()
+    };
+  }
+
   async refreshAccessToken(refreshToken) {
     try {
       // Verificar refresh token

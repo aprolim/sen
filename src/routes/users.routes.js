@@ -25,11 +25,16 @@ router.get(
 );
 
 // Obtener usuario por ID
-router.get('/:id', usersController.getUserById);
+router.get(
+  '/:id',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  usersController.getUserById
+);
 
 // Actualizar usuario
 router.put(
   '/:id',
+  authorize('SUPER_ADMIN', 'ADMIN'),
   validators.updateUser,
   validate,
   usersController.updateUser

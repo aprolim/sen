@@ -15,7 +15,7 @@ router.get('/fechas', sesionesController.getFechasSesiones);
 // RUTAS PROTEGIDAS (CMS)
 // ============================================
 router.use(authenticate);
-router.use(authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'));
+router.use(authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR', 'EDITOR_SESIONES'));
 
 router.get('/admin', sesionesController.getAllVideos);
 router.post('/', sesionesController.createVideo);

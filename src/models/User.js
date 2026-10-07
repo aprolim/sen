@@ -20,7 +20,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['SUPER_ADMIN', 'ADMIN', 'EDITOR', 'MODERATOR', 'VIEWER', 'CITIZEN'],
+    enum: ['SUPER_ADMIN', 'ADMIN', 'EDITOR', 'EDITOR_NOTICIAS', 'EDITOR_SESIONES', 'EDITOR_COMUNICADOS', 'EDITOR_AUDITORIA', 'MODERATOR', 'VIEWER', 'CITIZEN'],
     default: 'CITIZEN',
     index: true
   },

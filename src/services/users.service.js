@@ -93,7 +93,7 @@ class UsersService {
   /**
    * Actualizar usuario
    */
-  async updateUser(id, updateData, updaterRole) {
+  async updateUser(id, updateData, updaterRole, updaterId) {
     try {
       const user = await User.findById(id);
       
@@ -102,6 +102,22 @@ class UsersService {
       }
       
       // Verificar permisos
+      const isSelf = !!updaterId && String(updaterId) === String(user._id);
+
+      // Nadie puede cambiarse el rol a sí mismo (evita la autopromoción)
+      if (isSelf && updateData.role && updateData.role !== user.role) {
+        throw new Error('No puede modificar su propio rol');
+      }
+
+      // Un ADMIN no puede tocar a un SUPER_ADMIN ni crear otro
+      if (updaterRole === 'ADMIN') {
+        if (user.role === 'SUPER_ADMIN') {
+          throw new Error('No tiene permisos para modificar a un super administrador');
+        }
+        if (updateData.role === 'SUPER_ADMIN') {
+          throw new Error('No tiene permisos para asignar el rol SUPER_ADMIN');
+        }
+      }
       if (updaterRole === 'CITIZEN' && user._id.toString() !== id) {
         throw new Error('Solo puede actualizar su propio perfil');
       }

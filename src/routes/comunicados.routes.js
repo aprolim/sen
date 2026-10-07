@@ -15,7 +15,7 @@ router.get('/expirados', comunicadosController.getComunicadosExpirados);
 // 🔐 RUTAS PROTEGIDAS (ADMIN)
 // ============================================
 router.use(authenticate);
-router.use(authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'));
+router.use(authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR', 'EDITOR_COMUNICADOS'));
 
 // 🔥 UPLOADS - DEBEN IR ANTES DE /:id
 router.post(
