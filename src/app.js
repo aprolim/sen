@@ -222,7 +222,7 @@ app.use('/senadores', express.static(path.join(__dirname, '..', 'public', 'senad
   }
 }));
 
-// 🔥 3. NUEVO: Servir toda la carpeta public (para otros assets)
+// 3. Servir toda la carpeta public (para otros assets)
 app.use('/public', express.static(path.join(__dirname, '..', 'public'), {
   setHeaders: (res, filepath) => {
     if (filepath.match(/\.(jpg|jpeg|png|gif|webp|svg)$/)) {
@@ -237,7 +237,7 @@ app.use('/public', express.static(path.join(__dirname, '..', 'public'), {
 // ============================================
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN'); // 🔥 Cambiado de DENY a SAMEORIGIN para permitir iframes internos
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN'); // 🔥 Permite iframes internos
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
 
@@ -299,6 +299,7 @@ const sesionesRoutes = require('./routes/sesiones.routes');
 const comunicadosRoutes = require('./routes/comunicados.routes');
 const avisosRoutes = require('./routes/avisos.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
+const documentosLegislativosRoutes = require('./routes/documentosLegislativos.routes'); // 🔥 NUEVO
 
 // Rate limiting específico
 app.use('/api/auth/login', authLimiter);
@@ -315,6 +316,7 @@ app.use('/api/sesiones', sesionesRoutes);
 app.use('/api/comunicados', comunicadosRoutes);
 app.use('/api/avisos', avisosRoutes);
 app.use('/api/auditoria', auditoriaRoutes);
+app.use('/api/legislativos', documentosLegislativosRoutes); // 🔥 NUEVO
 
 // ============================================
 // RUTAS DEL SISTEMA
@@ -506,6 +508,19 @@ const startServer = async () => {
       console.log(`   • 🔥 LÍMITE DE ARCHIVOS: 350 MB`);
       console.log(`   • 🔥 LÍMITE DE BODY: 350 MB`);
       console.log('═'.repeat(60));
+      console.log('\n📦 MÓDULOS DISPONIBLES:');
+      console.log('   • /api/auth');
+      console.log('   • /api/users');
+      console.log('   • /api/content');
+      console.log('   • /api/legisladores');
+      console.log('   • /api/tabs');
+      console.log('   • /api/icons');
+      console.log('   • /api/sesiones');
+      console.log('   • /api/comunicados');
+      console.log('   • /api/avisos');
+      console.log('   • /api/auditoria');
+      console.log('   • /api/legislativos        🔥 NUEVO');
+      console.log('═'.repeat(60) + '\n');
     });
 
   } catch (error) {
