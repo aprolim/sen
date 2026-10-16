@@ -39,7 +39,7 @@ const sanitizarBody = (body) => {
     }
   });
 
-  // Campos de texto: trim y "" → ""
+  // Campos de texto: trim
   const camposTexto = [
     'codigo',
     'peticionario',
@@ -735,8 +735,6 @@ const getConfigDelTipo = async (req, res) => {
 // ============================================
 const getTiposDisponibles = async (req, res) => {
   try {
-    const { TIPOS_DOCUMENTO } = require('../config/tiposDocumento');
-
     const tipos = Object.entries(TIPOS_DOCUMENTO).map(([key, value]) => ({
       tipo: key,
       label: value.label,

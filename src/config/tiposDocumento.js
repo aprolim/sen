@@ -2,10 +2,12 @@
 // Configuración central de tipos de documentos legislativos.
 // Aquí se define qué campos usa cada tipo, cuáles son obligatorios,
 // y las reglas de negocio específicas (ej: qué campos se bloquean al editar).
+//
+// ⚠️ IMPORTANTE: Debe mantenerse en sync con frontend/utils/documentoTypes.ts
 
 const TIPOS_DOCUMENTO = {
   // ============================================
-  // 🔍 FISCALIZACIÓN
+  // 🔍 FISCALIZACIÓN - Petición de Informe Escrito (PIE)
   // ============================================
   'peticion-informe-escrito': {
     label: 'Peticiones de Informe Escrito',
@@ -43,11 +45,19 @@ const TIPOS_DOCUMENTO = {
     camposBloqueadosEnEdicion: ['numero']
   },
 
+  // ============================================
+  // 🔍 FISCALIZACIÓN - Petición de Informe Oral (PIO)
+  // ============================================
   'peticion-informe-oral': {
     label: 'Peticiones de Informe Oral',
     bloque: 'fiscalizacion',
     prefijoCodigo: 'P.I.O.',
 
+    // 🔥 CAMPOS ESPECÍFICOS DE PIO según la estructura requerida:
+    // Nº | CÓDIGO O NOMBRE | FECHA DE INGRESO | PETICIONARIO | ASUNTO |
+    // DESTINATARIO | TIPO DE DESTINATARIO | FECHA DE REMISIÓN AL DESTINATARIO |
+    // FECHA DE REALIZACIÓN | FECHA DE REPROGRAMACIÓN | FECHA DE REALIZACIÓN (final) |
+    // OBSERVACIONES | ARCHIVO
     campos: [
       'codigo',
       'fechaIngreso',
@@ -63,6 +73,7 @@ const TIPOS_DOCUMENTO = {
       'archivo'
     ],
 
+    // Campos obligatorios al crear
     camposObligatorios: [
       'numero',
       'codigo',
@@ -73,6 +84,7 @@ const TIPOS_DOCUMENTO = {
       'tipoDestinatario'
     ],
 
+    // Campos que NO se pueden modificar después de crear
     camposBloqueadosEnEdicion: ['numero']
   }
 };

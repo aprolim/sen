@@ -7,11 +7,9 @@ const { TIPOS_DOCUMENTO, TIPOS_DESTINATARIO } = require('../config/tiposDocument
  * Gestión, Legislación). Los campos comunes van al principio; los
  * específicos por tipo son opcionales y solo se usan cuando aplica.
  *
- * Por ahora solo se usan dos tipos:
+ * Tipos activos actualmente:
  *   - peticion-informe-escrito
  *   - peticion-informe-oral
- *
- * Los demás tipos se activarán cuando se implementen sus secciones.
  */
 const documentoLegislativoSchema = new mongoose.Schema(
   {
