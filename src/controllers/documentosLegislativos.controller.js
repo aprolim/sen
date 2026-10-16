@@ -1,6 +1,7 @@
 // src/controllers/documentosLegislativos.controller.js
 const DocumentoLegislativo = require('../models/DocumentoLegislativo');
-const { esTipoValido, getConfigTipo, TIPOS_DESTINATARIO } = require('../config/tiposDocumento');
+const { esTipoValido, getConfigTipo, TIPOS_DESTINATARIO, TIPOS_DOCUMENTO } = require('../config/tiposDocumento');
+//                                                                     ↑ 🔥 AGREGADO AQUÍ
 
 // ============================================
 // 🛠️ HELPERS
