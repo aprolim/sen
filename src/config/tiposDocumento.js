@@ -1,90 +1,101 @@
 // src/config/tiposDocumento.js
 // Configuración central de tipos de documentos legislativos.
-// Aquí se define qué campos usa cada tipo, cuáles son obligatorios,
-// y las reglas de negocio específicas (ej: qué campos se bloquean al editar).
-//
-// ⚠️ IMPORTANTE: Debe mantenerse en sync con frontend/utils/documentoTypes.ts
 
 const TIPOS_DOCUMENTO = {
   // ============================================
-  // 🔍 FISCALIZACIÓN - Petición de Informe Escrito (PIE)
+  // 🔍 FISCALIZACIÓN
   // ============================================
   'peticion-informe-escrito': {
     label: 'Peticiones de Informe Escrito',
     bloque: 'fiscalizacion',
     prefijoCodigo: 'P.I.E.',
-
-    // Campos editables (todos menos numero y tipo)
     campos: [
-      'codigo',
-      'fechaIngreso',
-      'peticionario',
-      'asunto',
-      'destinatario',
-      'tipoDestinatario',
-      'fechaRemisionDestinatario',
-      'fechaRespuesta',
-      'fechaRemisionPeticionario',
-      'conminatoria',
-      'observacion',
-      'archivo'
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'destinatario',
+      'tipoDestinatario', 'fechaRemisionDestinatario', 'fechaRespuesta',
+      'fechaRemisionPeticionario', 'conminatoria', 'observacion', 'archivo'
     ],
-
-    // Campos obligatorios al crear
     camposObligatorios: [
-      'numero',
-      'codigo',
-      'fechaIngreso',
-      'peticionario',
-      'asunto',
-      'destinatario',
-      'tipoDestinatario'
+      'numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'destinatario', 'tipoDestinatario'
     ],
-
-    // Campos que NO se pueden modificar después de crear
     camposBloqueadosEnEdicion: ['numero']
   },
 
-  // ============================================
-  // 🔍 FISCALIZACIÓN - Petición de Informe Oral (PIO)
-  // ============================================
   'peticion-informe-oral': {
     label: 'Peticiones de Informe Oral',
     bloque: 'fiscalizacion',
     prefijoCodigo: 'P.I.O.',
-
-    // 🔥 CAMPOS ESPECÍFICOS DE PIO según la estructura requerida:
-    // Nº | CÓDIGO O NOMBRE | FECHA DE INGRESO | PETICIONARIO | ASUNTO |
-    // DESTINATARIO | TIPO DE DESTINATARIO | FECHA DE REMISIÓN AL DESTINATARIO |
-    // FECHA DE REALIZACIÓN | FECHA DE REPROGRAMACIÓN | FECHA DE REALIZACIÓN (final) |
-    // OBSERVACIONES | ARCHIVO
     campos: [
-      'codigo',
-      'fechaIngreso',
-      'peticionario',
-      'asunto',
-      'destinatario',
-      'tipoDestinatario',
-      'fechaRemisionDestinatario',
-      'fechaRealizacion',
-      'fechaReprogramacion',
-      'fechaRealizacionFinal',
-      'observacion',
-      'archivo'
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'destinatario',
+      'tipoDestinatario', 'fechaRemisionDestinatario', 'fechaRealizacion',
+      'fechaReprogramacion', 'fechaRealizacionFinal', 'observacion', 'archivo'
     ],
-
-    // Campos obligatorios al crear
     camposObligatorios: [
-      'numero',
-      'codigo',
-      'fechaIngreso',
-      'peticionario',
-      'asunto',
-      'destinatario',
-      'tipoDestinatario'
+      'numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'destinatario', 'tipoDestinatario'
     ],
+    camposBloqueadosEnEdicion: ['numero']
+  },
 
-    // Campos que NO se pueden modificar después de crear
+  // ============================================
+  // 📋 GESTIÓN
+  // ============================================
+  'minuta-comunicacion': {
+    label: 'Minutas de Comunicación',
+    bloque: 'gestion',
+    prefijoCodigo: 'M.C.',
+    campos: [
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'destinatario',
+      'fechaRemisionDestinatario', 'tipoDestinatario', 'fechaRespuesta',
+      'fechaRemisionPeticionario', 'observacion', 'archivo'
+    ],
+    camposObligatorios: [
+      'numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'destinatario', 'tipoDestinatario'
+    ],
+    camposBloqueadosEnEdicion: ['numero']
+  },
+
+  'resolucion-camaral': {
+    label: 'Resoluciones Camarales',
+    bloque: 'gestion',
+    prefijoCodigo: 'R.C.',
+    campos: [
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'fechaAprobacion', 'sesion', 'observacion', 'archivo'
+    ],
+    camposObligatorios: [
+      'numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto'
+    ],
+    // 🔥 REGLA ESPECIAL: En Resoluciones, el numero y el proyectista se bloquean al editar
+    camposBloqueadosEnEdicion: ['numero', 'peticionario'] 
+  },
+
+  'declaracion-camaral': {
+    label: 'Declaraciones Camarales',
+    bloque: 'gestion',
+    prefijoCodigo: 'D.C.',
+    campos: [
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'fechaAprobacion', 'observacion', 'archivo'
+    ],
+    camposObligatorios: [
+      'numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto'
+    ],
+    camposBloqueadosEnEdicion: ['numero']
+  },
+
+  'homenaje-camaral': {
+    label: 'Homenajes Camarales',
+    bloque: 'gestion',
+    prefijoCodigo: 'H.C.',
+    campos: [
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'fechaAprobacion', 'observacion', 'archivo'
+    ],
+    camposObligatorios: [
+      'numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto'
+    ],
     camposBloqueadosEnEdicion: ['numero']
   }
 };
@@ -100,10 +111,7 @@ const TIPOS_DESTINATARIO = [
   'Otra Entidad'
 ];
 
-// Helper: ¿es un tipo válido?
 const esTipoValido = (tipo) => Object.keys(TIPOS_DOCUMENTO).includes(tipo);
-
-// Helper: obtener la configuración de un tipo
 const getConfigTipo = (tipo) => TIPOS_DOCUMENTO[tipo] || null;
 
 module.exports = {
