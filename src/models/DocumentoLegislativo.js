@@ -22,7 +22,7 @@ const documentoLegislativoSchema = new mongoose.Schema(
       type: String,
       required: [true, 'El código es requerido'],
       trim: true,
-      maxlength: [100, 'El código no puede exceder 100 caracteres']
+      maxlength: [150, 'El código no puede exceder 150 caracteres']
     },
     fechaIngreso: {
       type: Date,
@@ -42,7 +42,7 @@ const documentoLegislativoSchema = new mongoose.Schema(
     },
 
     // ============================================
-    // 📤 DESTINATARIO Y FECHAS
+    // 📤 DESTINATARIO Y FECHAS (Fiscalización / Minutas)
     // ============================================
     destinatario: {
       type: String,
@@ -57,10 +57,6 @@ const documentoLegislativoSchema = new mongoose.Schema(
       type: Date,
       default: null
     },
-
-    // ============================================
-    // 📨 RESPUESTA (PIE / Minutas)
-    // ============================================
     fechaRespuesta: {
       type: Date,
       default: null
@@ -69,10 +65,6 @@ const documentoLegislativoSchema = new mongoose.Schema(
       type: Date,
       default: null
     },
-
-    // ============================================
-    // ⚠️ CONMINATORIA (solo PIE)
-    // ============================================
     conminatoria: {
       type: String,
       trim: true,
@@ -80,28 +72,16 @@ const documentoLegislativoSchema = new mongoose.Schema(
     },
 
     // ============================================
-    // 🎤 FECHAS DE REALIZACIÓN (solo PIO)
+    // 🎤 FECHAS DE REALIZACIÓN (PIO)
     // ============================================
-    fechaRealizacion: {
-      type: Date,
-      default: null
-    },
-    fechaReprogramacion: {
-      type: Date,
-      default: null
-    },
-    fechaRealizacionFinal: {
-      type: Date,
-      default: null
-    },
+    fechaRealizacion: { type: Date, default: null },
+    fechaReprogramacion: { type: Date, default: null },
+    fechaRealizacionFinal: { type: Date, default: null },
 
     // ============================================
     // 📝 APROBACIÓN Y SESIÓN (Gestión)
     // ============================================
-    fechaAprobacion: {
-      type: Date,
-      default: null
-    },
+    fechaAprobacion: { type: Date, default: null },
     sesion: {
       type: String,
       enum: ['PUBLICA', 'RESERVADA', null],
@@ -109,17 +89,57 @@ const documentoLegislativoSchema = new mongoose.Schema(
     },
 
     // ============================================
-    // 📝 OBSERVACIONES
+    // ⚖️ PROYECTOS DE LEY (Legislación)
+    // ============================================
+    esNuevoOReReposicion: {
+      type: String,
+      trim: true
+    },
+    plAnterior: {
+      type: String,
+      trim: true
+    },
+    comisionI: {
+      type: String,
+      trim: true
+    },
+    fechaRemisionComisionI: {
+      type: Date,
+      default: null
+    },
+    comisionII: {
+      type: String,
+      trim: true
+    },
+    fechaRemisionComisionII: {
+      type: Date,
+      default: null
+    },
+    estadoLey: {
+      type: String,
+      trim: true
+    },
+    fechaRemisionDiputados: {
+      type: Date,
+      default: null
+    },
+    fechaSancion: {
+      type: Date,
+      default: null
+    },
+    fechaRemisionEjecutivo: {
+      type: Date,
+      default: null
+    },
+
+    // ============================================
+    // 📝 OBSERVACIONES Y ARCHIVO
     // ============================================
     observacion: {
       type: String,
       trim: true,
       maxlength: [1000, 'La observación no puede exceder 1000 caracteres']
     },
-
-    // ============================================
-    // 📄 ARCHIVO
-    // ============================================
     archivo: {
       url: { type: String, default: null },
       filename: { type: String, default: '' },
@@ -143,16 +163,9 @@ const documentoLegislativoSchema = new mongoose.Schema(
   }
 );
 
-// ============================================
-// ÍNDICES
-// ============================================
+// Índices
 documentoLegislativoSchema.index({ tipo: 1, eliminado: 1, numero: 1 });
 documentoLegislativoSchema.index({ tipo: 1, codigo: 1, eliminado: 1 });
 documentoLegislativoSchema.index({ tipo: 1, fechaIngreso: -1, eliminado: 1 });
-documentoLegislativoSchema.index({
-  asunto: 'text',
-  peticionario: 'text',
-  destinatario: 'text'
-});
 
 module.exports = mongoose.model('DocumentoLegislativo', documentoLegislativoSchema);

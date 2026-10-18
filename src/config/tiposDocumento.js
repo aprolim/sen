@@ -14,10 +14,7 @@ const TIPOS_DOCUMENTO = {
       'tipoDestinatario', 'fechaRemisionDestinatario', 'fechaRespuesta',
       'fechaRemisionPeticionario', 'conminatoria', 'observacion', 'archivo'
     ],
-    camposObligatorios: [
-      'numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto',
-      'destinatario', 'tipoDestinatario'
-    ],
+    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'destinatario', 'tipoDestinatario'],
     camposBloqueadosEnEdicion: ['numero']
   },
 
@@ -30,10 +27,7 @@ const TIPOS_DOCUMENTO = {
       'tipoDestinatario', 'fechaRemisionDestinatario', 'fechaRealizacion',
       'fechaReprogramacion', 'fechaRealizacionFinal', 'observacion', 'archivo'
     ],
-    camposObligatorios: [
-      'numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto',
-      'destinatario', 'tipoDestinatario'
-    ],
+    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'destinatario', 'tipoDestinatario'],
     camposBloqueadosEnEdicion: ['numero']
   },
 
@@ -49,10 +43,7 @@ const TIPOS_DOCUMENTO = {
       'fechaRemisionDestinatario', 'tipoDestinatario', 'fechaRespuesta',
       'fechaRemisionPeticionario', 'observacion', 'archivo'
     ],
-    camposObligatorios: [
-      'numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto',
-      'destinatario', 'tipoDestinatario'
-    ],
+    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'destinatario', 'tipoDestinatario'],
     camposBloqueadosEnEdicion: ['numero']
   },
 
@@ -64,11 +55,8 @@ const TIPOS_DOCUMENTO = {
       'codigo', 'fechaIngreso', 'peticionario', 'asunto',
       'fechaAprobacion', 'sesion', 'observacion', 'archivo'
     ],
-    camposObligatorios: [
-      'numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto'
-    ],
-    // 🔥 REGLA ESPECIAL: En Resoluciones, el numero y el proyectista se bloquean al editar
-    camposBloqueadosEnEdicion: ['numero', 'peticionario'] 
+    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto'],
+    camposBloqueadosEnEdicion: ['numero', 'peticionario']
   },
 
   'declaracion-camaral': {
@@ -79,9 +67,7 @@ const TIPOS_DOCUMENTO = {
       'codigo', 'fechaIngreso', 'peticionario', 'asunto',
       'fechaAprobacion', 'observacion', 'archivo'
     ],
-    camposObligatorios: [
-      'numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto'
-    ],
+    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto'],
     camposBloqueadosEnEdicion: ['numero']
   },
 
@@ -93,10 +79,41 @@ const TIPOS_DOCUMENTO = {
       'codigo', 'fechaIngreso', 'peticionario', 'asunto',
       'fechaAprobacion', 'observacion', 'archivo'
     ],
-    camposObligatorios: [
-      'numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto'
-    ],
+    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto'],
     camposBloqueadosEnEdicion: ['numero']
+  },
+
+  // ============================================
+  // ⚖️ LEGISLACIÓN
+  // ============================================
+  'proyecto-ley-tratamiento-senado': {
+    label: 'Proyectos de Ley en Tratamiento (Senado)',
+    bloque: 'legislacion',
+    prefijoCodigo: 'P.L. C.S.',
+    campos: [
+      'fechaIngreso', 'peticionario', 'asunto', 'esNuevoOReReposicion',
+      'plAnterior', 'comisionI', 'fechaRemisionComisionI', 'comisionII',
+      'fechaRemisionComisionII', 'estadoLey', 'fechaAprobacion',
+      'fechaRemisionDiputados', 'observacion', 'archivo'
+    ],
+    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario', 'estadoLey'],
+    // 🔥 REGLA: numero y codigo bloqueados en edición
+    camposBloqueadosEnEdicion: ['numero', 'codigo']
+  },
+
+  'proyecto-ley-revision-diputados': {
+    label: 'Proyectos de Ley en Revisión (Diputados)',
+    bloque: 'legislacion',
+    prefijoCodigo: 'P.L. C.D.',
+    campos: [
+      'fechaIngreso', 'peticionario', 'asunto', 'comisionI',
+      'fechaRemisionComisionI', 'comisionII', 'fechaRemisionComisionII',
+      'estadoLey', 'fechaSancion', 'fechaRemisionEjecutivo',
+      'observacion', 'archivo'
+    ],
+    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario', 'estadoLey'],
+    // 🔥 REGLA: numero y codigo bloqueados en edición
+    camposBloqueadosEnEdicion: ['numero', 'codigo']
   }
 };
 
