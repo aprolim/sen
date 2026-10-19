@@ -64,7 +64,6 @@ const sanitizarBody = (body) => {
     if (typeof limpio[campo] === 'string') limpio[campo] = limpio[campo].trim();
   });
 
-  // numeroLey: number o null
   if ('numeroLey' in limpio) {
     if (limpio.numeroLey === '' || limpio.numeroLey === null || limpio.numeroLey === undefined) {
       limpio.numeroLey = null;
@@ -74,7 +73,6 @@ const sanitizarBody = (body) => {
     }
   }
 
-  // archivoAnexo: array de objetos
   if ('archivoAnexo' in limpio) {
     if (!Array.isArray(limpio.archivoAnexo)) {
       limpio.archivoAnexo = [];
@@ -134,10 +132,6 @@ const validarObligatorios = (body, tipo) => {
   return errores;
 };
 
-/**
- * Valida que el estadoLey coincida con el requerido por el tipo.
- * Solo para tipos destino (los 4 nuevos).
- */
 const validarEstadoVsTipo = (tipo, estadoLey) => {
   const config = getConfigTipo(tipo);
   if (!config || !config.estadoRequerido) return { ok: true };
@@ -159,9 +153,6 @@ const validarEstadoVsTipo = (tipo, estadoLey) => {
   return { ok: true };
 };
 
-/**
- * Valida que numeroLey sea único (excepto el propio documento al editar).
- */
 const validarNumeroLeyUnico = async (numeroLey, excludeId = null) => {
   if (numeroLey === null || numeroLey === undefined) return { ok: true };
 
@@ -332,19 +323,16 @@ const createDocumento = async (req, res) => {
 
     const bodyLimpio = sanitizarBody(req.body);
 
-    // 1. Validar estadoLey vs tipo destino
     const vEstado = validarEstadoVsTipo(tipo, bodyLimpio.estadoLey);
     if (!vEstado.ok) {
       return res.status(400).json({ success: false, message: vEstado.mensaje });
     }
 
-    // 2. Validar obligatorios (incluye archivoAnexo si aplica)
     const errores = validarObligatorios(bodyLimpio, tipo);
     if (errores.length > 0) {
       return res.status(400).json({ success: false, message: errores.join('. '), errores });
     }
 
-    // 3. tipoDestinatario válido
     if (bodyLimpio.tipoDestinatario && !TIPOS_DESTINATARIO.includes(bodyLimpio.tipoDestinatario)) {
       return res.status(400).json({
         success: false,
@@ -352,7 +340,6 @@ const createDocumento = async (req, res) => {
       });
     }
 
-    // 4. Duplicado de numero dentro del tipo
     const yaExiste = await DocumentoLegislativo.findOne({ tipo, numero: bodyLimpio.numero });
     if (yaExiste) {
       return res.status(409).json({
@@ -361,7 +348,6 @@ const createDocumento = async (req, res) => {
       });
     }
 
-    // 5. numeroLey único
     const vNumeroLey = await validarNumeroLeyUnico(bodyLimpio.numeroLey);
     if (!vNumeroLey.ok) {
       return res.status(409).json({ success: false, message: vNumeroLey.mensaje });
@@ -463,7 +449,6 @@ const updateDocumento = async (req, res) => {
       const tipoNuevo = vTransicion.tipoNuevo;
 
       // Combinar datos: los actuales + los nuevos que vienen
-      // (para validar obligatorios del tipoNuevo con lo que ya existía)
       const combinado = {
         ...doc.toObject(),
         ...bodyLimpio,
@@ -471,13 +456,21 @@ const updateDocumento = async (req, res) => {
         estadoLey: estadoNuevo
       };
 
-      // 1. Validar obligatorios del tipoNuevo
+      // 1. Validar obligatorios del tipoNuevo (Solo el anexo es ESTRICTAMENTE obligatorio aquí)
       const errores = validarObligatorios(combinado, tipoNuevo);
-      if (errores.length > 0) {
+      
+      const erroresFiltrados = errores.filter(err => {
+        // Si el error es por archivoAnexo, siempre es un error bloqueante
+        if (err.includes('archivoAnexo')) return true;
+        // Los demás campos (fechas, numeroLey) se ignoran en este paso
+        return false;
+      });
+
+      if (erroresFiltrados.length > 0) {
         return res.status(400).json({
           success: false,
-          message: `Faltan campos obligatorios para "${tipoNuevo}": ${errores.join('. ')}`,
-          errores
+          message: `Faltan campos obligatorios: ${erroresFiltrados.join('. ')}`,
+          errores: erroresFiltrados
         });
       }
 
@@ -681,7 +674,6 @@ const restoreDocumento = async (req, res) => {
 // ============================================
 // 📤 Upload PDF
 // POST /api/legislativos/:tipo/upload-pdf
-// (Sirve tanto para archivo principal como para archivoAnexo)
 // ============================================
 const uploadPDF = async (req, res) => {
   try {
