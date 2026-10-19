@@ -53,18 +53,9 @@ const documentoLegislativoSchema = new mongoose.Schema(
       type: String,
       enum: [...TIPOS_DESTINATARIO, null]
     },
-    fechaRemisionDestinatario: {
-      type: Date,
-      default: null
-    },
-    fechaRespuesta: {
-      type: Date,
-      default: null
-    },
-    fechaRemisionPeticionario: {
-      type: Date,
-      default: null
-    },
+    fechaRemisionDestinatario: { type: Date, default: null },
+    fechaRespuesta: { type: Date, default: null },
+    fechaRemisionPeticionario: { type: Date, default: null },
     conminatoria: {
       type: String,
       trim: true,
@@ -89,51 +80,25 @@ const documentoLegislativoSchema = new mongoose.Schema(
     },
 
     // ============================================
-    // ⚖️ PROYECTOS DE LEY (Legislación)
+    // ⚖️ PROYECTOS DE LEY
     // ============================================
-    esNuevoOReReposicion: {
-      type: String,
-      trim: true
-    },
-    plAnterior: {
-      type: String,
-      trim: true
-    },
-    comisionI: {
-      type: String,
-      trim: true
-    },
-    fechaRemisionComisionI: {
-      type: Date,
-      default: null
-    },
-    comisionII: {
-      type: String,
-      trim: true
-    },
-    fechaRemisionComisionII: {
-      type: Date,
-      default: null
-    },
-    estadoLey: {
-      type: String,
-      trim: true
-    },
-    fechaRemisionDiputados: {
-      type: Date,
-      default: null
-    },
-    fechaSancion: {
-      type: Date,
-      default: null
-    },
-    fechaRemisionEjecutivo: {
-      type: Date,
-      default: null
-    },
+    esNuevoOReReposicion: { type: String, trim: true },
+    plAnterior: { type: String, trim: true },
+    comisionI: { type: String, trim: true },
+    fechaRemisionComisionI: { type: Date, default: null },
+    comisionII: { type: String, trim: true },
+    fechaRemisionComisionII: { type: Date, default: null },
+    estadoLey: { type: String, trim: true },
+    fechaRemisionDiputados: { type: Date, default: null },
+    fechaSancion: { type: Date, default: null },
+    fechaRemisionEjecutivo: { type: Date, default: null },
+
+    // 🔥 NUEVOS CAMPOS
+    fechaRechazo: { type: Date, default: null },
+    numeroLey: { type: Number, default: null },
 
     // ============================================
-    // 📝 OBSERVACIONES Y ARCHIVO
+    // 📝 OBSERVACIONES Y ARCHIVOS
     // ============================================
     observacion: {
       type: String,
@@ -146,6 +111,15 @@ const documentoLegislativoSchema = new mongoose.Schema(
       originalName: { type: String, default: '' },
       size: { type: Number, default: 0 }
     },
+    // 🔥 Array de anexos (informe de comisión)
+    archivoAnexo: [
+      {
+        url: { type: String, default: null },
+        filename: { type: String, default: '' },
+        originalName: { type: String, default: '' },
+        size: { type: Number, default: 0 }
+      }
+    ],
 
     // ============================================
     // 🔥 AUDITORÍA
@@ -163,9 +137,21 @@ const documentoLegislativoSchema = new mongoose.Schema(
   }
 );
 
-// Índices
+// ============================================
+// ÍNDICES
+// ============================================
 documentoLegislativoSchema.index({ tipo: 1, eliminado: 1, numero: 1 });
 documentoLegislativoSchema.index({ tipo: 1, codigo: 1, eliminado: 1 });
 documentoLegislativoSchema.index({ tipo: 1, fechaIngreso: -1, eliminado: 1 });
+
+// 🔥 numeroLey único SOLO cuando tiene valor (partialFilterExpression)
+documentoLegislativoSchema.index(
+  { numeroLey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { numeroLey: { $type: 'number' } },
+    name: 'numeroLey_unique_partial'
+  }
+);
 
 module.exports = mongoose.model('DocumentoLegislativo', documentoLegislativoSchema);

@@ -1,6 +1,32 @@
 // src/config/tiposDocumento.js
 // Configuración central de tipos de documentos legislativos.
 
+// ============================================
+// 🔥 MAPA DE ESTADO ↔ TIPO (para los 4 destinos)
+// ============================================
+const ESTADO_A_TIPO = {
+  'APROBADO': 'proyecto-ley-aprobados',
+  'SANCIONADO': 'proyecto-ley-sancionados',
+  'APROBADO CON MODIFICACIONES': 'proyecto-ley-modificaciones',
+  'RECHAZADO': 'proyecto-ley-rechazados'
+};
+
+const TIPO_A_ESTADO = {
+  'proyecto-ley-aprobados': 'APROBADO',
+  'proyecto-ley-sancionados': 'SANCIONADO',
+  'proyecto-ley-modificaciones': 'APROBADO CON MODIFICACIONES',
+  'proyecto-ley-rechazados': 'RECHAZADO'
+};
+
+// Tipos "origen" que pueden transicionar
+const TIPOS_ORIGEN_TRANSICION = [
+  'proyecto-ley-tratamiento-senado',
+  'proyecto-ley-revision-diputados'
+];
+
+// Tipos "destino" a los que se puede llegar
+const TIPOS_DESTINO_TRANSICION = Object.values(ESTADO_A_TIPO);
+
 const TIPOS_DOCUMENTO = {
   // ============================================
   // 🔍 FISCALIZACIÓN
@@ -84,18 +110,19 @@ const TIPOS_DOCUMENTO = {
   },
 
   // ============================================
-  // ⚖️ LEGISLACIÓN
+  // ⚖️ LEGISLACIÓN - ORIGEN
   // ============================================
   'proyecto-ley-tratamiento-senado': {
     label: 'Proyectos de Ley en Tratamiento (Senado)',
     bloque: 'legislacion',
     prefijoCodigo: 'P.L. C.S.',
     campos: [
-      'codigo', // 🔥 AGREGADO CORRECTAMENTE AQUÍ
-      'fechaIngreso', 'peticionario', 'asunto', 'esNuevoOReReposicion',
-      'plAnterior', 'comisionI', 'fechaRemisionComisionI', 'comisionII',
-      'fechaRemisionComisionII', 'estadoLey', 'fechaAprobacion',
-      'fechaRemisionDiputados', 'observacion', 'archivo'
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'esNuevoOReReposicion', 'plAnterior',
+      'comisionI', 'fechaRemisionComisionI',
+      'comisionII', 'fechaRemisionComisionII',
+      'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados',
+      'observacion', 'archivo'
     ],
     camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario', 'estadoLey'],
     camposBloqueadosEnEdicion: ['numero', 'codigo']
@@ -106,9 +133,9 @@ const TIPOS_DOCUMENTO = {
     bloque: 'legislacion',
     prefijoCodigo: 'P.L. C.D.',
     campos: [
-      'codigo', // 🔥 AGREGADO CORRECTAMENTE AQUÍ
-      'fechaIngreso', 'peticionario', 'asunto', 'comisionI',
-      'fechaRemisionComisionI', 'comisionII', 'fechaRemisionComisionII',
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'comisionI', 'fechaRemisionComisionI',
+      'comisionII', 'fechaRemisionComisionII',
       'estadoLey', 'fechaSancion', 'fechaRemisionEjecutivo',
       'observacion', 'archivo'
     ],
@@ -116,51 +143,102 @@ const TIPOS_DOCUMENTO = {
     camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
-  // Placeholders para los otros tipos
+  // ============================================
+  // ⚖️ LEGISLACIÓN - DESTINOS (los 4 nuevos)
+  // ============================================
+
+  // 🔵 APROBADOS
   'proyecto-ley-aprobados': {
     label: 'Proyectos de Ley Aprobados',
     bloque: 'legislacion',
     prefijoCodigo: 'P.L.',
+    estadoRequerido: 'APROBADO',
     campos: [
-      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'archivo'
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'esNuevoOReReposicion', 'plAnterior',
+      'comisionI', 'fechaRemisionComisionI',
+      'comisionII', 'fechaRemisionComisionII',
+      'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados',
+      'observacion', 'numeroLey',
+      'archivo', 'archivoAnexo'
     ],
-    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario'],
-    camposBloqueadosEnEdicion: ['numero']
+    camposObligatorios: [
+      'numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario',
+      'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados',
+      'numeroLey', 'archivoAnexo'
+    ],
+    camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
+  // 🟣 SANCIONADOS
   'proyecto-ley-sancionados': {
     label: 'Proyectos de Ley Sancionados',
     bloque: 'legislacion',
     prefijoCodigo: 'P.L.',
+    estadoRequerido: 'SANCIONADO',
     campos: [
-      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'archivo'
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'comisionI', 'fechaRemisionComisionI',
+      'comisionII', 'fechaRemisionComisionII',
+      'estadoLey', 'fechaSancion', 'fechaRemisionEjecutivo',
+      'observacion', 'numeroLey',
+      'archivo', 'archivoAnexo'
     ],
-    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario'],
-    camposBloqueadosEnEdicion: ['numero']
+    camposObligatorios: [
+      'numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario',
+      'estadoLey', 'fechaSancion', 'fechaRemisionEjecutivo',
+      'numeroLey', 'archivoAnexo'
+    ],
+    camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
+  // 🟡 APROBADOS CON MODIFICACIONES (DEVUELTOS A DIPUTADOS)
   'proyecto-ley-modificaciones': {
     label: 'Proyectos de Ley con Modificaciones',
     bloque: 'legislacion',
     prefijoCodigo: 'P.L.',
+    estadoRequerido: 'APROBADO CON MODIFICACIONES',
     campos: [
-      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'archivo'
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'comisionI', 'fechaRemisionComisionI',
+      'comisionII', 'fechaRemisionComisionII',
+      'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados',
+      'observacion', 'numeroLey',
+      'archivo', 'archivoAnexo'
     ],
-    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario'],
-    camposBloqueadosEnEdicion: ['numero']
+    camposObligatorios: [
+      'numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario',
+      'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados',
+      'numeroLey', 'archivoAnexo'
+    ],
+    camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
+  // 🔴 RECHAZADOS (sin numeroLey)
   'proyecto-ley-rechazados': {
     label: 'Proyectos de Ley Rechazados',
     bloque: 'legislacion',
     prefijoCodigo: 'P.L.',
+    estadoRequerido: 'RECHAZADO',
     campos: [
-      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'archivo'
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'comisionI', 'fechaRemisionComisionI',
+      'comisionII', 'fechaRemisionComisionII',
+      'estadoLey', 'fechaRechazo', 'fechaRemisionDiputados',
+      'observacion',
+      'archivo', 'archivoAnexo'
     ],
-    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario'],
-    camposBloqueadosEnEdicion: ['numero']
+    camposObligatorios: [
+      'numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario',
+      'estadoLey', 'fechaRechazo', 'fechaRemisionDiputados',
+      'archivoAnexo'
+    ],
+    camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
+  // ============================================
+  // ⚖️ LEGISLACIÓN - LEY PROMULGADA (existente)
+  // ============================================
   'ley-promulgada': {
     label: 'Leyes Promulgadas',
     bloque: 'legislacion',
@@ -173,7 +251,9 @@ const TIPOS_DOCUMENTO = {
   }
 };
 
-// Lista de valores válidos para "tipo de destinatario"
+// ============================================
+// LISTA DE VALORES VÁLIDOS
+// ============================================
 const TIPOS_DESTINATARIO = [
   'Órgano Ejecutivo',
   'Órgano Judicial',
@@ -184,12 +264,78 @@ const TIPOS_DESTINATARIO = [
   'Otra Entidad'
 ];
 
+const ESTADOS_LEY_VALIDOS = [
+  'EN TRATAMIENTO',
+  'EN REVISIÓN',
+  'APROBADO',
+  'SANCIONADO',
+  'APROBADO CON MODIFICACIONES',
+  'RECHAZADO'
+];
+
+// ============================================
+// HELPERS
+// ============================================
 const esTipoValido = (tipo) => Object.keys(TIPOS_DOCUMENTO).includes(tipo);
 const getConfigTipo = (tipo) => TIPOS_DOCUMENTO[tipo] || null;
+
+/**
+ * Devuelve el `tipo` destino según el `estadoLey`. Null si el estado no mapea.
+ */
+const getTipoPorEstado = (estadoLey) => ESTADO_A_TIPO[estadoLey] || null;
+
+/**
+ * Devuelve el `estadoLey` esperado para un `tipo` destino. Null si no aplica.
+ */
+const getEstadoPorTipo = (tipo) => TIPO_A_ESTADO[tipo] || null;
+
+/**
+ * ¿Es un tipo al que se puede llegar por transición de estado?
+ */
+const esTipoDestinoTransicion = (tipo) => TIPOS_DESTINO_TRANSICION.includes(tipo);
+
+/**
+ * ¿Es un tipo origen del que se puede salir por transición?
+ */
+const esTipoOrigenTransicion = (tipo) => TIPOS_ORIGEN_TRANSICION.includes(tipo);
+
+/**
+ * Valida si una transición de estado está permitida.
+ * @returns { ok: boolean, tipoNuevo?: string, mensaje?: string }
+ */
+const validarTransicion = (tipoActual, estadoNuevo) => {
+  if (!esTipoOrigenTransicion(tipoActual)) {
+    return {
+      ok: false,
+      mensaje: `Solo se puede cambiar de estado desde "proyecto-ley-tratamiento-senado" o "proyecto-ley-revision-diputados". Tipo actual: ${tipoActual}`
+    };
+  }
+
+  const tipoNuevo = getTipoPorEstado(estadoNuevo);
+
+  if (!tipoNuevo) {
+    return {
+      ok: false,
+      mensaje: `Estado no válido para transición: ${estadoNuevo}. Válidos: APROBADO, SANCIONADO, APROBADO CON MODIFICACIONES, RECHAZADO`
+    };
+  }
+
+  return { ok: true, tipoNuevo };
+};
 
 module.exports = {
   TIPOS_DOCUMENTO,
   TIPOS_DESTINATARIO,
+  ESTADOS_LEY_VALIDOS,
+  ESTADO_A_TIPO,
+  TIPO_A_ESTADO,
+  TIPOS_ORIGEN_TRANSICION,
+  TIPOS_DESTINO_TRANSICION,
   esTipoValido,
-  getConfigTipo
+  getConfigTipo,
+  getTipoPorEstado,
+  getEstadoPorTipo,
+  esTipoDestinoTransicion,
+  esTipoOrigenTransicion,
+  validarTransicion
 };
