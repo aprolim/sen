@@ -91,13 +91,13 @@ const TIPOS_DOCUMENTO = {
     bloque: 'legislacion',
     prefijoCodigo: 'P.L. C.S.',
     campos: [
+      'codigo', // 🔥 AGREGADO CORRECTAMENTE AQUÍ
       'fechaIngreso', 'peticionario', 'asunto', 'esNuevoOReReposicion',
       'plAnterior', 'comisionI', 'fechaRemisionComisionI', 'comisionII',
       'fechaRemisionComisionII', 'estadoLey', 'fechaAprobacion',
       'fechaRemisionDiputados', 'observacion', 'archivo'
     ],
     camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario', 'estadoLey'],
-    // 🔥 REGLA: numero y codigo bloqueados en edición
     camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
@@ -106,14 +106,70 @@ const TIPOS_DOCUMENTO = {
     bloque: 'legislacion',
     prefijoCodigo: 'P.L. C.D.',
     campos: [
+      'codigo', // 🔥 AGREGADO CORRECTAMENTE AQUÍ
       'fechaIngreso', 'peticionario', 'asunto', 'comisionI',
       'fechaRemisionComisionI', 'comisionII', 'fechaRemisionComisionII',
       'estadoLey', 'fechaSancion', 'fechaRemisionEjecutivo',
       'observacion', 'archivo'
     ],
     camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario', 'estadoLey'],
-    // 🔥 REGLA: numero y codigo bloqueados en edición
     camposBloqueadosEnEdicion: ['numero', 'codigo']
+  },
+
+  // Placeholders para los otros tipos
+  'proyecto-ley-aprobados': {
+    label: 'Proyectos de Ley Aprobados',
+    bloque: 'legislacion',
+    prefijoCodigo: 'P.L.',
+    campos: [
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'archivo'
+    ],
+    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario'],
+    camposBloqueadosEnEdicion: ['numero']
+  },
+
+  'proyecto-ley-sancionados': {
+    label: 'Proyectos de Ley Sancionados',
+    bloque: 'legislacion',
+    prefijoCodigo: 'P.L.',
+    campos: [
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'archivo'
+    ],
+    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario'],
+    camposBloqueadosEnEdicion: ['numero']
+  },
+
+  'proyecto-ley-modificaciones': {
+    label: 'Proyectos de Ley con Modificaciones',
+    bloque: 'legislacion',
+    prefijoCodigo: 'P.L.',
+    campos: [
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'archivo'
+    ],
+    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario'],
+    camposBloqueadosEnEdicion: ['numero']
+  },
+
+  'proyecto-ley-rechazados': {
+    label: 'Proyectos de Ley Rechazados',
+    bloque: 'legislacion',
+    prefijoCodigo: 'P.L.',
+    campos: [
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'archivo'
+    ],
+    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario'],
+    camposBloqueadosEnEdicion: ['numero']
+  },
+
+  'ley-promulgada': {
+    label: 'Leyes Promulgadas',
+    bloque: 'legislacion',
+    prefijoCodigo: '',
+    campos: [
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'archivo'
+    ],
+    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario'],
+    camposBloqueadosEnEdicion: ['numero']
   }
 };
 
