@@ -299,8 +299,9 @@ const sesionesRoutes = require('./routes/sesiones.routes');
 const comunicadosRoutes = require('./routes/comunicados.routes');
 const avisosRoutes = require('./routes/avisos.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
-const documentosLegislativosRoutes = require('./routes/documentosLegislativos.routes'); // 🔥 NUEVO
-const catalogosRoutes = require('./routes/catalogos.routes'); // 🔥 AGREGAR
+const documentosLegislativosRoutes = require('./routes/documentosLegislativos.routes');
+const legislativosCatalogosRoutes = require('./routes/legislativosCatalogos.routes'); // 🔥 NUEVO
+const catalogosRoutes = require('./routes/catalogos.routes');
 
 // Rate limiting específico
 app.use('/api/auth/login', authLimiter);
@@ -317,9 +318,14 @@ app.use('/api/sesiones', sesionesRoutes);
 app.use('/api/comunicados', comunicadosRoutes);
 app.use('/api/avisos', avisosRoutes);
 app.use('/api/auditoria', auditoriaRoutes);
-app.use('/api/legislativos', documentosLegislativosRoutes); // 🔥 NUEVO
+
+// 🔥 Catálogos propios del módulo Legislación
+// IMPORTANTE: se monta ANTES que /api/legislativos para que /api/legislativos/catalogos/*
+// no sea capturado por el router de documentosLegislativos (que tiene /:tipo)
+app.use('/api/legislativos/catalogos', legislativosCatalogosRoutes);
 app.use('/api/legislativos', documentosLegislativosRoutes);
-app.use('/api/catalogos', catalogosRoutes); // 🔥 AGREGAR
+
+app.use('/api/catalogos', catalogosRoutes);
 
 // ============================================
 // RUTAS DEL SISTEMA
@@ -522,7 +528,9 @@ const startServer = async () => {
       console.log('   • /api/comunicados');
       console.log('   • /api/avisos');
       console.log('   • /api/auditoria');
-      console.log('   • /api/legislativos        🔥 NUEVO');
+      console.log('   • /api/legislativos');
+      console.log('   • /api/legislativos/catalogos   🔥 NUEVO');
+      console.log('   • /api/catalogos');
       console.log('═'.repeat(60) + '\n');
     });
 
