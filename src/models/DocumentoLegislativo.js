@@ -29,10 +29,9 @@ const documentoLegislativoSchema = new mongoose.Schema(
       required: [true, 'La fecha de ingreso es requerida']
     },
     peticionario: {
-      type: String,
+      type: [String], // 🔥 AHORA ES UN ARRAY
       required: [true, 'El peticionario/proyectista es requerido'],
-      trim: true,
-      maxlength: [300, 'El peticionario no puede exceder 300 caracteres']
+      default: []
     },
     asunto: {
       type: String,
@@ -84,9 +83,15 @@ const documentoLegislativoSchema = new mongoose.Schema(
     // ============================================
     esNuevoOReReposicion: { type: String, trim: true },
     plAnterior: { type: String, trim: true },
-    comisionI: { type: String, trim: true },
+    comisionI: {
+      type: [String], // 🔥 AHORA ES UN ARRAY
+      default: []
+    },
     fechaRemisionComisionI: { type: Date, default: null },
-    comisionII: { type: String, trim: true },
+    comisionII: {
+      type: [String], // 🔥 AHORA ES UN ARRAY
+      default: []
+    },
     fechaRemisionComisionII: { type: Date, default: null },
     estadoLey: { type: String, trim: true },
     fechaRemisionDiputados: { type: Date, default: null },

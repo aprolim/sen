@@ -802,6 +802,7 @@ const comunicadosRoutes = require('./routes/comunicados.routes');
 const avisosRoutes = require('./routes/avisos.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
 const documentosLegislativosRoutes = require('./routes/documentosLegislativos.routes'); // 🔥 NUEVO
+const catalogosRoutes = require('./routes/catalogos.routes'); // 🔥 AGREGAR
 
 // Rate limiting específico
 app.use('/api/auth/login', authLimiter);
@@ -819,6 +820,8 @@ app.use('/api/comunicados', comunicadosRoutes);
 app.use('/api/avisos', avisosRoutes);
 app.use('/api/auditoria', auditoriaRoutes);
 app.use('/api/legislativos', documentosLegislativosRoutes); // 🔥 NUEVO
+app.use('/api/legislativos', documentosLegislativosRoutes);
+app.use('/api/catalogos', catalogosRoutes); // 🔥 AGREGAR
 
 // ============================================
 // RUTAS DEL SISTEMA
@@ -1268,6 +1271,32 @@ src\config\tiposDocumento.js
 // src/config/tiposDocumento.js
 // Configuración central de tipos de documentos legislativos.
 
+// ============================================
+// 🔥 MAPA DE ESTADO ↔ TIPO (para los 4 destinos)
+// ============================================
+const ESTADO_A_TIPO = {
+  'APROBADO': 'proyecto-ley-aprobados',
+  'SANCIONADO': 'proyecto-ley-sancionados',
+  'APROBADO CON MODIFICACIONES': 'proyecto-ley-modificaciones',
+  'RECHAZADO': 'proyecto-ley-rechazados'
+};
+
+const TIPO_A_ESTADO = {
+  'proyecto-ley-aprobados': 'APROBADO',
+  'proyecto-ley-sancionados': 'SANCIONADO',
+  'proyecto-ley-modificaciones': 'APROBADO CON MODIFICACIONES',
+  'proyecto-ley-rechazados': 'RECHAZADO'
+};
+
+// Tipos "origen" que pueden transicionar
+const TIPOS_ORIGEN_TRANSICION = [
+  'proyecto-ley-tratamiento-senado',
+  'proyecto-ley-revision-diputados'
+];
+
+// Tipos "destino" a los que se puede llegar
+const TIPOS_DESTINO_TRANSICION = Object.values(ESTADO_A_TIPO);
+
 const TIPOS_DOCUMENTO = {
   // ============================================
   // 🔍 FISCALIZACIÓN
@@ -1351,18 +1380,19 @@ const TIPOS_DOCUMENTO = {
   },
 
   // ============================================
-  // ⚖️ LEGISLACIÓN
+  // ⚖️ LEGISLACIÓN - ORIGEN
   // ============================================
   'proyecto-ley-tratamiento-senado': {
     label: 'Proyectos de Ley en Tratamiento (Senado)',
     bloque: 'legislacion',
     prefijoCodigo: 'P.L. C.S.',
     campos: [
-      'codigo', // 🔥 AGREGADO CORRECTAMENTE AQUÍ
-      'fechaIngreso', 'peticionario', 'asunto', 'esNuevoOReReposicion',
-      'plAnterior', 'comisionI', 'fechaRemisionComisionI', 'comisionII',
-      'fechaRemisionComisionII', 'estadoLey', 'fechaAprobacion',
-      'fechaRemisionDiputados', 'observacion', 'archivo'
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'esNuevoOReReposicion', 'plAnterior',
+      'comisionI', 'fechaRemisionComisionI',
+      'comisionII', 'fechaRemisionComisionII',
+      'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados',
+      'observacion', 'archivo'
     ],
     camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario', 'estadoLey'],
     camposBloqueadosEnEdicion: ['numero', 'codigo']
@@ -1373,9 +1403,9 @@ const TIPOS_DOCUMENTO = {
     bloque: 'legislacion',
     prefijoCodigo: 'P.L. C.D.',
     campos: [
-      'codigo', // 🔥 AGREGADO CORRECTAMENTE AQUÍ
-      'fechaIngreso', 'peticionario', 'asunto', 'comisionI',
-      'fechaRemisionComisionI', 'comisionII', 'fechaRemisionComisionII',
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'comisionI', 'fechaRemisionComisionI',
+      'comisionII', 'fechaRemisionComisionII',
       'estadoLey', 'fechaSancion', 'fechaRemisionEjecutivo',
       'observacion', 'archivo'
     ],
@@ -1383,51 +1413,102 @@ const TIPOS_DOCUMENTO = {
     camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
-  // Placeholders para los otros tipos
+  // ============================================
+  // ⚖️ LEGISLACIÓN - DESTINOS (los 4 nuevos)
+  // ============================================
+
+  // 🔵 APROBADOS
   'proyecto-ley-aprobados': {
     label: 'Proyectos de Ley Aprobados',
     bloque: 'legislacion',
     prefijoCodigo: 'P.L.',
+    estadoRequerido: 'APROBADO',
     campos: [
-      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'archivo'
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'esNuevoOReReposicion', 'plAnterior',
+      'comisionI', 'fechaRemisionComisionI',
+      'comisionII', 'fechaRemisionComisionII',
+      'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados',
+      'observacion', 'numeroLey',
+      'archivo', 'archivoAnexo'
     ],
-    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario'],
-    camposBloqueadosEnEdicion: ['numero']
+    camposObligatorios: [
+      'numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario',
+      'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados',
+      'numeroLey', 'archivoAnexo'
+    ],
+    camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
+  // 🟣 SANCIONADOS
   'proyecto-ley-sancionados': {
     label: 'Proyectos de Ley Sancionados',
     bloque: 'legislacion',
     prefijoCodigo: 'P.L.',
+    estadoRequerido: 'SANCIONADO',
     campos: [
-      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'archivo'
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'comisionI', 'fechaRemisionComisionI',
+      'comisionII', 'fechaRemisionComisionII',
+      'estadoLey', 'fechaSancion', 'fechaRemisionEjecutivo',
+      'observacion', 'numeroLey',
+      'archivo', 'archivoAnexo'
     ],
-    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario'],
-    camposBloqueadosEnEdicion: ['numero']
+    camposObligatorios: [
+      'numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario',
+      'estadoLey', 'fechaSancion', 'fechaRemisionEjecutivo',
+      'numeroLey', 'archivoAnexo'
+    ],
+    camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
+  // 🟡 APROBADOS CON MODIFICACIONES (DEVUELTOS A DIPUTADOS)
   'proyecto-ley-modificaciones': {
     label: 'Proyectos de Ley con Modificaciones',
     bloque: 'legislacion',
     prefijoCodigo: 'P.L.',
+    estadoRequerido: 'APROBADO CON MODIFICACIONES',
     campos: [
-      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'archivo'
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'comisionI', 'fechaRemisionComisionI',
+      'comisionII', 'fechaRemisionComisionII',
+      'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados',
+      'observacion', 'numeroLey',
+      'archivo', 'archivoAnexo'
     ],
-    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario'],
-    camposBloqueadosEnEdicion: ['numero']
+    camposObligatorios: [
+      'numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario',
+      'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados',
+      'numeroLey', 'archivoAnexo'
+    ],
+    camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
+  // 🔴 RECHAZADOS (sin numeroLey)
   'proyecto-ley-rechazados': {
     label: 'Proyectos de Ley Rechazados',
     bloque: 'legislacion',
     prefijoCodigo: 'P.L.',
+    estadoRequerido: 'RECHAZADO',
     campos: [
-      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'archivo'
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto',
+      'comisionI', 'fechaRemisionComisionI',
+      'comisionII', 'fechaRemisionComisionII',
+      'estadoLey', 'fechaRechazo', 'fechaRemisionDiputados',
+      'observacion',
+      'archivo', 'archivoAnexo'
     ],
-    camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario'],
-    camposBloqueadosEnEdicion: ['numero']
+    camposObligatorios: [
+      'numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario',
+      'estadoLey', 'fechaRechazo', 'fechaRemisionDiputados',
+      'archivoAnexo'
+    ],
+    camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
+  // ============================================
+  // ⚖️ LEGISLACIÓN - LEY PROMULGADA (existente)
+  // ============================================
   'ley-promulgada': {
     label: 'Leyes Promulgadas',
     bloque: 'legislacion',
@@ -1440,7 +1521,9 @@ const TIPOS_DOCUMENTO = {
   }
 };
 
-// Lista de valores válidos para "tipo de destinatario"
+// ============================================
+// LISTA DE VALORES VÁLIDOS
+// ============================================
 const TIPOS_DESTINATARIO = [
   'Órgano Ejecutivo',
   'Órgano Judicial',
@@ -1451,14 +1534,80 @@ const TIPOS_DESTINATARIO = [
   'Otra Entidad'
 ];
 
+const ESTADOS_LEY_VALIDOS = [
+  'EN TRATAMIENTO',
+  'EN REVISIÓN',
+  'APROBADO',
+  'SANCIONADO',
+  'APROBADO CON MODIFICACIONES',
+  'RECHAZADO'
+];
+
+// ============================================
+// HELPERS
+// ============================================
 const esTipoValido = (tipo) => Object.keys(TIPOS_DOCUMENTO).includes(tipo);
 const getConfigTipo = (tipo) => TIPOS_DOCUMENTO[tipo] || null;
+
+/**
+ * Devuelve el `tipo` destino según el `estadoLey`. Null si el estado no mapea.
+ */
+const getTipoPorEstado = (estadoLey) => ESTADO_A_TIPO[estadoLey] || null;
+
+/**
+ * Devuelve el `estadoLey` esperado para un `tipo` destino. Null si no aplica.
+ */
+const getEstadoPorTipo = (tipo) => TIPO_A_ESTADO[tipo] || null;
+
+/**
+ * ¿Es un tipo al que se puede llegar por transición de estado?
+ */
+const esTipoDestinoTransicion = (tipo) => TIPOS_DESTINO_TRANSICION.includes(tipo);
+
+/**
+ * ¿Es un tipo origen del que se puede salir por transición?
+ */
+const esTipoOrigenTransicion = (tipo) => TIPOS_ORIGEN_TRANSICION.includes(tipo);
+
+/**
+ * Valida si una transición de estado está permitida.
+ * @returns { ok: boolean, tipoNuevo?: string, mensaje?: string }
+ */
+const validarTransicion = (tipoActual, estadoNuevo) => {
+  if (!esTipoOrigenTransicion(tipoActual)) {
+    return {
+      ok: false,
+      mensaje: `Solo se puede cambiar de estado desde "proyecto-ley-tratamiento-senado" o "proyecto-ley-revision-diputados". Tipo actual: ${tipoActual}`
+    };
+  }
+
+  const tipoNuevo = getTipoPorEstado(estadoNuevo);
+
+  if (!tipoNuevo) {
+    return {
+      ok: false,
+      mensaje: `Estado no válido para transición: ${estadoNuevo}. Válidos: APROBADO, SANCIONADO, APROBADO CON MODIFICACIONES, RECHAZADO`
+    };
+  }
+
+  return { ok: true, tipoNuevo };
+};
 
 module.exports = {
   TIPOS_DOCUMENTO,
   TIPOS_DESTINATARIO,
+  ESTADOS_LEY_VALIDOS,
+  ESTADO_A_TIPO,
+  TIPO_A_ESTADO,
+  TIPOS_ORIGEN_TRANSICION,
+  TIPOS_DESTINO_TRANSICION,
   esTipoValido,
-  getConfigTipo
+  getConfigTipo,
+  getTipoPorEstado,
+  getEstadoPorTipo,
+  esTipoDestinoTransicion,
+  esTipoOrigenTransicion,
+  validarTransicion
 }; 
 ================================= 
 src\controllers\auditoria.controller.js 
@@ -2815,6 +2964,48 @@ module.exports = {
   deleteAviso,
   getStats
 }; 
+================================= 
+src\controllers\catalogos.controller.js 
+================================= 
+ 
+// src/controllers/catalogos.controller.js
+const Senador = require('../models/Senador');
+const Comision = require('../models/Comision');
+
+// Obtener lista de senadores para el select
+const getSenadores = async (req, res) => {
+  try {
+    const senadores = await Senador.find({}, 'id name tipo department').sort({ name: 1 }).lean();
+    
+    // Retornamos un formato simple para el select
+    const data = senadores.map(s => ({
+      value: s.name,
+      label: `${s.name} (${s.tipo === 'titular' ? 'Titular' : 'Suplente'}) - ${s.department}`
+    }));
+    
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Obtener lista de comisiones
+const getComisiones = async (req, res) => {
+  try {
+    const comisiones = await Comision.find({}, 'nombre').sort({ nombre: 1 }).lean();
+    
+    const data = comisiones.map(c => ({
+      value: c.nombre,
+      label: c.nombre
+    }));
+    
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+module.exports = { getSenadores, getComisiones }; 
 ================================= 
 src\controllers\comunicados.controller.js 
 ================================= 
@@ -4817,94 +5008,129 @@ src\controllers\documentosLegislativos.controller.js
  
 // src/controllers/documentosLegislativos.controller.js
 const DocumentoLegislativo = require('../models/DocumentoLegislativo');
-const { esTipoValido, getConfigTipo, TIPOS_DESTINATARIO, TIPOS_DOCUMENTO } = require('../config/tiposDocumento');
-//                                                                     ↑ 🔥 AGREGADO AQUÍ
+const {
+  esTipoValido,
+  getConfigTipo,
+  TIPOS_DESTINATARIO,
+  TIPOS_DOCUMENTO,
+  esTipoOrigenTransicion,
+  esTipoDestinoTransicion,
+  validarTransicion,
+  getTipoPorEstado
+} = require('../config/tiposDocumento');
 
 // ============================================
 // 🛠️ HELPERS
 // ============================================
 
-/**
- * Convierte strings vacíos o inválidos a null para fechas.
- * Así evitamos errores de Mongoose con strings vacíos en Date.
- */
 const parsearFecha = (valor) => {
   if (!valor || valor === '' || valor === 'null' || valor === 'undefined') return null;
   const fecha = new Date(valor);
   return isNaN(fecha.getTime()) ? null : fecha;
 };
 
-/**
- * Sanitiza el objeto de datos recibido en el body: convierte strings vacíos
- * en null para campos de fecha, y limpia strings con trim.
- */
-const sanitizarBody = (body) => {
-  const camposFecha = [
-    'fechaIngreso',
-    'fechaRemisionDestinatario',
-    'fechaRespuesta',
-    'fechaRemisionPeticionario',
-    'fechaRealizacion',
-    'fechaReprogramacion',
-    'fechaRealizacionFinal'
-  ];
+const CAMPOS_FECHA = [
+  'fechaIngreso',
+  'fechaRemisionDestinatario',
+  'fechaRespuesta',
+  'fechaRemisionPeticionario',
+  'fechaRealizacion',
+  'fechaReprogramacion',
+  'fechaRealizacionFinal',
+  'fechaAprobacion',
+  'fechaRemisionDiputados',
+  'fechaSancion',
+  'fechaRemisionEjecutivo',
+  'fechaRechazo',
+  'fechaRemisionComisionI',
+  'fechaRemisionComisionII'
+];
 
+const CAMPOS_TEXTO = [
+  'codigo',
+  'asunto',
+  'destinatario',
+  'tipoDestinatario',
+  'conminatoria',
+  'observacion',
+  'esNuevoOReReposicion',
+  'plAnterior',
+  'estadoLey'
+];
+
+// 🔥 CAMPOS QUE AHORA SON ARRAYS
+const CAMPOS_ARRAY_TEXTO = [
+  'peticionario',
+  'comisionI',
+  'comisionII'
+];
+
+const sanitizarBody = (body) => {
   const limpio = { ...body };
 
-  camposFecha.forEach((campo) => {
+  CAMPOS_FECHA.forEach((campo) => {
+    if (campo in limpio) limpio[campo] = parsearFecha(limpio[campo]);
+  });
+
+  CAMPOS_TEXTO.forEach((campo) => {
+    if (typeof limpio[campo] === 'string') limpio[campo] = limpio[campo].trim();
+  });
+
+  // 🔥 Sanitizar arrays (peticionario, comisiones)
+  CAMPOS_ARRAY_TEXTO.forEach((campo) => {
     if (campo in limpio) {
-      limpio[campo] = parsearFecha(limpio[campo]);
+      if (Array.isArray(limpio[campo])) {
+        limpio[campo] = limpio[campo].map(item => typeof item === 'string' ? item.trim() : item).filter(Boolean);
+      } else if (typeof limpio[campo] === 'string') {
+        // Si el frontend envía un string por error, lo convertimos a array
+        limpio[campo] = limpio[campo].trim() ? [limpio[campo].trim()] : [];
+      } else if (limpio[campo] === null || limpio[campo] === undefined) {
+        limpio[campo] = [];
+      }
     }
   });
 
-  // Campos de texto: trim
-  const camposTexto = [
-    'codigo',
-    'peticionario',
-    'asunto',
-    'destinatario',
-    'tipoDestinatario',
-    'conminatoria',
-    'observacion'
-  ];
-
-  camposTexto.forEach((campo) => {
-    if (typeof limpio[campo] === 'string') {
-      limpio[campo] = limpio[campo].trim();
+  if ('numeroLey' in limpio) {
+    if (limpio.numeroLey === '' || limpio.numeroLey === null || limpio.numeroLey === undefined) {
+      limpio.numeroLey = null;
+    } else {
+      const n = Number(limpio.numeroLey);
+      limpio.numeroLey = isNaN(n) ? null : n;
     }
-  });
+  }
+
+  if ('archivoAnexo' in limpio) {
+    if (!Array.isArray(limpio.archivoAnexo)) {
+      limpio.archivoAnexo = [];
+    } else {
+      limpio.archivoAnexo = limpio.archivoAnexo
+        .filter((a) => a && a.url)
+        .map((a) => ({
+          url: a.url,
+          filename: a.filename || '',
+          originalName: a.originalName || '',
+          size: Number(a.size) || 0
+        }));
+    }
+  }
 
   return limpio;
 };
 
-/**
- * Extrae solo los campos permitidos por la configuración del tipo.
- * Ignora campos que no pertenecen al tipo (evita "contaminación").
- */
 const extraerCamposDelTipo = (body, tipo, modo = 'create') => {
   const config = getConfigTipo(tipo);
   if (!config) return {};
 
-  const camposPermitidos = [...config.campos];
-
-  // En create, agregamos 'numero' (obligatorio, lo ingresa el usuario)
-  if (modo === 'create') {
-    camposPermitidos.push('numero');
-  }
+  const permitidos = [...config.campos];
+  if (modo === 'create') permitidos.push('numero');
 
   const resultado = {};
-  camposPermitidos.forEach((campo) => {
-    if (body[campo] !== undefined) {
-      resultado[campo] = body[campo];
-    }
+  permitidos.forEach((campo) => {
+    if (body[campo] !== undefined) resultado[campo] = body[campo];
   });
-
   return resultado;
 };
 
-/**
- * Valida que los campos obligatorios estén presentes según la config del tipo.
- */
 const validarObligatorios = (body, tipo) => {
   const config = getConfigTipo(tipo);
   if (!config) return ['Tipo inválido'];
@@ -4912,47 +5138,83 @@ const validarObligatorios = (body, tipo) => {
   const errores = [];
   config.camposObligatorios.forEach((campo) => {
     const valor = body[campo];
-    const vacio =
-      valor === undefined ||
-      valor === null ||
-      (typeof valor === 'string' && valor.trim() === '') ||
-      (typeof valor === 'number' && valor <= 0);
+    let vacio;
 
-    if (vacio) {
-      errores.push(`El campo "${campo}" es obligatorio`);
+    if (campo === 'archivoAnexo') {
+      vacio = !Array.isArray(valor) || valor.length === 0;
+    } else if (campo === 'numeroLey') {
+      vacio = valor === undefined || valor === null || valor === '';
+    } else if (CAMPOS_ARRAY_TEXTO.includes(campo)) {
+      // 🔥 Validar que los arrays tengan al menos 1 elemento
+      vacio = !Array.isArray(valor) || valor.length === 0;
+    } else {
+      vacio =
+        valor === undefined ||
+        valor === null ||
+        (typeof valor === 'string' && valor.trim() === '') ||
+        (typeof valor === 'number' && valor <= 0);
     }
+
+    if (vacio) errores.push(`El campo "${campo}" es obligatorio`);
   });
 
   return errores;
 };
 
+const validarEstadoVsTipo = (tipo, estadoLey) => {
+  const config = getConfigTipo(tipo);
+  if (!config || !config.estadoRequerido) return { ok: true };
+
+  if (!estadoLey) {
+    return {
+      ok: false,
+      mensaje: `El estadoLey es obligatorio para el tipo "${tipo}". Debe ser "${config.estadoRequerido}".`
+    };
+  }
+
+  if (estadoLey !== config.estadoRequerido) {
+    return {
+      ok: false,
+      mensaje: `El estadoLey "${estadoLey}" no corresponde al tipo "${tipo}". Debe ser "${config.estadoRequerido}".`
+    };
+  }
+
+  return { ok: true };
+};
+
+const validarNumeroLeyUnico = async (numeroLey, excludeId = null) => {
+  if (numeroLey === null || numeroLey === undefined) return { ok: true };
+
+  const query = { numeroLey };
+  if (excludeId) query._id = { $ne: excludeId };
+
+  const existe = await DocumentoLegislativo.findOne(query).select('_id').lean();
+  if (existe) {
+    return {
+      ok: false,
+      mensaje: `Ya existe un documento con numeroLey ${numeroLey}`
+    };
+  }
+  return { ok: true };
+};
+
 // ============================================
-// 📡 PÚBLICO - Listar documentos (paginado)
+// 📡 PÚBLICO - Listar documentos
 // GET /api/legislativos/:tipo
 // ============================================
 const getDocumentosPublicos = async (req, res) => {
   try {
     const { tipo } = req.params;
-
     if (!esTipoValido(tipo)) {
-      return res.status(400).json({
-        success: false,
-        message: `Tipo inválido: ${tipo}`
-      });
+      return res.status(400).json({ success: false, message: `Tipo inválido: ${tipo}` });
     }
 
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const { search, gestion } = req.query;
 
-    // 🔥 Filtro base: solo del tipo solicitado y NO eliminados
-    const filters = {
-      tipo,
-      eliminado: false,
-      activo: true
-    };
+    const filters = { tipo, eliminado: false, activo: true };
 
-    // Filtro por gestión (año)
     if (gestion) {
       const year = parseInt(gestion);
       if (!isNaN(year)) {
@@ -4963,69 +5225,50 @@ const getDocumentosPublicos = async (req, res) => {
       }
     }
 
-    // Búsqueda por texto
     if (search && search.trim()) {
       const termino = search.trim();
       filters.$or = [
         { codigo: { $regex: termino, $options: 'i' } },
         { asunto: { $regex: termino, $options: 'i' } },
         { peticionario: { $regex: termino, $options: 'i' } },
-        { destinatario: { $regex: termino, $options: 'i' } }
+        { destinatario: { $regex: termino, $options: 'i' } },
+        { comisionI: { $regex: termino, $options: 'i' } },
+        { comisionII: { $regex: termino, $options: 'i' } }
       ];
     }
 
     const skip = (page - 1) * limit;
-
     const [documentos, total] = await Promise.all([
-      DocumentoLegislativo.find(filters)
-        .sort({ numero: 1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
+      DocumentoLegislativo.find(filters).sort({ numero: 1 }).skip(skip).limit(limit).lean(),
       DocumentoLegislativo.countDocuments(filters)
     ]);
 
     res.json({
       success: true,
-      data: {
-        documentos,
-        total,
-        page,
-        limit,
-        pages: Math.ceil(total / limit)
-      }
+      data: { documentos, total, page, limit, pages: Math.ceil(total / limit) }
     });
   } catch (error) {
     console.error('❌ [getDocumentosPublicos]', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error al obtener los documentos'
-    });
+    res.status(500).json({ success: false, message: 'Error al obtener los documentos' });
   }
 };
 
 // ============================================
-// 🔐 ADMIN - Listar (incluye inactivos y eliminados)
+// 🔐 ADMIN - Listar
 // GET /api/legislativos/:tipo/admin
 // ============================================
 const getDocumentosAdmin = async (req, res) => {
   try {
     const { tipo } = req.params;
-
     if (!esTipoValido(tipo)) {
-      return res.status(400).json({
-        success: false,
-        message: `Tipo inválido: ${tipo}`
-      });
+      return res.status(400).json({ success: false, message: `Tipo inválido: ${tipo}` });
     }
 
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const { search, gestion, incluirInactivos, incluirEliminados } = req.query;
 
-    // Por defecto, la vista admin NO muestra eliminados ni inactivos.
     const filters = { tipo };
-
     if (incluirEliminados !== 'true') filters.eliminado = false;
     if (incluirInactivos !== 'true') filters.activo = true;
 
@@ -5045,12 +5288,13 @@ const getDocumentosAdmin = async (req, res) => {
         { codigo: { $regex: termino, $options: 'i' } },
         { asunto: { $regex: termino, $options: 'i' } },
         { peticionario: { $regex: termino, $options: 'i' } },
-        { destinatario: { $regex: termino, $options: 'i' } }
+        { destinatario: { $regex: termino, $options: 'i' } },
+        { comisionI: { $regex: termino, $options: 'i' } },
+        { comisionII: { $regex: termino, $options: 'i' } }
       ];
     }
 
     const skip = (page - 1) * limit;
-
     const [documentos, total] = await Promise.all([
       DocumentoLegislativo.find(filters)
         .sort({ numero: 1 })
@@ -5065,36 +5309,22 @@ const getDocumentosAdmin = async (req, res) => {
 
     res.json({
       success: true,
-      data: {
-        documentos,
-        total,
-        page,
-        limit,
-        pages: Math.ceil(total / limit)
-      }
+      data: { documentos, total, page, limit, pages: Math.ceil(total / limit) }
     });
   } catch (error) {
     console.error('❌ [getDocumentosAdmin]', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error al obtener los documentos'
-    });
+    res.status(500).json({ success: false, message: 'Error al obtener los documentos' });
   }
 };
 
 // ============================================
 // 🔐 ADMIN - Obtener uno por ID
-// GET /api/legislativos/:tipo/:id
 // ============================================
 const getDocumentoById = async (req, res) => {
   try {
     const { tipo, id } = req.params;
-
     if (!esTipoValido(tipo)) {
-      return res.status(400).json({
-        success: false,
-        message: `Tipo inválido: ${tipo}`
-      });
+      return res.status(400).json({ success: false, message: `Tipo inválido: ${tipo}` });
     }
 
     const doc = await DocumentoLegislativo.findOne({ _id: id, tipo })
@@ -5103,19 +5333,13 @@ const getDocumentoById = async (req, res) => {
       .populate('eliminadoPor', 'email profile');
 
     if (!doc) {
-      return res.status(404).json({
-        success: false,
-        message: 'Documento no encontrado'
-      });
+      return res.status(404).json({ success: false, message: 'Documento no encontrado' });
     }
 
     res.json({ success: true, data: doc });
   } catch (error) {
     console.error('❌ [getDocumentoById]', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error al obtener el documento'
-    });
+    res.status(500).json({ success: false, message: 'Error al obtener el documento' });
   }
 };
 
@@ -5126,45 +5350,30 @@ const getDocumentoById = async (req, res) => {
 const createDocumento = async (req, res) => {
   try {
     const { tipo } = req.params;
-
     if (!esTipoValido(tipo)) {
-      return res.status(400).json({
-        success: false,
-        message: `Tipo inválido: ${tipo}`
-      });
+      return res.status(400).json({ success: false, message: `Tipo inválido: ${tipo}` });
     }
 
-    // 1. Sanitizar body (fechas, strings)
     const bodyLimpio = sanitizarBody(req.body);
 
-    // 2. Validar obligatorios
-    const errores = validarObligatorios(bodyLimpio, tipo);
-    if (errores.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: errores.join('. '),
-        errores
-      });
+    const vEstado = validarEstadoVsTipo(tipo, bodyLimpio.estadoLey);
+    if (!vEstado.ok) {
+      return res.status(400).json({ success: false, message: vEstado.mensaje });
     }
 
-    // 3. Validar tipo de destinatario
-    if (
-      bodyLimpio.tipoDestinatario &&
-      !TIPOS_DESTINATARIO.includes(bodyLimpio.tipoDestinatario)
-    ) {
+    const errores = validarObligatorios(bodyLimpio, tipo);
+    if (errores.length > 0) {
+      return res.status(400).json({ success: false, message: errores.join('. '), errores });
+    }
+
+    if (bodyLimpio.tipoDestinatario && !TIPOS_DESTINATARIO.includes(bodyLimpio.tipoDestinatario)) {
       return res.status(400).json({
         success: false,
         message: `Tipo de destinatario inválido. Opciones: ${TIPOS_DESTINATARIO.join(', ')}`
       });
     }
 
-    // 4. Verificar que no exista ya un documento con ese número
-    //    dentro del mismo tipo (evita duplicados).
-    const yaExiste = await DocumentoLegislativo.findOne({
-      tipo,
-      numero: bodyLimpio.numero
-    });
-
+    const yaExiste = await DocumentoLegislativo.findOne({ tipo, numero: bodyLimpio.numero });
     if (yaExiste) {
       return res.status(409).json({
         success: false,
@@ -5172,10 +5381,13 @@ const createDocumento = async (req, res) => {
       });
     }
 
-    // 5. Extraer solo los campos válidos del tipo
+    const vNumeroLey = await validarNumeroLeyUnico(bodyLimpio.numeroLey);
+    if (!vNumeroLey.ok) {
+      return res.status(409).json({ success: false, message: vNumeroLey.mensaje });
+    }
+
     const datos = extraerCamposDelTipo(bodyLimpio, tipo, 'create');
 
-    // 6. Crear documento
     const doc = new DocumentoLegislativo({
       ...datos,
       tipo,
@@ -5185,9 +5397,7 @@ const createDocumento = async (req, res) => {
 
     await doc.save();
 
-    console.log(
-      `✅ [createDocumento] ${tipo} #${doc.numero} creado por ${req.user.email}`
-    );
+    console.log(`✅ [createDocumento] ${tipo} #${doc.numero} creado por ${req.user.email}`);
 
     res.status(201).json({
       success: true,
@@ -5197,28 +5407,20 @@ const createDocumento = async (req, res) => {
   } catch (error) {
     console.error('❌ [createDocumento]', error);
 
-    // Error de duplicado de Mongo (por si el índice único existiera)
     if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0] || 'campo';
       return res.status(409).json({
         success: false,
-        message: 'Ya existe un documento con esos datos.'
+        message: `Ya existe un registro con ese valor único (${field}).`
       });
     }
 
-    // Error de validación de Mongoose
     if (error.name === 'ValidationError') {
       const mensajes = Object.values(error.errors).map((e) => e.message);
-      return res.status(400).json({
-        success: false,
-        message: mensajes.join('. '),
-        errores: mensajes
-      });
+      return res.status(400).json({ success: false, message: mensajes.join('. '), errores: mensajes });
     }
 
-    res.status(500).json({
-      success: false,
-      message: 'Error al crear el documento'
-    });
+    res.status(500).json({ success: false, message: 'Error al crear el documento' });
   }
 };
 
@@ -5229,21 +5431,13 @@ const createDocumento = async (req, res) => {
 const updateDocumento = async (req, res) => {
   try {
     const { tipo, id } = req.params;
-
     if (!esTipoValido(tipo)) {
-      return res.status(400).json({
-        success: false,
-        message: `Tipo inválido: ${tipo}`
-      });
+      return res.status(400).json({ success: false, message: `Tipo inválido: ${tipo}` });
     }
 
     const doc = await DocumentoLegislativo.findOne({ _id: id, tipo });
-
     if (!doc) {
-      return res.status(404).json({
-        success: false,
-        message: 'Documento no encontrado'
-      });
+      return res.status(404).json({ success: false, message: 'Documento no encontrado' });
     }
 
     if (doc.eliminado) {
@@ -5254,41 +5448,143 @@ const updateDocumento = async (req, res) => {
     }
 
     const config = getConfigTipo(tipo);
-
-    // 1. Sanitizar body
     const bodyLimpio = sanitizarBody(req.body);
 
-    // 2. Ignorar campos bloqueados (ej: numero)
-    config.camposBloqueadosEnEdicion.forEach((campo) => {
-      delete bodyLimpio[campo];
-    });
+    // 🔒 Campos bloqueados (numero, codigo)
+    config.camposBloqueadosEnEdicion.forEach((campo) => delete bodyLimpio[campo]);
 
-    // 3. Extraer solo los campos válidos del tipo
+    // ============================================
+    // 🔥 DETECTAR SI HAY CAMBIO DE ESTADO
+    // ============================================
+    const estadoNuevo = bodyLimpio.estadoLey;
+    const hayCambioEstado =
+      estadoNuevo !== undefined &&
+      estadoNuevo !== null &&
+      estadoNuevo !== '' &&
+      estadoNuevo !== doc.estadoLey;
+
+    if (hayCambioEstado) {
+      if (!esTipoOrigenTransicion(tipo)) {
+        return res.status(400).json({
+          success: false,
+          message: `No se puede cambiar el estado desde el tipo "${tipo}". Solo desde "proyecto-ley-tratamiento-senado" o "proyecto-ley-revision-diputados".`
+        });
+      }
+
+      const vTransicion = validarTransicion(tipo, estadoNuevo);
+      if (!vTransicion.ok) {
+        return res.status(400).json({ success: false, message: vTransicion.mensaje });
+      }
+
+      const tipoNuevo = vTransicion.tipoNuevo;
+
+      const combinado = {
+        ...doc.toObject(),
+        ...bodyLimpio,
+        tipo: tipoNuevo,
+        estadoLey: estadoNuevo
+      };
+
+      const errores = validarObligatorios(combinado, tipoNuevo);
+      
+      const erroresFiltrados = errores.filter(err => {
+        if (err.includes('archivoAnexo')) return true;
+        return false;
+      });
+
+      if (erroresFiltrados.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Faltan campos obligatorios: ${erroresFiltrados.join('. ')}`,
+          errores: erroresFiltrados
+        });
+      }
+
+      if (esTipoDestinoTransicion(tipoNuevo)) {
+        const anexos = combinado.archivoAnexo;
+        if (!Array.isArray(anexos) || anexos.length === 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Debe adjuntar al menos un archivo anexo (informe de comisión) para cambiar al estado "${estadoNuevo}".`
+          });
+        }
+      }
+
+      const vNumeroLey = await validarNumeroLeyUnico(combinado.numeroLey, doc._id);
+      if (!vNumeroLey.ok) {
+        return res.status(409).json({ success: false, message: vNumeroLey.mensaje });
+      }
+
+      const yaExiste = await DocumentoLegislativo.findOne({
+        _id: { $ne: doc._id },
+        tipo: tipoNuevo,
+        numero: combinado.numero
+      });
+      if (yaExiste) {
+        return res.status(409).json({
+          success: false,
+          message: `Ya existe un documento con el número ${combinado.numero} en "${tipoNuevo}".`
+        });
+      }
+
+      const datosNuevos = extraerCamposDelTipo(combinado, tipoNuevo, 'update');
+
+      doc.tipo = tipoNuevo;
+      Object.keys(datosNuevos).forEach((campo) => {
+        doc[campo] = datosNuevos[campo];
+      });
+      doc.actualizadoPor = req.user._id;
+
+      await doc.save();
+
+      console.log(
+        `🔄 [updateDocumento] #${doc.numero} cambió de "${tipo}" a "${tipoNuevo}" (estado: ${estadoNuevo})`
+      );
+
+      return res.json({
+        success: true,
+        message: `Documento migrado a "${tipoNuevo}" con estado "${estadoNuevo}".`,
+        data: doc
+      });
+    }
+
+    // ============================================
+    // 🔧 EDICIÓN NORMAL (sin cambio de estado)
+    // ============================================
     const datos = extraerCamposDelTipo(bodyLimpio, tipo, 'update');
 
-    // 4. Validar tipo de destinatario si viene
-    if (
-      datos.tipoDestinatario &&
-      !TIPOS_DESTINATARIO.includes(datos.tipoDestinatario)
-    ) {
+    if (datos.tipoDestinatario && !TIPOS_DESTINATARIO.includes(datos.tipoDestinatario)) {
       return res.status(400).json({
         success: false,
         message: `Tipo de destinatario inválido. Opciones: ${TIPOS_DESTINATARIO.join(', ')}`
       });
     }
 
-    // 5. Aplicar cambios
+    if (esTipoDestinoTransicion(tipo)) {
+      const anexos = datos.archivoAnexo !== undefined ? datos.archivoAnexo : doc.archivoAnexo;
+      if (!Array.isArray(anexos) || anexos.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'El archivo anexo (informe de comisión) es obligatorio para este tipo de documento.'
+        });
+      }
+    }
+
+    if (datos.numeroLey !== undefined) {
+      const vNumeroLey = await validarNumeroLeyUnico(datos.numeroLey, doc._id);
+      if (!vNumeroLey.ok) {
+        return res.status(409).json({ success: false, message: vNumeroLey.mensaje });
+      }
+    }
+
     Object.keys(datos).forEach((campo) => {
       doc[campo] = datos[campo];
     });
 
     doc.actualizadoPor = req.user._id;
-
     await doc.save();
 
-    console.log(
-      `✅ [updateDocumento] ${tipo} #${doc.numero} actualizado por ${req.user.email}`
-    );
+    console.log(`✅ [updateDocumento] ${tipo} #${doc.numero} actualizado por ${req.user.email}`);
 
     res.json({
       success: true,
@@ -5298,25 +5594,25 @@ const updateDocumento = async (req, res) => {
   } catch (error) {
     console.error('❌ [updateDocumento]', error);
 
-    if (error.name === 'ValidationError') {
-      const mensajes = Object.values(error.errors).map((e) => e.message);
-      return res.status(400).json({
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0] || 'campo';
+      return res.status(409).json({
         success: false,
-        message: mensajes.join('. '),
-        errores: mensajes
+        message: `Ya existe un registro con ese valor único (${field}).`
       });
     }
 
-    res.status(500).json({
-      success: false,
-      message: 'Error al actualizar el documento'
-    });
+    if (error.name === 'ValidationError') {
+      const mensajes = Object.values(error.errors).map((e) => e.message);
+      return res.status(400).json({ success: false, message: mensajes.join('. '), errores: mensajes });
+    }
+
+    res.status(500).json({ success: false, message: 'Error al actualizar el documento' });
   }
 };
 
 // ============================================
-// 🔥 SOFT DELETE - No borra, solo oculta
-// DELETE /api/legislativos/:tipo/:id
+// 🔥 SOFT DELETE
 // ============================================
 const deleteDocumento = async (req, res) => {
   try {
@@ -5324,45 +5620,29 @@ const deleteDocumento = async (req, res) => {
     const { motivo } = req.body || {};
 
     if (!esTipoValido(tipo)) {
-      return res.status(400).json({
-        success: false,
-        message: `Tipo inválido: ${tipo}`
-      });
+      return res.status(400).json({ success: false, message: `Tipo inválido: ${tipo}` });
     }
 
     const doc = await DocumentoLegislativo.findOne({ _id: id, tipo });
-
     if (!doc) {
-      return res.status(404).json({
-        success: false,
-        message: 'Documento no encontrado'
-      });
+      return res.status(404).json({ success: false, message: 'Documento no encontrado' });
     }
-
     if (doc.eliminado) {
-      return res.status(400).json({
-        success: false,
-        message: 'El documento ya fue eliminado previamente'
-      });
+      return res.status(400).json({ success: false, message: 'El documento ya fue eliminado previamente' });
     }
 
-    // 🔥 SOFT DELETE: no borramos el registro. Solo lo marcamos.
     doc.eliminado = true;
     doc.eliminadoPor = req.user._id;
     doc.fechaEliminacion = new Date();
     doc.motivoEliminacion = (motivo || '').trim().substring(0, 500);
     doc.actualizadoPor = req.user._id;
-
     await doc.save();
 
-    console.log(
-      `🗑️ [SOFT DELETE] ${tipo} #${doc.numero} eliminado por ${req.user.email}`
-    );
+    console.log(`🗑️ [SOFT DELETE] ${tipo} #${doc.numero} eliminado por ${req.user.email}`);
 
     res.json({
       success: true,
-      message:
-        'Documento eliminado correctamente. Los datos se conservan para auditoría.',
+      message: 'Documento eliminado correctamente. Los datos se conservan para auditoría.',
       data: {
         _id: doc._id,
         numero: doc.numero,
@@ -5374,39 +5654,23 @@ const deleteDocumento = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ [deleteDocumento]', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error al eliminar el documento'
-    });
+    res.status(500).json({ success: false, message: 'Error al eliminar el documento' });
   }
 };
 
 // ============================================
 // 🔐 SUPER_ADMIN - Restaurar
-// PATCH /api/legislativos/:tipo/:id/restore
 // ============================================
 const restoreDocumento = async (req, res) => {
   try {
     const { tipo, id } = req.params;
-
     if (!esTipoValido(tipo)) {
-      return res.status(400).json({
-        success: false,
-        message: `Tipo inválido: ${tipo}`
-      });
+      return res.status(400).json({ success: false, message: `Tipo inválido: ${tipo}` });
     }
 
-    const doc = await DocumentoLegislativo.findOne({
-      _id: id,
-      tipo,
-      eliminado: true
-    });
-
+    const doc = await DocumentoLegislativo.findOne({ _id: id, tipo, eliminado: true });
     if (!doc) {
-      return res.status(404).json({
-        success: false,
-        message: 'Documento eliminado no encontrado'
-      });
+      return res.status(404).json({ success: false, message: 'Documento eliminado no encontrado' });
     }
 
     doc.eliminado = false;
@@ -5414,24 +5678,14 @@ const restoreDocumento = async (req, res) => {
     doc.fechaEliminacion = null;
     doc.motivoEliminacion = '';
     doc.actualizadoPor = req.user._id;
-
     await doc.save();
 
-    console.log(
-      `♻️ [RESTORE] ${tipo} #${doc.numero} restaurado por ${req.user.email}`
-    );
+    console.log(`♻️ [RESTORE] ${tipo} #${doc.numero} restaurado por ${req.user.email}`);
 
-    res.json({
-      success: true,
-      message: 'Documento restaurado exitosamente',
-      data: doc
-    });
+    res.json({ success: true, message: 'Documento restaurado exitosamente', data: doc });
   } catch (error) {
     console.error('❌ [restoreDocumento]', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error al restaurar el documento'
-    });
+    res.status(500).json({ success: false, message: 'Error al restaurar el documento' });
   }
 };
 
@@ -5442,10 +5696,7 @@ const restoreDocumento = async (req, res) => {
 const uploadPDF = async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'No se subió ningún PDF'
-      });
+      return res.status(400).json({ success: false, message: 'No se subió ningún PDF' });
     }
 
     const baseUrl = `${req.protocol}://${req.get('host')}`;
@@ -5466,70 +5717,45 @@ const uploadPDF = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ [uploadPDF]', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error al subir el PDF'
-    });
+    res.status(500).json({ success: false, message: 'Error al subir el PDF' });
   }
 };
 
 // ============================================
-// 📊 Stats (para contadores de la home)
-// GET /api/legislativos/:tipo/stats
+// 📊 Stats
 // ============================================
 const getStats = async (req, res) => {
   try {
     const { tipo } = req.params;
-
     if (!esTipoValido(tipo)) {
-      return res.status(400).json({
-        success: false,
-        message: `Tipo inválido: ${tipo}`
-      });
+      return res.status(400).json({ success: false, message: `Tipo inválido: ${tipo}` });
     }
 
     const baseFilter = { tipo, eliminado: false };
-
     const [total, activos, eliminados] = await Promise.all([
       DocumentoLegislativo.countDocuments(baseFilter),
       DocumentoLegislativo.countDocuments({ ...baseFilter, activo: true }),
       DocumentoLegislativo.countDocuments({ tipo, eliminado: true })
     ]);
 
-    res.json({
-      success: true,
-      data: {
-        total,
-        activos,
-        eliminados
-      }
-    });
+    res.json({ success: true, data: { total, activos, eliminados } });
   } catch (error) {
     console.error('❌ [getStats]', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error al obtener estadísticas'
-    });
+    res.status(500).json({ success: false, message: 'Error al obtener estadísticas' });
   }
 };
 
 // ============================================
-// 📋 Configuración del tipo (para el CMS)
-// GET /api/legislativos/:tipo/config
+// 📋 Config del tipo
 // ============================================
 const getConfigDelTipo = async (req, res) => {
   try {
     const { tipo } = req.params;
-
     if (!esTipoValido(tipo)) {
-      return res.status(400).json({
-        success: false,
-        message: `Tipo inválido: ${tipo}`
-      });
+      return res.status(400).json({ success: false, message: `Tipo inválido: ${tipo}` });
     }
 
     const config = getConfigTipo(tipo);
-
     res.json({
       success: true,
       data: {
@@ -5540,16 +5766,12 @@ const getConfigDelTipo = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ [getConfigDelTipo]', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error al obtener la configuración'
-    });
+    res.status(500).json({ success: false, message: 'Error al obtener la configuración' });
   }
 };
 
 // ============================================
 // 📋 Listar tipos disponibles
-// GET /api/legislativos/tipos
 // ============================================
 const getTiposDisponibles = async (req, res) => {
   try {
@@ -5557,19 +5779,14 @@ const getTiposDisponibles = async (req, res) => {
       tipo: key,
       label: value.label,
       bloque: value.bloque,
-      prefijoCodigo: value.prefijoCodigo
+      prefijoCodigo: value.prefijoCodigo,
+      estadoRequerido: value.estadoRequerido || null
     }));
 
-    res.json({
-      success: true,
-      data: tipos
-    });
+    res.json({ success: true, data: tipos });
   } catch (error) {
     console.error('❌ [getTiposDisponibles]', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error al obtener los tipos'
-    });
+    res.status(500).json({ success: false, message: 'Error al obtener los tipos' });
   }
 };
 
@@ -9237,10 +9454,9 @@ const documentoLegislativoSchema = new mongoose.Schema(
       required: [true, 'La fecha de ingreso es requerida']
     },
     peticionario: {
-      type: String,
+      type: [String], // 🔥 AHORA ES UN ARRAY
       required: [true, 'El peticionario/proyectista es requerido'],
-      trim: true,
-      maxlength: [300, 'El peticionario no puede exceder 300 caracteres']
+      default: []
     },
     asunto: {
       type: String,
@@ -9261,18 +9477,9 @@ const documentoLegislativoSchema = new mongoose.Schema(
       type: String,
       enum: [...TIPOS_DESTINATARIO, null]
     },
-    fechaRemisionDestinatario: {
-      type: Date,
-      default: null
-    },
-    fechaRespuesta: {
-      type: Date,
-      default: null
-    },
-    fechaRemisionPeticionario: {
-      type: Date,
-      default: null
-    },
+    fechaRemisionDestinatario: { type: Date, default: null },
+    fechaRespuesta: { type: Date, default: null },
+    fechaRemisionPeticionario: { type: Date, default: null },
     conminatoria: {
       type: String,
       trim: true,
@@ -9297,51 +9504,31 @@ const documentoLegislativoSchema = new mongoose.Schema(
     },
 
     // ============================================
-    // ⚖️ PROYECTOS DE LEY (Legislación)
+    // ⚖️ PROYECTOS DE LEY
     // ============================================
-    esNuevoOReReposicion: {
-      type: String,
-      trim: true
-    },
-    plAnterior: {
-      type: String,
-      trim: true
-    },
+    esNuevoOReReposicion: { type: String, trim: true },
+    plAnterior: { type: String, trim: true },
     comisionI: {
-      type: String,
-      trim: true
+      type: [String], // 🔥 AHORA ES UN ARRAY
+      default: []
     },
-    fechaRemisionComisionI: {
-      type: Date,
-      default: null
-    },
+    fechaRemisionComisionI: { type: Date, default: null },
     comisionII: {
-      type: String,
-      trim: true
+      type: [String], // 🔥 AHORA ES UN ARRAY
+      default: []
     },
-    fechaRemisionComisionII: {
-      type: Date,
-      default: null
-    },
-    estadoLey: {
-      type: String,
-      trim: true
-    },
-    fechaRemisionDiputados: {
-      type: Date,
-      default: null
-    },
-    fechaSancion: {
-      type: Date,
-      default: null
-    },
-    fechaRemisionEjecutivo: {
-      type: Date,
-      default: null
-    },
+    fechaRemisionComisionII: { type: Date, default: null },
+    estadoLey: { type: String, trim: true },
+    fechaRemisionDiputados: { type: Date, default: null },
+    fechaSancion: { type: Date, default: null },
+    fechaRemisionEjecutivo: { type: Date, default: null },
+
+    // 🔥 NUEVOS CAMPOS
+    fechaRechazo: { type: Date, default: null },
+    numeroLey: { type: Number, default: null },
 
     // ============================================
-    // 📝 OBSERVACIONES Y ARCHIVO
+    // 📝 OBSERVACIONES Y ARCHIVOS
     // ============================================
     observacion: {
       type: String,
@@ -9354,6 +9541,15 @@ const documentoLegislativoSchema = new mongoose.Schema(
       originalName: { type: String, default: '' },
       size: { type: Number, default: 0 }
     },
+    // 🔥 Array de anexos (informe de comisión)
+    archivoAnexo: [
+      {
+        url: { type: String, default: null },
+        filename: { type: String, default: '' },
+        originalName: { type: String, default: '' },
+        size: { type: Number, default: 0 }
+      }
+    ],
 
     // ============================================
     // 🔥 AUDITORÍA
@@ -9371,10 +9567,22 @@ const documentoLegislativoSchema = new mongoose.Schema(
   }
 );
 
-// Índices
+// ============================================
+// ÍNDICES
+// ============================================
 documentoLegislativoSchema.index({ tipo: 1, eliminado: 1, numero: 1 });
 documentoLegislativoSchema.index({ tipo: 1, codigo: 1, eliminado: 1 });
 documentoLegislativoSchema.index({ tipo: 1, fechaIngreso: -1, eliminado: 1 });
+
+// 🔥 numeroLey único SOLO cuando tiene valor (partialFilterExpression)
+documentoLegislativoSchema.index(
+  { numeroLey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { numeroLey: { $type: 'number' } },
+    name: 'numeroLey_unique_partial'
+  }
+);
 
 module.exports = mongoose.model('DocumentoLegislativo', documentoLegislativoSchema); 
 ================================= 
@@ -10406,6 +10614,23 @@ router.delete('/:id', avisosController.deleteAviso);
 
 module.exports = router; 
 ================================= 
+src\routes\catalogos.routes.js 
+================================= 
+ 
+// src/routes/catalogos.routes.js
+const express = require('express');
+const router = express.Router();
+const catalogosController = require('../controllers/catalogos.controller');
+const { authenticate } = require('../middleware/auth');
+
+// Rutas protegidas (solo para el CMS)
+router.use(authenticate);
+
+router.get('/senadores', catalogosController.getSenadores);
+router.get('/comisiones', catalogosController.getComisiones);
+
+module.exports = router; 
+================================= 
 src\routes\comunicados.routes.js 
 ================================= 
  
@@ -10938,6 +11163,143 @@ async function cleanAuditoria() {
 }
 
 cleanAuditoria(); 
+================================= 
+src\scripts\cleanDocumentosLegislativos.js 
+================================= 
+ 
+// src/scripts/cleanDocumentosLegislativos.js
+// Borra TODOS los documentos legislativos y (opcionalmente) sus PDFs.
+// Ejecutar: node src/scripts/cleanDocumentosLegislativos.js
+//   Opciones:
+//     --pdfs     también borra los PDFs de uploads/documents/ (los que empiezan con "legislativo-")
+//     --yes      no pide confirmación (uso en CI)
+//     --collection <nombre>  fuerza el nombre de la colección (por defecto "documentolegislativos")
+
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+const fs = require('fs');
+const path = require('path');
+const readline = require('readline');
+
+dotenv.config();
+
+// ============================================
+// CONFIG
+// ============================================
+const COLLECTION_NAME = (() => {
+  const idx = process.argv.indexOf('--collection');
+  if (idx !== -1 && process.argv[idx + 1]) return process.argv[idx + 1];
+  return 'documentolegislativos';
+})();
+
+const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads', 'documents');
+
+// ============================================
+// HELPERS
+// ============================================
+const askQuestion = (q) =>
+  new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(q, (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+  });
+
+// ============================================
+// MAIN
+// ============================================
+async function main() {
+  const skipConfirm = process.argv.includes('--yes');
+  const deletePdfs = process.argv.includes('--pdfs');
+
+  console.log('\n' + '═'.repeat(80));
+  console.log('🧹 LIMPIEZA DE DOCUMENTOS LEGISLATIVOS');
+  console.log('═'.repeat(80) + '\n');
+  console.log(`   DB:          ${process.env.MONGODB_URI || 'mongodb://localhost:27017/senado_bolivia'}`);
+  console.log(`   Colección:   ${COLLECTION_NAME}`);
+  console.log(`   Borrar PDFs: ${deletePdfs ? 'SÍ (uploads/documents/ con prefijo legislativo-)' : 'NO'}`);
+  console.log('');
+
+  if (!skipConfirm) {
+    const resp = await askQuestion(
+      '⚠️  Esta acción BORRA TODOS los documentos legislativos.\n' +
+      '   Escribe "BORRAR" para continuar: '
+    );
+    if (resp.trim() !== 'BORRAR') {
+      console.log('\n❌ Cancelado por el usuario.\n');
+      process.exit(0);
+    }
+  }
+
+  try {
+    console.log('\n🔌 Conectando a MongoDB...');
+    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/senado_bolivia');
+    console.log('✅ Conectado\n');
+
+    const db = mongoose.connection.db;
+    const collection = db.collection(COLLECTION_NAME);
+
+    // 1. Contar antes de borrar
+    const totalAntes = await collection.countDocuments();
+    console.log(`📊 Documentos en "${COLLECTION_NAME}": ${totalAntes}`);
+
+    if (totalAntes === 0) {
+      console.log('\nℹ️  La colección ya está vacía. Nada que borrar.\n');
+      await mongoose.disconnect();
+      process.exit(0);
+    }
+
+    // 2. Borrar colección completa (más rápido que deleteMany y resetea índices)
+    console.log('\n🗑️  Borrando colección completa...');
+    await collection.drop();
+    console.log('✅ Colección eliminada');
+
+    // 3. Borrar PDFs de uploads/documents/ que empiecen con "legislativo-" (opcional)
+    let pdfsBorrados = 0;
+    if (deletePdfs && fs.existsSync(UPLOADS_DIR)) {
+      const archivos = fs.readdirSync(UPLOADS_DIR);
+      const pdfsLegislativos = archivos.filter(
+        (f) => f.startsWith('legislativo-') && f.toLowerCase().endsWith('.pdf')
+      );
+
+      console.log(`\n📁 PDFs legislativos encontrados: ${pdfsLegislativos.length}`);
+
+      for (const archivo of pdfsLegislativos) {
+        try {
+          fs.unlinkSync(path.join(UPLOADS_DIR, archivo));
+          pdfsBorrados++;
+        } catch (err) {
+          console.log(`   ⚠️  No se pudo borrar ${archivo}: ${err.message}`);
+        }
+      }
+      console.log(`🗑️  PDFs borrados: ${pdfsBorrados}`);
+    } else if (deletePdfs) {
+      console.log('\nℹ️  La carpeta uploads/documents no existe. No hay PDFs que borrar.');
+    } else {
+      console.log('\nℹ️  PDFs no borrados (usar --pdfs si quieres eliminarlos).');
+    }
+
+    // 4. Resumen
+    console.log('\n' + '═'.repeat(80));
+    console.log('✅ LIMPIEZA COMPLETADA');
+    console.log('═'.repeat(80));
+    console.log(`   Documentos borrados: ${totalAntes}`);
+    console.log(`   PDFs borrados:       ${pdfsBorrados}`);
+    console.log('═'.repeat(80) + '\n');
+
+    await mongoose.disconnect();
+    console.log('👋 Desconectado de MongoDB');
+    process.exit(0);
+  } catch (error) {
+    console.error('\n❌ ERROR:', error.message);
+    console.error(error.stack);
+    await mongoose.disconnect().catch(() => {});
+    process.exit(1);
+  }
+}
+
+main(); 
 ================================= 
 src\scripts\migrateAuditoriaPDFs.js 
 ================================= 
@@ -15478,4 +15840,4 @@ uploads\documents\solicitud-de-permisos-1789162623743-314145658.pdf
  
 [ARCHIVO DE IMAGEN - CONTENIDO NO MOSTRADO] 
  
-Total archivos: 208 
+Total archivos: 211 

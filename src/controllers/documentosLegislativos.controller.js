@@ -40,7 +40,6 @@ const CAMPOS_FECHA = [
 
 const CAMPOS_TEXTO = [
   'codigo',
-  'peticionario',
   'asunto',
   'destinatario',
   'tipoDestinatario',
@@ -48,9 +47,14 @@ const CAMPOS_TEXTO = [
   'observacion',
   'esNuevoOReReposicion',
   'plAnterior',
-  'comisionI',
-  'comisionII',
   'estadoLey'
+];
+
+// 🔥 CAMPOS QUE AHORA SON ARRAYS
+const CAMPOS_ARRAY_TEXTO = [
+  'peticionario',
+  'comisionI',
+  'comisionII'
 ];
 
 const sanitizarBody = (body) => {
@@ -62,6 +66,20 @@ const sanitizarBody = (body) => {
 
   CAMPOS_TEXTO.forEach((campo) => {
     if (typeof limpio[campo] === 'string') limpio[campo] = limpio[campo].trim();
+  });
+
+  // 🔥 Sanitizar arrays (peticionario, comisiones)
+  CAMPOS_ARRAY_TEXTO.forEach((campo) => {
+    if (campo in limpio) {
+      if (Array.isArray(limpio[campo])) {
+        limpio[campo] = limpio[campo].map(item => typeof item === 'string' ? item.trim() : item).filter(Boolean);
+      } else if (typeof limpio[campo] === 'string') {
+        // Si el frontend envía un string por error, lo convertimos a array
+        limpio[campo] = limpio[campo].trim() ? [limpio[campo].trim()] : [];
+      } else if (limpio[campo] === null || limpio[campo] === undefined) {
+        limpio[campo] = [];
+      }
+    }
   });
 
   if ('numeroLey' in limpio) {
@@ -118,6 +136,9 @@ const validarObligatorios = (body, tipo) => {
       vacio = !Array.isArray(valor) || valor.length === 0;
     } else if (campo === 'numeroLey') {
       vacio = valor === undefined || valor === null || valor === '';
+    } else if (CAMPOS_ARRAY_TEXTO.includes(campo)) {
+      // 🔥 Validar que los arrays tengan al menos 1 elemento
+      vacio = !Array.isArray(valor) || valor.length === 0;
     } else {
       vacio =
         valor === undefined ||
@@ -202,7 +223,9 @@ const getDocumentosPublicos = async (req, res) => {
         { codigo: { $regex: termino, $options: 'i' } },
         { asunto: { $regex: termino, $options: 'i' } },
         { peticionario: { $regex: termino, $options: 'i' } },
-        { destinatario: { $regex: termino, $options: 'i' } }
+        { destinatario: { $regex: termino, $options: 'i' } },
+        { comisionI: { $regex: termino, $options: 'i' } },
+        { comisionII: { $regex: termino, $options: 'i' } }
       ];
     }
 
@@ -257,7 +280,9 @@ const getDocumentosAdmin = async (req, res) => {
         { codigo: { $regex: termino, $options: 'i' } },
         { asunto: { $regex: termino, $options: 'i' } },
         { peticionario: { $regex: termino, $options: 'i' } },
-        { destinatario: { $regex: termino, $options: 'i' } }
+        { destinatario: { $regex: termino, $options: 'i' } },
+        { comisionI: { $regex: termino, $options: 'i' } },
+        { comisionII: { $regex: termino, $options: 'i' } }
       ];
     }
 
@@ -394,8 +419,6 @@ const createDocumento = async (req, res) => {
 // ============================================
 // 🔐 ADMIN - Actualizar
 // PUT /api/legislativos/:tipo/:id
-//
-// 🔥 AQUÍ SE MANEJA EL CAMBIO DE ESTADO (y por ende, de tipo)
 // ============================================
 const updateDocumento = async (req, res) => {
   try {
@@ -433,7 +456,6 @@ const updateDocumento = async (req, res) => {
       estadoNuevo !== doc.estadoLey;
 
     if (hayCambioEstado) {
-      // Solo se permite desde los tipos origen
       if (!esTipoOrigenTransicion(tipo)) {
         return res.status(400).json({
           success: false,
@@ -448,7 +470,6 @@ const updateDocumento = async (req, res) => {
 
       const tipoNuevo = vTransicion.tipoNuevo;
 
-      // Combinar datos: los actuales + los nuevos que vienen
       const combinado = {
         ...doc.toObject(),
         ...bodyLimpio,
@@ -456,13 +477,10 @@ const updateDocumento = async (req, res) => {
         estadoLey: estadoNuevo
       };
 
-      // 1. Validar obligatorios del tipoNuevo (Solo el anexo es ESTRICTAMENTE obligatorio aquí)
       const errores = validarObligatorios(combinado, tipoNuevo);
       
       const erroresFiltrados = errores.filter(err => {
-        // Si el error es por archivoAnexo, siempre es un error bloqueante
         if (err.includes('archivoAnexo')) return true;
-        // Los demás campos (fechas, numeroLey) se ignoran en este paso
         return false;
       });
 
@@ -474,7 +492,6 @@ const updateDocumento = async (req, res) => {
         });
       }
 
-      // 2. archivoAnexo obligatorio para tipos destino
       if (esTipoDestinoTransicion(tipoNuevo)) {
         const anexos = combinado.archivoAnexo;
         if (!Array.isArray(anexos) || anexos.length === 0) {
@@ -485,13 +502,11 @@ const updateDocumento = async (req, res) => {
         }
       }
 
-      // 3. numeroLey único (excepto el propio)
       const vNumeroLey = await validarNumeroLeyUnico(combinado.numeroLey, doc._id);
       if (!vNumeroLey.ok) {
         return res.status(409).json({ success: false, message: vNumeroLey.mensaje });
       }
 
-      // 4. Duplicado de número en el nuevo tipo
       const yaExiste = await DocumentoLegislativo.findOne({
         _id: { $ne: doc._id },
         tipo: tipoNuevo,
@@ -504,10 +519,8 @@ const updateDocumento = async (req, res) => {
         });
       }
 
-      // 5. Extraer campos válidos del tipoNuevo
       const datosNuevos = extraerCamposDelTipo(combinado, tipoNuevo, 'update');
 
-      // 6. Aplicar TODO al doc
       doc.tipo = tipoNuevo;
       Object.keys(datosNuevos).forEach((campo) => {
         doc[campo] = datosNuevos[campo];
@@ -532,7 +545,6 @@ const updateDocumento = async (req, res) => {
     // ============================================
     const datos = extraerCamposDelTipo(bodyLimpio, tipo, 'update');
 
-    // Validar tipoDestinatario si viene
     if (datos.tipoDestinatario && !TIPOS_DESTINATARIO.includes(datos.tipoDestinatario)) {
       return res.status(400).json({
         success: false,
@@ -540,7 +552,6 @@ const updateDocumento = async (req, res) => {
       });
     }
 
-    // Si es un tipo destino y se está editando, validar archivoAnexo obligatorio
     if (esTipoDestinoTransicion(tipo)) {
       const anexos = datos.archivoAnexo !== undefined ? datos.archivoAnexo : doc.archivoAnexo;
       if (!Array.isArray(anexos) || anexos.length === 0) {
@@ -551,7 +562,6 @@ const updateDocumento = async (req, res) => {
       }
     }
 
-    // Validar numeroLey si viene (y único)
     if (datos.numeroLey !== undefined) {
       const vNumeroLey = await validarNumeroLeyUnico(datos.numeroLey, doc._id);
       if (!vNumeroLey.ok) {

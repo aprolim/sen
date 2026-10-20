@@ -300,6 +300,7 @@ const comunicadosRoutes = require('./routes/comunicados.routes');
 const avisosRoutes = require('./routes/avisos.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
 const documentosLegislativosRoutes = require('./routes/documentosLegislativos.routes'); // 🔥 NUEVO
+const catalogosRoutes = require('./routes/catalogos.routes'); // 🔥 AGREGAR
 
 // Rate limiting específico
 app.use('/api/auth/login', authLimiter);
@@ -317,6 +318,8 @@ app.use('/api/comunicados', comunicadosRoutes);
 app.use('/api/avisos', avisosRoutes);
 app.use('/api/auditoria', auditoriaRoutes);
 app.use('/api/legislativos', documentosLegislativosRoutes); // 🔥 NUEVO
+app.use('/api/legislativos', documentosLegislativosRoutes);
+app.use('/api/catalogos', catalogosRoutes); // 🔥 AGREGAR
 
 // ============================================
 // RUTAS DEL SISTEMA
