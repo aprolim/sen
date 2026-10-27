@@ -21,7 +21,7 @@ const askQuestion = (q) => {
 
 async function limpiar() {
   console.log('\n' + '═'.repeat(60));
-  console.log('🧹 LIMPIEZA DE P.I.E. (PETICIONES DE INFORME ESCRITO)');
+  console.log('🧹 LIMPIEZA DE BASE DE DATOS (P.I.E.)');
   console.log('═'.repeat(60) + '\n');
 
   try {
@@ -39,7 +39,8 @@ async function limpiar() {
 
     // Confirmación
     const resp = await askQuestion(
-      '⚠️ Esta acción BORRARÁ FÍSICAMENTE todos los P.I.E. (incluyendo los de prueba y los eliminados).\n' +
+      '⚠️ Esta acción BORRARÁ LOS REGISTROS DE LA BASE DE DATOS.\n' +
+      '   Los archivos PDF en la carpeta uploads/ NO SE TOCARÁN.\n' +
       '   ¿Estás seguro? Escribe "BORRAR" para confirmar: '
     );
 
@@ -48,13 +49,13 @@ async function limpiar() {
       process.exit(0);
     }
 
-    console.log('\n🗑️ Borrando documentos...');
+    console.log('\n🗑️ Borrando registros de la base de datos...');
     
-    // Borramos físicamente todos los de este tipo
+    // Borramos físicamente los registros de este tipo
     const result = await DocumentoLegislativo.deleteMany({ tipo: 'peticion-informe-escrito' });
     
-    console.log(`✅ Se borraron ${result.deletedCount} documentos P.I.E. de la base de datos.`);
-    console.log('   Ahora puedes ejecutar el script de importación sin miedo a duplicados.\n');
+    console.log(`✅ Se borraron ${result.deletedCount} registros P.I.E. de MongoDB.`);
+    console.log('   (Los PDFs siguen intactos en el servidor).\n');
 
     await mongoose.disconnect();
     process.exit(0);
