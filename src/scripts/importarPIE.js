@@ -15,7 +15,6 @@ const PDFS_RAW_DIR = path.join(__dirname, '..', '..', 'uploads', 'documents', 'p
 const PDFS_FINAL_DIR = path.join(__dirname, '..', '..', 'uploads', 'documents');
 const BACKEND_URL = 'https://demoback.senado.gob.bo';
 
-// Función para convertir fechas
 function parsearFecha(fechaStr) {
   if (!fechaStr || fechaStr.trim() === '' || fechaStr.trim() === '-') return null;
   const partes = fechaStr.trim().split('/');
@@ -24,7 +23,6 @@ function parsearFecha(fechaStr) {
   return isNaN(date.getTime()) ? null : date;
 }
 
-// Parser CSV nativo
 function parsearCSV(contenido) {
   const primeraLinea = contenido.split('\n')[0];
   const separador = primeraLinea.includes(';') ? ';' : ',';
@@ -56,7 +54,6 @@ function parsearCSV(contenido) {
       lineaActual = [];
       campoActual = '';
     } else if (char === '\r' && !dentroDeComillas) {
-      // Ignorar
     } else {
       campoActual += char;
     }
@@ -82,12 +79,9 @@ function parsearCSV(contenido) {
   return resultados;
 }
 
-// 🔥 BUSCAR Y MOVER PDF (Versión Mejorada)
 function buscarYAsociarPDF(nro, nroPIE) {
   if (!nro) return null;
   
-  // Extraemos el número puro (ej: si nroPIE es "01/2025-2026", sacamos el 1)
-  // Si no hay nroPIE, usamos el número de fila (nro)
   let numLimpio = nro;
   if (nroPIE) {
     const match = nroPIE.match(/^(\d+)/);
@@ -100,36 +94,29 @@ function buscarYAsociarPDF(nro, nroPIE) {
   try {
     const archivos = fs.readdirSync(PDFS_RAW_DIR);
     
-    // Buscamos el archivo que contenga "Nř 001-2025-2026", "N° 001-2025-2026" o "001-2025-2026"
+    // 🔥 BUSCAMOS N°, Nř Y Nro
     const archivosEncontrados = archivos.filter(f => {
-      // Si el nombre del archivo incluye el número formateado
-      if (f.includes(`Nř ${numeroFormateado}-2025-2026`) || 
-          f.includes(`N° ${numeroFormateado}-2025-2026`) ||
-          f.includes(`Nro ${numeroFormateado}-2025-2026`) ||
-          f.includes(`N° ${numeroFormateado}-`)) {
+      if (f.includes(`N° ${numeroFormateado}-`) || 
+          f.includes(`Nř ${numeroFormateado}-`) || 
+          f.includes(`Nro ${numeroFormateado}-`)) {
         return true;
       }
-      // Caso especial: si el archivo empieza con el número (ej: "001-2025...")
       if (f.trim().startsWith(`${numeroFormateado}-`)) return true;
-      
       return false;
     });
 
     if (archivosEncontrados.length === 0) return null;
 
-    // Preferimos el que dice RESPUESTA, si no, el primero
     let archivoElegido = archivosEncontrados.find(f => f.includes('RESPUESTA')) || archivosEncontrados[0];
 
     const origen = path.join(PDFS_RAW_DIR, archivoElegido);
     
-    // Generar nombre único
     const ext = path.extname(archivoElegido);
     const basename = path.basename(archivoElegido, ext).toLowerCase().replace(/[^a-z0-9]/g, '-').substring(0, 50);
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const nuevoNombre = `${basename}-${uniqueSuffix}${ext}`;
     const destino = path.join(PDFS_FINAL_DIR, nuevoNombre);
     
-    // Mover archivo
     fs.renameSync(origen, destino);
     
     return {
@@ -152,11 +139,8 @@ async function importar() {
     await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/senado_bolivia');
     console.log('✅ Conectado a MongoDB\n');
 
-    // 🔥 Para que funcione, los PDFs NO deben haber sido borrados de pie-raw
-    // Si ya los borraste, tendrás que volver a subirlos.
     if (!fs.existsSync(PDFS_RAW_DIR)) {
       console.error(`❌ ERROR: No existe la carpeta de PDFs: ${PDFS_RAW_DIR}`);
-      console.log('   Necesitas volver a subir los PDFs a pie-raw/ para asociarlos.\n');
       process.exit(1);
     }
 
@@ -202,16 +186,11 @@ async function importar() {
           if (!nro || isNaN(nro)) continue;
 
           const existe = await DocumentoLegislativo.findOne({ tipo: 'peticion-informe-escrito', numero: nro });
-          if (existe) {
-            // Si ya existe, salteamos la creación pero NO el PDF (si lo necesitas).
-            // Para esta importación, asumimos que si ya existe, lo ignoramos.
-            continue; 
-          }
+          if (existe) continue;
 
           const codigo = `P.I.E. N° ${nroPIE || nro}`;
           const asuntoLimpio = asuntoStr ? asuntoStr.replace(/\r?\n|\r/g, ' ').replace(/"/g, '').trim() : '';
 
-          // 🔥 LE PASAMOS EL NÚMERO DE FILA Y EL NRO PIE
           const archivoData = buscarYAsociarPDF(nro, nroPIE);
           if (archivoData) globalPDFs++;
 
@@ -242,7 +221,6 @@ async function importar() {
           console.log(`   ✅ ${codigo} ${archivoData ? '📄 [CON PDF]' : '❌ [SIN PDF]'}`);
 
         } catch (err) {
-          // Silencio
         }
       }
     }
