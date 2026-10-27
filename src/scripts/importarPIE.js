@@ -24,7 +24,7 @@ function parsearFecha(fechaStr) {
   return isNaN(date.getTime()) ? null : date;
 }
 
-// Parser CSV nativo con auto-detección de separador
+// Parser CSV nativo
 function parsearCSV(contenido) {
   const primeraLinea = contenido.split('\n')[0];
   const separador = primeraLinea.includes(';') ? ';' : ',';
@@ -122,23 +122,9 @@ function buscarYAsociarPDF(nroPIE) {
   }
 }
 
-// Obtener valor del row (ignorando tildes y símbolos raros)
-function getValorSeguro(row, posiblesNombres) {
-  for (const nombre of posiblesNombres) {
-    // Buscamos la llave en el objeto, normalizando a minúsculas y quitando caracteres raros
-    const key = Object.keys(row).find(k => {
-      const kLimpia = k.toLowerCase().replace(/[^a-z]/g, '');
-      const nombreLimpio = nombre.toLowerCase().replace(/[^a-z]/g, '');
-      return kLimpia.includes(nombreLimpio) || nombreLimpio.includes(kLimpia);
-    });
-    if (key && row[key]) return row[key];
-  }
-  return null;
-}
-
 async function importar() {
   console.log('\n' + '═'.repeat(70));
-  console.log('🚀 IMPORTADOR MASIVO DE P.I.E.');
+  console.log('🚀 IMPORTADOR MASIVO DE P.I.E. (Mapeo Exacto)');
   console.log('═'.repeat(70) + '\n');
 
   try {
@@ -160,28 +146,29 @@ async function importar() {
       console.log(`📄 Procesando: ${archivo}`);
       const csvPath = path.join(DATA_DIR, archivo);
       
-      // 🔥 LEER COMO LATIN-1 Y CONVERTIR A UTF-8 (Arregla el error "N�")
       const buffer = fs.readFileSync(csvPath);
-      const contenido = buffer.toString('latin1'); 
+      const contenido = buffer.toString('latin1'); // Leemos con latin1 para que no falle el º
       
       const records = parsearCSV(contenido);
 
       for (const row of records) {
         try {
-          // Al leer en latin1, ahora la columna se llama "Nº" correctamente
-          const nroStr = getValorSeguro(row, ['Nº', 'N°', 'Nro', 'No']);
-          const nroPIE = getValorSeguro(row, ['Nº PIE', 'N° PIE', 'Nro PIE']);
+          // 🔥 MAPEO EXACTO DE LAS COLUMNAS SEGÚN EL DIAGNÓSTICO
+          const nroStr = row['N�'] || row['Nº'] || row['N°'];
+          const nroPIE = row['N� PIE'] || row['Nº PIE'] || row['N° PIE'];
           
-          const fechaIngresoStr = getValorSeguro(row, ['FECHA DE INGRESO USCLy R', 'FECHA DE INGRESO USCLyR']);
-          const peticionarioStr = getValorSeguro(row, ['PETICIONARIO']);
-          const asuntoStr = getValorSeguro(row, ['ASUNTO']);
-          const destinatarioStr = getValorSeguro(row, ['DESTINATARIO']);
-          const tipoDestinatarioStr = getValorSeguro(row, ['TIPO DE DESTINATARIO']);
-          const fechaRemisionDestStr = getValorSeguro(row, ['FECHA DE REMISION AL DESTINATARIO']);
-          const fechaRespuestaStr = getValorSeguro(row, ['FECHA INGRESO DE RESPUESTA A USCLyR', 'FECHA DE RESPUESTA']);
-          const fechaRemisionPetStr = getValorSeguro(row, ['FECHA DE REMISION AL PETICIONARIO']);
-          const conminatoriaStr = getValorSeguro(row, ['CONMINATORIA']);
-          const observacionStr = getValorSeguro(row, ['OBSERVACION', 'OBSERVACIONES']);
+          const fechaIngresoStr = row['FECHA DE INGRESO USCLy R'];
+          const peticionarioStr = row['PETICIONARIO'];
+          const asuntoStr = row['ASUNTO'];
+          const destinatarioStr = row['DESTINATARIO'];
+          const tipoDestinatarioStr = row['TIPO DE DESTINATARIO'];
+          
+          const fechaRemisionDestStr = row['FECHA DE REMISION AL DESTINATARIO'];
+          const fechaRespuestaStr = row['FECHA INGRESO DE RESPUESTA A USCLyR'];
+          const fechaRemisionPetStr = row['FECHA DE REMISION AL PETICIONARIO'];
+          
+          const conminatoriaStr = row['CONMINATORIA'];
+          const observacionStr = row['OBSERVACION'];
 
           const nro = parseInt(nroStr);
           if (!nro || isNaN(nro)) continue;
@@ -195,6 +182,7 @@ async function importar() {
           const archivoData = buscarYAsociarPDF(nroPIE);
           if (archivoData) globalPDFs++;
 
+          // 🔥 GUARDAMOS EN LOS CAMPOS DEL MODELO EN EL ORDEN CORRECTO
           const nuevoDoc = new DocumentoLegislativo({
             tipo: 'peticion-informe-escrito',
             numero: nro,
@@ -204,11 +192,16 @@ async function importar() {
             asunto: asuntoLimpio,
             destinatario: destinatarioStr ? destinatarioStr.trim() : '',
             tipoDestinatario: tipoDestinatarioStr ? tipoDestinatarioStr.trim() : null,
+            
+            // Fechas del proceso
             fechaRemisionDestinatario: parsearFecha(fechaRemisionDestStr),
             fechaRespuesta: parsearFecha(fechaRespuestaStr),
             fechaRemisionPeticionario: parsearFecha(fechaRemisionPetStr),
+            
+            // Textos finales
             conminatoria: conminatoriaStr ? conminatoriaStr.trim() : '',
             observacion: observacionStr ? observacionStr.trim() : '',
+            
             archivo: archivoData || { url: null, filename: '', originalName: '', size: 0 },
             creadoPor: adminUser._id,
             actualizadoPor: adminUser._id
@@ -219,7 +212,7 @@ async function importar() {
           console.log(`   ✅ ${codigo} ${archivoData ? '📄 [CON PDF]' : '❌ [SIN PDF]'}`);
 
         } catch (err) {
-          // Silencio los errores para no llenar la consola
+          // Silencio
         }
       }
     }
