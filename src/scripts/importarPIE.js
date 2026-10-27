@@ -11,9 +11,11 @@ const User = require('../models/User');
 const TipoDestinatario = require('../models/TipoDestinatario');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
-const PDFS_RAW_DIR = path.join(__dirname, '..', '..', 'uploads', 'documents', 'pie-raw');
 const PDFS_FINAL_DIR = path.join(__dirname, '..', '..', 'uploads', 'documents');
 const BACKEND_URL = 'https://demoback.senado.gob.bo';
+
+// 🔥 AQUÍ ESTÁ LA RUTA EXACTA QUE ME INDICASTE
+const PDFS_RAW_DIR = "/var/www/sen/uploads/documents/publicado en la web/FISCALIZACIÓN 2025-2026/P.I.E.s 2025-2026";
 
 function parsearFecha(fechaStr) {
   if (!fechaStr || fechaStr.trim() === '' || fechaStr.trim() === '-') return null;
@@ -92,9 +94,9 @@ function buscarYAsociarPDF(nro, nroPIE) {
   const numeroFormateado = String(numLimpio).padStart(3, '0');
 
   try {
+    if (!fs.existsSync(PDFS_RAW_DIR)) return null;
     const archivos = fs.readdirSync(PDFS_RAW_DIR);
     
-    // 🔥 BUSCAMOS N°, Nř Y Nro
     const archivosEncontrados = archivos.filter(f => {
       if (f.includes(`N° ${numeroFormateado}-`) || 
           f.includes(`Nř ${numeroFormateado}-`) || 
@@ -132,7 +134,7 @@ function buscarYAsociarPDF(nro, nroPIE) {
 
 async function importar() {
   console.log('\n' + '═'.repeat(70));
-  console.log('🚀 IMPORTADOR MASIVO DE P.I.E.');
+  console.log('🚀 IMPORTACIÓN P.I.E. DESDE RUTA PERSONALIZADA');
   console.log('═'.repeat(70) + '\n');
 
   try {
@@ -140,13 +142,18 @@ async function importar() {
     console.log('✅ Conectado a MongoDB\n');
 
     if (!fs.existsSync(PDFS_RAW_DIR)) {
-      console.error(`❌ ERROR: No existe la carpeta de PDFs: ${PDFS_RAW_DIR}`);
+      console.error(`❌ ERROR: No existe la carpeta de PDFs indicada:\n   ${PDFS_RAW_DIR}`);
       process.exit(1);
     }
 
     const archivosCSV = fs.readdirSync(DATA_DIR).filter(f => 
       f.toLowerCase().startsWith('pie') && f.toLowerCase().endsWith('.csv')
     );
+
+    if (archivosCSV.length === 0) {
+      console.error(`❌ ERROR: No hay CSV en la carpeta data/`);
+      process.exit(1);
+    }
 
     let adminUser = await User.findOne({ role: 'SUPER_ADMIN' }) || await User.findOne({ role: 'ADMIN' });
     const tiposDB = await TipoDestinatario.find({ activo: true });
@@ -185,12 +192,14 @@ async function importar() {
           const nro = parseInt(nroStr);
           if (!nro || isNaN(nro)) continue;
 
+          // Si ya existe, saltar (para evitar duplicados si se ejecuta 2 veces)
           const existe = await DocumentoLegislativo.findOne({ tipo: 'peticion-informe-escrito', numero: nro });
           if (existe) continue;
 
           const codigo = `P.I.E. N° ${nroPIE || nro}`;
           const asuntoLimpio = asuntoStr ? asuntoStr.replace(/\r?\n|\r/g, ' ').replace(/"/g, '').trim() : '';
 
+          // 🔥 Acá busca en la ruta personalizada, lo mueve y guarda la ruta final
           const archivoData = buscarYAsociarPDF(nro, nroPIE);
           if (archivoData) globalPDFs++;
 
@@ -218,9 +227,11 @@ async function importar() {
 
           await nuevoDoc.save();
           globalInsertados++;
+          
           console.log(`   ✅ ${codigo} ${archivoData ? '📄 [CON PDF]' : '❌ [SIN PDF]'}`);
 
         } catch (err) {
+          // Silencio
         }
       }
     }
