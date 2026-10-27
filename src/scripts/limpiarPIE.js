@@ -1,61 +1,78 @@
-// src/scripts/limpiarPIE.js
-// Ejecutar: node src/scripts/limpiarPIE.js
-
+// src/scripts/limpiarManchas.js
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
-const readline = require('readline');
 
 dotenv.config();
 
 const DocumentoLegislativo = require('../models/DocumentoLegislativo');
 
-const askQuestion = (q) => {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    rl.question(q, (answer) => {
-      rl.close();
-      resolve(answer);
-    });
-  });
-};
+function limpiarTexto(texto) {
+  if (!texto) return '';
+  return texto
+    .replace(/[\u0080-\u00FF]/g, (char) => {
+      if (char === '\x95' || char === '\x95') return '-';
+      if (['\xE1', '\xE9', '\xED', '\xF3', '\xFA', '\xF1', '\xC1', '\xC9', '\xCD', '\xD3', '\xDA', '\xD1'].includes(char)) {
+        return char;
+      }
+      return '-';
+    })
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 async function limpiar() {
   console.log('\n' + '═'.repeat(60));
-  console.log('🧹 LIMPIEZA DE BASE DE DATOS (P.I.E.)');
+  console.log('🧹 LIMPIANDO MANCHAS EN LOS TEXTOS (SIN BORRAR NADA)');
   console.log('═'.repeat(60) + '\n');
 
   try {
     await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/senado_bolivia');
     console.log('✅ Conectado a MongoDB\n');
 
-    // Contar cuántos hay
-    const total = await DocumentoLegislativo.countDocuments({ tipo: 'peticion-informe-escrito' });
-    console.log(`📊 Hay ${total} documentos P.I.E. en la base de datos.`);
+    const docs = await DocumentoLegislativo.find({ tipo: 'peticion-informe-escrito' });
+    console.log(`📊 Se encontraron ${docs.length} registros para revisar.\n`);
 
-    if (total === 0) {
-      console.log('ℹ️ No hay nada que borrar.\n');
-      process.exit(0);
+    let actualizados = 0;
+
+    for (const doc of docs) {
+      let modificado = false;
+
+      // Limpiamos el Asunto
+      if (doc.asunto) {
+        const asuntoLimpio = limpiarTexto(doc.asunto);
+        if (asuntoLimpio !== doc.asunto) {
+          doc.asunto = asuntoLimpio;
+          modificado = true;
+        }
+      }
+
+      // Limpiamos el Destinatario
+      if (doc.destinatario) {
+        const destLimpio = limpiarTexto(doc.destinatario);
+        if (destLimpio !== doc.destinatario) {
+          doc.destinatario = destLimpio;
+          modificado = true;
+        }
+      }
+
+      // Limpiamos la Observación
+      if (doc.observacion) {
+        const obsLimpia = limpiarTexto(doc.observacion);
+        if (obsLimpia !== doc.observacion) {
+          doc.observacion = obsLimpia;
+          modificado = true;
+        }
+      }
+
+      // Si hubo cambios, guardamos el mismo registro (No se borra, solo se actualiza)
+      if (modificado) {
+        await doc.save();
+        actualizados++;
+      }
     }
 
-    // Confirmación
-    const resp = await askQuestion(
-      '⚠️ Esta acción BORRARÁ LOS REGISTROS DE LA BASE DE DATOS.\n' +
-      '   Los archivos PDF en la carpeta uploads/ NO SE TOCARÁN.\n' +
-      '   ¿Estás seguro? Escribe "BORRAR" para confirmar: '
-    );
-
-    if (resp.trim() !== 'BORRAR') {
-      console.log('\n❌ Cancelado por el usuario.\n');
-      process.exit(0);
-    }
-
-    console.log('\n🗑️ Borrando registros de la base de datos...');
-    
-    // Borramos físicamente los registros de este tipo
-    const result = await DocumentoLegislativo.deleteMany({ tipo: 'peticion-informe-escrito' });
-    
-    console.log(`✅ Se borraron ${result.deletedCount} registros P.I.E. de MongoDB.`);
-    console.log('   (Los PDFs siguen intactos en el servidor).\n');
+    console.log(`✅ Se limpiaron las manchas de ${actualizados} registros.`);
+    console.log('   Los registros y los PDFs siguen intactos.\n');
 
     await mongoose.disconnect();
     process.exit(0);

@@ -14,24 +14,21 @@ const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const PDFS_FINAL_DIR = path.join(__dirname, '..', '..', 'uploads', 'documents');
 const BACKEND_URL = 'https://demoback.senado.gob.bo';
 
-// 🔥 AQUÍ ESTÁ LA RUTA EXACTA QUE ME INDICASTE
+// 🔥 RUTA PERSONALIZADA DONDE ESTÁN TUS PDFs
 const PDFS_RAW_DIR = "/var/www/sen/uploads/documents/publicado en la web/FISCALIZACIÓN 2025-2026/P.I.E.s 2025-2026";
 
-// 🔥 NUEVA FUNCIÓN PARA LIMPIAR LAS MANCHAS Y VIÑETAS
+// 🔥 FUNCIÓN PARA LIMPIAR MANCHAS
 function limpiarTexto(texto) {
   if (!texto) return '';
-  // Reemplazamos los caracteres raros (ANSI) por un guion normal
   return texto
     .replace(/[\u0080-\u00FF]/g, (char) => {
-      // Si es una viñeta ANSI, la cambiamos por guion
-      if (char === '\x95' || char === '\x95') return '-';
-      // Si es una tilde o letra con acento, intentamos mantenerla
+      if (char === '\x95' || char === '\x95') return '-'; // Viñetas a guiones
       if (['\xE1', '\xE9', '\xED', '\xF3', '\xFA', '\xF1', '\xC1', '\xC9', '\xCD', '\xD3', '\xDA', '\xD1'].includes(char)) {
-        return char;
+        return char; // Conservar tildes
       }
-      return '-'; // Cualquier otra mancha se convierte en guion
+      return '-';
     })
-    .replace(/\s+/g, ' ') // Quitamos dobles espacios
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -101,7 +98,6 @@ function parsearCSV(contenido) {
 
 function buscarYAsociarPDF(nro, nroPIE) {
   if (!nro) return null;
-  
   let numLimpio = nro;
   if (nroPIE) {
     const match = nroPIE.match(/^(\d+)/);
@@ -151,21 +147,21 @@ function buscarYAsociarPDF(nro, nroPIE) {
 
 async function importar() {
   console.log('\n' + '═'.repeat(70));
-  console.log('🚀 IMPORTACIÓN P.I.E. LIMPIA (SIN MANCHAS)');
+  console.log('🚀 IMPORTACIÓN P.I.E. (RUTA PUBLICADO EN LA WEB)');
   console.log('═'.repeat(70) + '\n');
 
   try {
     await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/senado_bolivia');
     console.log('✅ Conectado a MongoDB\n');
 
-    if (!fs.existsSync(PDFS_RAW_DIR)) {
-      console.error(`❌ ERROR: No existe la carpeta de PDFs:\n   ${PDFS_RAW_DIR}`);
-      process.exit(1);
-    }
-
     const archivosCSV = fs.readdirSync(DATA_DIR).filter(f => 
       f.toLowerCase().startsWith('pie') && f.toLowerCase().endsWith('.csv')
     );
+
+    if (archivosCSV.length === 0) {
+      console.error(`❌ ERROR: No hay CSV en la carpeta data/`);
+      process.exit(1);
+    }
 
     let adminUser = await User.findOne({ role: 'SUPER_ADMIN' }) || await User.findOne({ role: 'ADMIN' });
     const tiposDB = await TipoDestinatario.find({ activo: true });
@@ -190,7 +186,6 @@ async function importar() {
           
           const fechaIngresoStr = row['FECHA DE INGRESO USCLy R'];
           
-          // 🔥 LIMPIAMOS LOS CAMPOS DE TEXTO
           const peticionarioStr = limpiarTexto(row['PETICIONARIO']);
           const asuntoStr = limpiarTexto(row['ASUNTO']);
           const destinatarioStr = limpiarTexto(row['DESTINATARIO']);
