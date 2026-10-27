@@ -1,6 +1,6 @@
 // src/models/DocumentoLegislativo.js
 const mongoose = require('mongoose');
-const { TIPOS_DOCUMENTO, TIPOS_DESTINATARIO } = require('../config/tiposDocumento');
+const { TIPOS_DOCUMENTO } = require('../config/tiposDocumento');
 
 const documentoLegislativoSchema = new mongoose.Schema(
   {
@@ -48,9 +48,13 @@ const documentoLegislativoSchema = new mongoose.Schema(
       trim: true,
       maxlength: [300, 'El destinatario no puede exceder 300 caracteres']
     },
+    // 🔥 SIN enum: la validación se hace en el controller contra la BD
+    //    (catálogo TipoDestinatario editable desde el CMS)
     tipoDestinatario: {
       type: String,
-      enum: [...TIPOS_DESTINATARIO, null]
+      trim: true,
+      maxlength: [150, 'El tipo de destinatario no puede exceder 150 caracteres'],
+      default: null
     },
     fechaRemisionDestinatario: { type: Date, default: null },
     fechaRespuesta: { type: Date, default: null },
@@ -84,12 +88,12 @@ const documentoLegislativoSchema = new mongoose.Schema(
     esNuevoOReReposicion: { type: String, trim: true },
     plAnterior: { type: String, trim: true },
     comisionI: {
-      type: [String], // 🔥 AHORA ES UN ARRAY
+      type: [String],
       default: []
     },
     fechaRemisionComisionI: { type: Date, default: null },
     comisionII: {
-      type: [String], // 🔥 AHORA ES UN ARRAY
+      type: [String],
       default: []
     },
     fechaRemisionComisionII: { type: Date, default: null },
@@ -98,7 +102,6 @@ const documentoLegislativoSchema = new mongoose.Schema(
     fechaSancion: { type: Date, default: null },
     fechaRemisionEjecutivo: { type: Date, default: null },
 
-    // 🔥 NUEVOS CAMPOS
     fechaRechazo: { type: Date, default: null },
     numeroLey: { type: Number, default: null },
 
@@ -116,7 +119,6 @@ const documentoLegislativoSchema = new mongoose.Schema(
       originalName: { type: String, default: '' },
       size: { type: Number, default: 0 }
     },
-    // 🔥 Array de anexos (informe de comisión)
     archivoAnexo: [
       {
         url: { type: String, default: null },
@@ -149,7 +151,6 @@ documentoLegislativoSchema.index({ tipo: 1, eliminado: 1, numero: 1 });
 documentoLegislativoSchema.index({ tipo: 1, codigo: 1, eliminado: 1 });
 documentoLegislativoSchema.index({ tipo: 1, fechaIngreso: -1, eliminado: 1 });
 
-// 🔥 numeroLey único SOLO cuando tiene valor (partialFilterExpression)
 documentoLegislativoSchema.index(
   { numeroLey: 1 },
   {

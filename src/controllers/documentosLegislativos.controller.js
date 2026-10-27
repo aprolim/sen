@@ -1,14 +1,13 @@
 // src/controllers/documentosLegislativos.controller.js
 const DocumentoLegislativo = require('../models/DocumentoLegislativo');
+const TipoDestinatario = require('../models/TipoDestinatario'); // 🔥 NUEVO
 const {
   esTipoValido,
   getConfigTipo,
-  TIPOS_DESTINATARIO,
   TIPOS_DOCUMENTO,
   esTipoOrigenTransicion,
   esTipoDestinoTransicion,
-  validarTransicion,
-  getTipoPorEstado
+  validarTransicion
 } = require('../config/tiposDocumento');
 
 // ============================================
@@ -50,7 +49,6 @@ const CAMPOS_TEXTO = [
   'estadoLey'
 ];
 
-// 🔥 CAMPOS QUE AHORA SON ARRAYS
 const CAMPOS_ARRAY_TEXTO = [
   'peticionario',
   'comisionI',
@@ -68,13 +66,11 @@ const sanitizarBody = (body) => {
     if (typeof limpio[campo] === 'string') limpio[campo] = limpio[campo].trim();
   });
 
-  // 🔥 Sanitizar arrays (peticionario, comisiones)
   CAMPOS_ARRAY_TEXTO.forEach((campo) => {
     if (campo in limpio) {
       if (Array.isArray(limpio[campo])) {
         limpio[campo] = limpio[campo].map(item => typeof item === 'string' ? item.trim() : item).filter(Boolean);
       } else if (typeof limpio[campo] === 'string') {
-        // Si el frontend envía un string por error, lo convertimos a array
         limpio[campo] = limpio[campo].trim() ? [limpio[campo].trim()] : [];
       } else if (limpio[campo] === null || limpio[campo] === undefined) {
         limpio[campo] = [];
@@ -137,7 +133,6 @@ const validarObligatorios = (body, tipo) => {
     } else if (campo === 'numeroLey') {
       vacio = valor === undefined || valor === null || valor === '';
     } else if (CAMPOS_ARRAY_TEXTO.includes(campo)) {
-      // 🔥 Validar que los arrays tengan al menos 1 elemento
       vacio = !Array.isArray(valor) || valor.length === 0;
     } else {
       vacio =
@@ -188,6 +183,41 @@ const validarNumeroLeyUnico = async (numeroLey, excludeId = null) => {
     };
   }
   return { ok: true };
+};
+
+// ============================================
+// 🔥 VALIDACIÓN DE TIPO DE DESTINATARIO CONTRA LA BD
+// ============================================
+/**
+ * Devuelve { ok: true } si el valor existe en el catálogo (y está activo).
+ * Devuelve { ok: false, mensaje } con la lista de opciones válidas si no.
+ * Devuelve { ok: true } si el valor viene vacío/null (no es obligatorio aquí).
+ */
+const validarTipoDestinatario = async (valor) => {
+  if (valor === undefined || valor === null || valor === '') {
+    return { ok: true };
+  }
+
+  const tipoValido = await TipoDestinatario.findOne({
+    nombre: valor,
+    activo: true
+  }).select('_id').lean();
+
+  if (tipoValido) return { ok: true };
+
+  const disponibles = await TipoDestinatario
+    .find({ activo: true })
+    .sort({ orden: 1 })
+    .select('nombre -_id')
+    .lean();
+
+  const opciones = disponibles.map((t) => t.nombre).join(', ');
+  return {
+    ok: false,
+    mensaje: opciones
+      ? `Tipo de destinatario inválido: "${valor}". Opciones: ${opciones}`
+      : `Tipo de destinatario inválido: "${valor}". No hay tipos configurados en el catálogo.`
+  };
 };
 
 // ============================================
@@ -358,11 +388,10 @@ const createDocumento = async (req, res) => {
       return res.status(400).json({ success: false, message: errores.join('. '), errores });
     }
 
-    if (bodyLimpio.tipoDestinatario && !TIPOS_DESTINATARIO.includes(bodyLimpio.tipoDestinatario)) {
-      return res.status(400).json({
-        success: false,
-        message: `Tipo de destinatario inválido. Opciones: ${TIPOS_DESTINATARIO.join(', ')}`
-      });
+    // 🔥 VALIDAR TIPO DE DESTINATARIO CONTRA LA BD
+    const vDestinatario = await validarTipoDestinatario(bodyLimpio.tipoDestinatario);
+    if (!vDestinatario.ok) {
+      return res.status(400).json({ success: false, message: vDestinatario.mensaje });
     }
 
     const yaExiste = await DocumentoLegislativo.findOne({ tipo, numero: bodyLimpio.numero });
@@ -478,7 +507,7 @@ const updateDocumento = async (req, res) => {
       };
 
       const errores = validarObligatorios(combinado, tipoNuevo);
-      
+
       const erroresFiltrados = errores.filter(err => {
         if (err.includes('archivoAnexo')) return true;
         return false;
@@ -500,6 +529,12 @@ const updateDocumento = async (req, res) => {
             message: `Debe adjuntar al menos un archivo anexo (informe de comisión) para cambiar al estado "${estadoNuevo}".`
           });
         }
+      }
+
+      // 🔥 VALIDAR TIPO DE DESTINATARIO CONTRA LA BD
+      const vDestinatario = await validarTipoDestinatario(combinado.tipoDestinatario);
+      if (!vDestinatario.ok) {
+        return res.status(400).json({ success: false, message: vDestinatario.mensaje });
       }
 
       const vNumeroLey = await validarNumeroLeyUnico(combinado.numeroLey, doc._id);
@@ -545,11 +580,12 @@ const updateDocumento = async (req, res) => {
     // ============================================
     const datos = extraerCamposDelTipo(bodyLimpio, tipo, 'update');
 
-    if (datos.tipoDestinatario && !TIPOS_DESTINATARIO.includes(datos.tipoDestinatario)) {
-      return res.status(400).json({
-        success: false,
-        message: `Tipo de destinatario inválido. Opciones: ${TIPOS_DESTINATARIO.join(', ')}`
-      });
+    // 🔥 VALIDAR TIPO DE DESTINATARIO CONTRA LA BD
+    if (datos.tipoDestinatario !== undefined) {
+      const vDestinatario = await validarTipoDestinatario(datos.tipoDestinatario);
+      if (!vDestinatario.ok) {
+        return res.status(400).json({ success: false, message: vDestinatario.mensaje });
+      }
     }
 
     if (esTipoDestinoTransicion(tipo)) {
@@ -739,6 +775,8 @@ const getStats = async (req, res) => {
 
 // ============================================
 // 📋 Config del tipo
+// GET /api/legislativos/:tipo/config
+// 🔥 Ahora devuelve los tiposDestinatario DESDE LA BD
 // ============================================
 const getConfigDelTipo = async (req, res) => {
   try {
@@ -748,12 +786,20 @@ const getConfigDelTipo = async (req, res) => {
     }
 
     const config = getConfigTipo(tipo);
+
+    // 🔥 Traer tipos de destinatario desde la BD
+    const tiposDestinatarioDB = await TipoDestinatario
+      .find({ activo: true })
+      .sort({ orden: 1 })
+      .select('nombre -_id')
+      .lean();
+
     res.json({
       success: true,
       data: {
         tipo,
         ...config,
-        tiposDestinatario: TIPOS_DESTINATARIO
+        tiposDestinatario: tiposDestinatarioDB.map((t) => t.nombre)
       }
     });
   } catch (error) {

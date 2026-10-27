@@ -56,7 +56,6 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // Permitir requests sin origin (Postman, curl, mobile apps)
     if (!origin) return callback(null, true);
 
     if (allowedOrigins.indexOf(origin) !== -1) {
@@ -71,10 +70,9 @@ const corsOptions = {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept', 'Content-Length', 'X-File-Name'],
   exposedHeaders: ['Content-Length', 'Content-Range', 'X-Total-Count'],
-  maxAge: 86400 // 24 horas de cache para preflight
+  maxAge: 86400
 };
 
-// 🔥 CORS debe ir ANTES de todo (incluso de helmet)
 app.use(cors(corsOptions));
 
 // ============================================
@@ -94,7 +92,7 @@ app.use(helmet({
     },
   },
   crossOriginResourcePolicy: { policy: "cross-origin" },
-  crossOriginEmbedderPolicy: false, // 🔥 Deshabilitado para permitir iframes/PDFs
+  crossOriginEmbedderPolicy: false,
   hsts: {
     maxAge: 31536000,
     includeSubDomains: true,
@@ -237,7 +235,7 @@ app.use('/public', express.static(path.join(__dirname, '..', 'public'), {
 // ============================================
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN'); // 🔥 Permite iframes internos
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
 
@@ -300,8 +298,9 @@ const comunicadosRoutes = require('./routes/comunicados.routes');
 const avisosRoutes = require('./routes/avisos.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
 const documentosLegislativosRoutes = require('./routes/documentosLegislativos.routes');
-const legislativosCatalogosRoutes = require('./routes/legislativosCatalogos.routes'); // 🔥 NUEVO
+const legislativosCatalogosRoutes = require('./routes/legislativosCatalogos.routes');
 const catalogosRoutes = require('./routes/catalogos.routes');
+const tiposDestinatarioRoutes = require('./routes/tiposDestinatario.routes'); // 🔥 NUEVO
 
 // Rate limiting específico
 app.use('/api/auth/login', authLimiter);
@@ -319,13 +318,12 @@ app.use('/api/comunicados', comunicadosRoutes);
 app.use('/api/avisos', avisosRoutes);
 app.use('/api/auditoria', auditoriaRoutes);
 
-// 🔥 Catálogos propios del módulo Legislación
-// IMPORTANTE: se monta ANTES que /api/legislativos para que /api/legislativos/catalogos/*
-// no sea capturado por el router de documentosLegislativos (que tiene /:tipo)
+// Catálogos propios del módulo Legislación
 app.use('/api/legislativos/catalogos', legislativosCatalogosRoutes);
 app.use('/api/legislativos', documentosLegislativosRoutes);
 
 app.use('/api/catalogos', catalogosRoutes);
+app.use('/api/tipos-destinatario', tiposDestinatarioRoutes); // 🔥 NUEVO
 
 // ============================================
 // RUTAS DEL SISTEMA
@@ -383,7 +381,6 @@ app.use((req, res, next) => {
 app.use('*', (req, res) => {
   console.warn(`⚠️  404: ${req.method} ${req.originalUrl} from ${req.ip}`);
 
-  // Headers CORS manuales por si acaso
   res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
 
@@ -395,7 +392,6 @@ app.use('*', (req, res) => {
 
 // ============================================
 // 🔥 ERROR HANDLER CON CORS
-// CRÍTICO: este handler DEBE incluir headers CORS
 // ============================================
 app.use((err, req, res, next) => {
   console.error('🔥 ERROR:', {
@@ -407,7 +403,6 @@ app.use((err, req, res, next) => {
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
   });
 
-  // 🔥 SIEMPRE incluir headers CORS en errores
   res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
@@ -417,7 +412,6 @@ app.use((err, req, res, next) => {
   let message = 'Error interno del servidor';
   let code = 'SERVER_ERROR';
 
-  // 🔥 Errores de Multer
   if (err.name === 'MulterError') {
     if (err.code === 'LIMIT_FILE_SIZE') {
       statusCode = 413;
@@ -429,7 +423,6 @@ app.use((err, req, res, next) => {
       code = err.code;
     }
   }
-  // Errores de validación
   else if (err.name === 'ValidationError') {
     statusCode = 400;
     message = err.message;
@@ -460,7 +453,6 @@ app.use((err, req, res, next) => {
     message = 'JSON inválido en el body';
     code = 'INVALID_JSON';
   }
-  // 🔥 Error de body muy grande (express.json)
   else if (err.type === 'entity.too.large') {
     statusCode = 413;
     message = 'El body de la petición es demasiado grande (máx 350 MB)';
@@ -504,19 +496,6 @@ const startServer = async () => {
       console.log(`📚 Documentación: http://localhost:${PORT}/api/docs`);
       console.log(`🔌 Health Check:  http://localhost:${PORT}/api/health`);
       console.log('═'.repeat(60));
-      console.log('\n🛡️  MEDIDAS DE SEGURIDAD ACTIVAS:');
-      console.log('   • Rate Limiting (900 req/15min)');
-      console.log('   • Login Limiting (5 intentos/5min)');
-      console.log('   • Helmet.js (Headers seguridad)');
-      console.log('   • CORS restringido (con headers en errores)');
-      console.log('   • Sanitización MongoDB');
-      console.log('   • Protección XSS');
-      console.log('   • Protección HPP');
-      console.log('   • Auditoría de logs');
-      console.log('   • Validación JWT secreto');
-      console.log(`   • 🔥 LÍMITE DE ARCHIVOS: 350 MB`);
-      console.log(`   • 🔥 LÍMITE DE BODY: 350 MB`);
-      console.log('═'.repeat(60));
       console.log('\n📦 MÓDULOS DISPONIBLES:');
       console.log('   • /api/auth');
       console.log('   • /api/users');
@@ -529,8 +508,9 @@ const startServer = async () => {
       console.log('   • /api/avisos');
       console.log('   • /api/auditoria');
       console.log('   • /api/legislativos');
-      console.log('   • /api/legislativos/catalogos   🔥 NUEVO');
+      console.log('   • /api/legislativos/catalogos');
       console.log('   • /api/catalogos');
+      console.log('   • /api/tipos-destinatario        🔥 NUEVO');
       console.log('═'.repeat(60) + '\n');
     });
 
