@@ -1,7 +1,5 @@
 // src/scripts/importarPIE.js
 // Ejecutar SIEMPRE en el servidor: node src/scripts/importarPIE.js
-// Este script lee TODOS los archivos .csv de la carpeta "data" que empiecen con "pie"
-// Y ASOCIA AUTOMÁTICAMENTE LOS PDFs de la carpeta uploads/documents/pie-raw/
 
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
@@ -16,13 +14,12 @@ const User = require('../models/User');
 const TipoDestinatario = require('../models/TipoDestinatario');
 
 // ============================================
-// CONFIGURACIÓN DE RUTAS Y URL (FIJAS PARA PRODUCCIÓN)
+// CONFIGURACIÓN DE RUTAS Y URL
 // ============================================
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const PDFS_RAW_DIR = path.join(__dirname, '..', '..', 'uploads', 'documents', 'pie-raw');
 const PDFS_FINAL_DIR = path.join(__dirname, '..', '..', 'uploads', 'documents');
 
-// 🔥 URL fija del servidor de producción
 const BACKEND_URL = 'https://demoback.senado.gob.bo';
 
 // ============================================
@@ -52,17 +49,14 @@ function getValor(row, posiblesNombres) {
 function buscarYAsociarPDF(nroPIE) {
   if (!nroPIE) return null;
 
-  // Extraemos los números del PIE (ej: "01/2025-2026" -> "01")
   const match = nroPIE.match(/^(\d+)/);
   if (!match) return null;
   
-  // Formateamos a 3 dígitos (ej: "001")
   const numeroFormateado = match[1].padStart(3, '0');
 
   try {
     const archivos = fs.readdirSync(PDFS_RAW_DIR);
     
-    // Buscamos el archivo que contenga "Nř 001-2025-2026" o sus variantes
     const archivosEncontrados = archivos.filter(f => 
       f.includes(`Nř ${numeroFormateado}-2025-2026`) || 
       f.includes(`N° ${numeroFormateado}-2025-2026`) ||
@@ -71,12 +65,10 @@ function buscarYAsociarPDF(nroPIE) {
 
     if (archivosEncontrados.length === 0) return null;
 
-    // Si hay varios (ej: el original y la respuesta), priorizamos el que dice RESPUESTA
     let archivoElegido = archivosEncontrados.find(f => f.includes('RESPUESTA')) || archivosEncontrados[0];
 
     const origen = path.join(PDFS_RAW_DIR, archivoElegido);
     
-    // Generar nombre único (igual que el CMS)
     const ext = path.extname(archivoElegido);
     const basename = path.basename(archivoElegido, ext)
       .toLowerCase()
@@ -87,7 +79,6 @@ function buscarYAsociarPDF(nroPIE) {
     
     const destino = path.join(PDFS_FINAL_DIR, nuevoNombre);
     
-    // Mover el archivo físico
     fs.renameSync(origen, destino);
     
     return {
@@ -115,11 +106,9 @@ async function importar() {
     await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/senado_bolivia');
     console.log('✅ Conectado a MongoDB\n');
 
-    // Validar carpetas
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     if (!fs.existsSync(PDFS_RAW_DIR)) {
       console.error(`❌ ERROR: No existe la carpeta de PDFs: ${PDFS_RAW_DIR}`);
-      console.log('   Asegúrate de haberlos subido por WinSCP.\n');
       process.exit(1);
     }
 
@@ -132,7 +121,6 @@ async function importar() {
       process.exit(0);
     }
 
-    // Buscar usuario admin para auditoría
     let adminUser = await User.findOne({ role: 'SUPER_ADMIN' }) || await User.findOne({ role: 'ADMIN' });
     if (!adminUser) {
       console.error('❌ No hay usuarios admin en la base de datos.');
@@ -150,8 +138,19 @@ async function importar() {
     for (const archivo of archivosCSV) {
       console.log(`\n📄 Procesando archivo: ${archivo}`);
       const csvPath = path.join(DATA_DIR, archivo);
-      const records = parse(fs.readFileSync(csvPath, 'utf8'), {
-        columns: true, skip_empty_lines: true, trim: true, relax_column_count: true
+      
+      const contenido = fs.readFileSync(csvPath, 'utf8');
+
+      // 🔥 DETECCIÓN AUTOMÁTICA DE SEPARADOR (punto y coma o coma)
+      const primeraLinea = contenido.split('\n')[0];
+      const delimitador = primeraLinea.includes(';') ? ';' : ',';
+
+      const records = parse(contenido, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        relax_column_count: true,
+        delimiter: delimitador // Usamos el detectado
       });
 
       let insertados = 0;
@@ -176,24 +175,20 @@ async function importar() {
           const nro = parseInt(nroStr);
           if (!nro || isNaN(nro)) { omitidos++; continue; }
 
-          // Validar tipo de destinatario
           if (tipoDestinatarioStr && !tiposNombres.includes(tipoDestinatarioStr.trim())) {
             console.log(`   ⚠️ Nº ${nro}: Tipo "${tipoDestinatarioStr}" no existe. Omitido.`);
             omitidos++; continue;
           }
 
-          // Evitar duplicados
           const existe = await DocumentoLegislativo.findOne({ tipo: 'peticion-informe-escrito', numero: nro });
           if (existe) { omitidos++; continue; }
 
           const codigo = `P.I.E. N° ${nroPIE || nro}`;
           const asuntoLimpio = asuntoStr ? asuntoStr.replace(/\r?\n|\r/g, ' ').replace(/"/g, '').trim() : '';
 
-          // 🔥 BUSCAR Y MOVER EL PDF
           const archivoData = buscarYAsociarPDF(nroPIE);
           if (archivoData) globalPDFsAsociados++;
 
-          // Crear el documento
           const nuevoDoc = new DocumentoLegislativo({
             tipo: 'peticion-informe-escrito',
             numero: nro,
@@ -208,10 +203,7 @@ async function importar() {
             fechaRemisionPeticionario: parsearFecha(fechaRemisionPetStr),
             conminatoria: conminatoriaStr ? conminatoriaStr.trim() : '',
             observacion: observacionStr ? observacionStr.trim() : '',
-            
-            // 🔥 GUARDAR LA RUTA DEL ARCHIVO
             archivo: archivoData || { url: null, filename: '', originalName: '', size: 0 },
-
             creadoPor: adminUser._id,
             actualizadoPor: adminUser._id
           });
@@ -219,7 +211,6 @@ async function importar() {
           await nuevoDoc.save();
           insertados++;
           
-          // Mostrar en consola si encontró el PDF o no
           const iconoPDF = archivoData ? '📄 [CON PDF]' : '❌ [SIN PDF]';
           console.log(`   ✅ ${codigo} ${iconoPDF}`);
 
