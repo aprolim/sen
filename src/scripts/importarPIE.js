@@ -1,11 +1,11 @@
 // src/scripts/importarPIE.js
 // Ejecutar SIEMPRE en el servidor: node src/scripts/importarPIE.js
+// Versión sin librerías externas (Parseo manual de CSV)
 
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const fs = require('fs');
 const path = require('path');
-const { parse } = require('csv-parse/sync');
 
 dotenv.config();
 
@@ -33,14 +33,60 @@ function parsearFecha(fechaStr) {
   return isNaN(date.getTime()) ? null : date;
 }
 
-function getValor(row, posiblesNombres) {
-  for (const nombre of posiblesNombres) {
-    const key = Object.keys(row).find(k => 
-      k.trim().toLowerCase() === nombre.trim().toLowerCase()
-    );
-    if (key && row[key]) return row[key];
+// Parser de CSV nativo (maneja comillas dobles y saltos de línea)
+function parsearCSV(contenido) {
+  const lineas = [];
+  let lineaActual = [];
+  let campoActual = '';
+  let dentroDeComillas = false;
+
+  for (let i = 0; i < contenido.length; i++) {
+    const char = contenido[i];
+    const nextChar = contenido[i + 1];
+
+    if (char === '"') {
+      if (dentroDeComillas && nextChar === '"') {
+        campoActual += '"';
+        i++; // Skip next quote
+      } else {
+        dentroDeComillas = !dentroDeComillas;
+      }
+    } else if (char === ';' && !dentroDeComillas) {
+      lineaActual.push(campoActual.trim());
+      campoActual = '';
+    } else if (char === '\n' && !dentroDeComillas) {
+      lineaActual.push(campoActual.trim());
+      if (lineaActual.length > 1 || lineaActual[0] !== '') {
+        lineas.push(lineaActual);
+      }
+      lineaActual = [];
+      campoActual = '';
+    } else if (char === '\r' && !dentroDeComillas) {
+      // Ignorar retorno de carro
+    } else {
+      campoActual += char;
+    }
   }
-  return null;
+  
+  if (campoActual !== '' || lineaActual.length > 0) {
+    lineaActual.push(campoActual.trim());
+    lineas.push(lineaActual);
+  }
+
+  // Convertir a objetos usando la primera fila como encabezado
+  const headers = lineas[0].map(h => h.trim().toLowerCase());
+  const resultados = [];
+
+  for (let i = 1; i < lineas.length; i++) {
+    const fila = lineas[i];
+    const obj = {};
+    for (let j = 0; j < headers.length; j++) {
+      obj[headers[j]] = fila[j] || '';
+    }
+    resultados.push(obj);
+  }
+
+  return resultados;
 }
 
 // ============================================
@@ -48,7 +94,6 @@ function getValor(row, posiblesNombres) {
 // ============================================
 function buscarYAsociarPDF(nroPIE) {
   if (!nroPIE) return null;
-
   const match = nroPIE.match(/^(\d+)/);
   if (!match) return null;
   
@@ -56,7 +101,6 @@ function buscarYAsociarPDF(nroPIE) {
 
   try {
     const archivos = fs.readdirSync(PDFS_RAW_DIR);
-    
     const archivosEncontrados = archivos.filter(f => 
       f.includes(`Nř ${numeroFormateado}-2025-2026`) || 
       f.includes(`N° ${numeroFormateado}-2025-2026`) ||
@@ -66,17 +110,12 @@ function buscarYAsociarPDF(nroPIE) {
     if (archivosEncontrados.length === 0) return null;
 
     let archivoElegido = archivosEncontrados.find(f => f.includes('RESPUESTA')) || archivosEncontrados[0];
-
     const origen = path.join(PDFS_RAW_DIR, archivoElegido);
     
     const ext = path.extname(archivoElegido);
-    const basename = path.basename(archivoElegido, ext)
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '-')
-      .substring(0, 50);
+    const basename = path.basename(archivoElegido, ext).toLowerCase().replace(/[^a-z0-9]/g, '-').substring(0, 50);
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const nuevoNombre = `${basename}-${uniqueSuffix}${ext}`;
-    
     const destino = path.join(PDFS_FINAL_DIR, nuevoNombre);
     
     fs.renameSync(origen, destino);
@@ -98,7 +137,7 @@ function buscarYAsociarPDF(nroPIE) {
 // ============================================
 async function importar() {
   console.log('\n' + '═'.repeat(70));
-  console.log('🚀 IMPORTADOR MASIVO DE P.I.E. + ASOCIACIÓN DE PDFs');
+  console.log('🚀 IMPORTADOR MASIVO DE P.I.E. (Nativo)');
   console.log('🌐 URL Base: ' + BACKEND_URL);
   console.log('═'.repeat(70) + '\n');
 
@@ -138,20 +177,8 @@ async function importar() {
     for (const archivo of archivosCSV) {
       console.log(`\n📄 Procesando archivo: ${archivo}`);
       const csvPath = path.join(DATA_DIR, archivo);
-      
       const contenido = fs.readFileSync(csvPath, 'utf8');
-
-      // 🔥 DETECCIÓN AUTOMÁTICA DE SEPARADOR (punto y coma o coma)
-      const primeraLinea = contenido.split('\n')[0];
-      const delimitador = primeraLinea.includes(';') ? ';' : ',';
-
-      const records = parse(contenido, {
-        columns: true,
-        skip_empty_lines: true,
-        trim: true,
-        relax_column_count: true,
-        delimiter: delimitador // Usamos el detectado
-      });
+      const records = parsearCSV(contenido);
 
       let insertados = 0;
       let omitidos = 0;
@@ -159,18 +186,19 @@ async function importar() {
 
       for (const row of records) {
         try {
-          const nroStr = getValor(row, ['Nº', 'N°', 'Nro', 'No']);
-          const nroPIE = getValor(row, ['Nº PIE', 'N° PIE', 'Nro PIE']);
-          const fechaIngresoStr = getValor(row, ['FECHA DE INGRESO USCLy R', 'FECHA DE INGRESO USCLyR']);
-          const peticionarioStr = getValor(row, ['PETICIONARIO']);
-          const asuntoStr = getValor(row, ['ASUNTO']);
-          const destinatarioStr = getValor(row, ['DESTINATARIO']);
-          const tipoDestinatarioStr = getValor(row, ['TIPO DE DESTINATARIO']);
-          const fechaRemisionDestStr = getValor(row, ['FECHA DE REMISION AL DESTINATARIO']);
-          const fechaRespuestaStr = getValor(row, ['FECHA INGRESO DE RESPUESTA A USCLyR', 'FECHA DE RESPUESTA']);
-          const fechaRemisionPetStr = getValor(row, ['FECHA DE REMISION AL PETICIONARIO']);
-          const conminatoriaStr = getValor(row, ['CONMINATORIA']);
-          const observacionStr = getValor(row, ['OBSERVACION', 'OBSERVACIONES']);
+          // Al parsear nativo, las llaves están en minúsculas
+          const nroStr = row['nº'] || row['n°'] || row['nro'] || row['no'];
+          const nroPIE = row['nº pie'] || row['n° pie'] || row['nro pie'];
+          const fechaIngresoStr = row['fecha de ingreso uscly r'] || row['fecha de ingreso usclyr'];
+          const peticionarioStr = row['peticionario'];
+          const asuntoStr = row['asunto'];
+          const destinatarioStr = row['destinatario'];
+          const tipoDestinatarioStr = row['tipo de destinatario'];
+          const fechaRemisionDestStr = row['fecha de remision al destinatario'];
+          const fechaRespuestaStr = row['fecha ingreso de respuesta a usclyr'] || row['fecha de respuesta'];
+          const fechaRemisionPetStr = row['fecha de remision al peticionario'];
+          const conminatoriaStr = row['conminatoria'];
+          const observacionStr = row['observacion'] || row['observaciones'];
 
           const nro = parseInt(nroStr);
           if (!nro || isNaN(nro)) { omitidos++; continue; }
@@ -215,7 +243,7 @@ async function importar() {
           console.log(`   ✅ ${codigo} ${iconoPDF}`);
 
         } catch (err) {
-          console.error(`   ❌ Error en Nº ${getValor(row, ['Nº'])}:`, err.message);
+          console.error(`   ❌ Error en fila:`, err.message);
           errores++;
         }
       }
