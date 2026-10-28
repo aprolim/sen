@@ -12,7 +12,6 @@ const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const PDFS_FINAL_DIR = path.join(__dirname, '..', '..', 'uploads', 'documents');
 const BACKEND_URL = 'https://demoback.senado.gob.bo';
 
-// 🔥 RUTA EXACTA DE TU IMAGEN PARA DECLARACIONES
 const PDFS_RAW_DIR = "/var/www/sen/uploads/documents/publicado en la web/GESTIÓN 2025-2026/DECLARACIONES CAMARALES 2025-2026";
 
 function limpiarTexto(texto) {
@@ -93,16 +92,16 @@ async function importar() {
 
       for (const row of records) {
         try {
-          // Mapeo de columnas típico de D.C.
+          // 🔥 MAPEO EXACTO SEGÚN TU CSV
           const nroStr = row['N�'] || row['Nº'];
-          const nroDC = row['N� DE D.C'] || row['Nº DE D.C'] || row['Nº DE DC'] || row['N° DE D.C'];
+          const codigoNombre = limpiarTexto(row['C�DIGO O NOMBRE'] || row['CÓDIGO O NOMBRE']);
           
           const peticionarioStr = limpiarTexto(row['PROYECTISTA']);
           const asuntoStr = limpiarTexto(row['ASUNTO']);
-          const observacionStr = limpiarTexto(row['OBS.'] || row['OBSERVACION']);
+          const observacionStr = limpiarTexto(row['OBSERVACIONES']);
           
-          const fechaIngresoStr = row['FECHA DE RECEPCION  U.S.C.L y R'] || row['FECHA DE RECEPCION U.S.C.L y R'];
-          const fechaAprobacionStr = row['Fecha de aprobación por el Pleno'];
+          const fechaIngresoStr = row['FECHA DE INGRESO'];
+          const fechaAprobacionStr = row['FECHA DE APROBACI�N'] || row['FECHA DE APROBACIÓN'];
 
           const nro = parseInt(nroStr);
           if (!nro || isNaN(nro)) continue;
@@ -110,7 +109,9 @@ async function importar() {
           const existe = await DocumentoLegislativo.findOne({ tipo: 'declaracion-camaral', numero: nro });
           if (existe) continue;
 
-          const codigo = `D.C. N° ${nroDC || nro}`;
+          // Usamos el código directamente si viene en el CSV
+          const codigo = codigoNombre || `D.C. N° ${nro}`;
+          
           const archivoData = buscarYAsociarPDF(nro);
           if (archivoData) globalPDFs++;
 
