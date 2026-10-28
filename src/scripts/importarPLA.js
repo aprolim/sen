@@ -47,12 +47,14 @@ function parsearCSV(contenido) {
   return lineas;
 }
 
-function buscarYAsociarPDF(nro) {
-  const numeroFormateado = String(nro).padStart(3, '0');
+function buscarYAsociarPDF(nroReal) {
+  const numeroFormateado = String(nroReal).padStart(3, '0');
   try {
     if (!fs.existsSync(PDFS_RAW_DIR)) return null;
     const archivos = fs.readdirSync(PDFS_RAW_DIR);
-    const encontrados = archivos.filter(f => f.includes(numeroFormateado));
+    
+    // 🔥 BUSCAMOS EL PDF USANDO EL NÚMERO REAL (ej. 221)
+    const encontrados = archivos.filter(f => f.includes(`N° ${numeroFormateado}`) || f.includes(`N ${numeroFormateado}`) || f.includes(`N°${numeroFormateado}`));
     if (encontrados.length === 0) return null;
     
     const archivoElegido = encontrados[0];
@@ -87,40 +89,37 @@ async function importar() {
         if (fila.length < 5) continue;
 
         try {
-          const nroStr = fila[0];              
-          const codigoReal = limpiarTexto(fila[1]); 
+          const codigoReal = limpiarTexto(fila[1]); // Ej: P.L N° 221/2025-2026
           const asuntoStr = limpiarTexto(fila[2]); 
           const fechaAprobacionStr = fila[3];     
           const fechaRemisionStr = fila[4]; 
           const numeroLeyStr = fila[5] || ''; 
           const observacionStr = limpiarTexto(fila[6] || '');
 
-          const nro = parseInt(nroStr);
-          if (!nro || isNaN(nro)) continue;
+          // 🔥 EXTRAEMOS EL NÚMERO REAL DEL CÓDIGO (ej. de "P.L N° 221..." saca 221)
+          const matchNro = codigoReal.match(/N[°º]?\s*(\d+)/i) || codigoReal.match(/(\d+)/);
+          const nroReal = matchNro ? parseInt(matchNro[1]) : null;
+          
+          if (!nroReal || isNaN(nroReal)) continue;
 
-          const existe = await DocumentoLegislativo.findOne({ tipo: 'proyecto-ley-aprobados', numero: nro, eliminado: false });
+          const existe = await DocumentoLegislativo.findOne({ tipo: 'proyecto-ley-aprobados', numero: nroReal, eliminado: false });
           if (existe) continue;
 
-          const codigoCompleto = codigoReal.includes('P.L') ? codigoReal : `P.L. N° ${codigoReal}`;
-          const archivoData = buscarYAsociarPDF(nro);
+          const archivoData = buscarYAsociarPDF(nroReal);
           if (archivoData) globalPDFs++;
 
           const fechaAprob = parsearFecha(fechaAprobacionStr);
-          
-          // 🔥 SOLUCIÓN: Si no hay fecha de aprobación, usamos la fecha actual.
-          // Y para la fecha de ingreso (que es obligatoria), usamos la de aprobación o la actual.
           const fechaIngresoFinal = fechaAprob || new Date();
 
-          // Extraer solo el número de ley de "1700\n20/11/2025"
           const matchLey = numeroLeyStr.match(/\d+/);
           const numLey = matchLey ? parseInt(matchLey[0]) : null;
 
           const nuevoDoc = new DocumentoLegislativo({
             tipo: 'proyecto-ley-aprobados',
-            numero: nro,
-            codigo: codigoCompleto,
+            numero: nroReal, // Guardamos el número real extraído del código
+            codigo: codigoReal,
             asunto: asuntoStr,
-            fechaIngreso: fechaIngresoFinal, // <--- ¡Aquí está la corrección!
+            fechaIngreso: fechaIngresoFinal,
             fechaAprobacion: fechaAprob,
             fechaRemisionDiputados: parsearFecha(fechaRemisionStr),
             numeroLey: numLey,
@@ -133,7 +132,7 @@ async function importar() {
 
           await nuevoDoc.save();
           globalInsertados++;
-          console.log(`   ✅ ${codigoCompleto} ${archivoData ? '📄 [CON PDF]' : '❌ [SIN PDF]'}`);
+          console.log(`   ✅ ${codigoReal} ${archivoData ? '📄 [CON PDF]' : '❌ [SIN PDF]'}`);
         } catch (err) { console.error(`   ❌ Error en fila:`, err.message); }
       }
     }
