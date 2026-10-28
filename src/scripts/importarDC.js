@@ -47,16 +47,16 @@ function parsearCSV(contenido) {
   return lineas;
 }
 
-function buscarYAsociarPDF(codigoStr) {
-  // Extraemos el número del código para buscar en los PDFs (ej: "D.C. N° 001/2025" -> "001")
-  const match = codigoStr.match(/(\d+)\//);
-  if (!match) return null;
-  const numeroFormateado = match[1].padStart(3, '0');
-
+function buscarYAsociarPDF(nro) {
+  // Formateamos a 3 dígitos: 8 -> 008
+  const numeroFormateado = String(nro).padStart(3, '0');
+  
   try {
     if (!fs.existsSync(PDFS_RAW_DIR)) return null;
     const archivos = fs.readdirSync(PDFS_RAW_DIR);
-    const encontrados = archivos.filter(f => f.includes(numeroFormateado) || f.includes(`N° ${numeroFormateado}`));
+    // Buscamos D.C. N° 008, D.C. Nř 008 o similares
+    const encontrados = archivos.filter(f => f.toUpperCase().includes(`N° ${numeroFormateado}`) || f.toUpperCase().includes(`NŘ ${numeroFormateado}`) || f.startsWith(`${numeroFormateado}`));
+    
     if (encontrados.length === 0) return null;
     
     const archivoElegido = encontrados[0];
@@ -91,11 +91,11 @@ async function importar() {
         if (fila.length < 3) continue;
 
         try {
-          // 🔥 BUSCAMOS LA CELDA QUE CONTENGA EL CÓDIGO REAL (D.C. O 01/2025-2026)
+          // 🔥 ENCONTRAR EL CÓDIGO REAL: Buscamos la celda que tenga "/2025" y letras (ej: D.C. N° 01/2025-2026)
           let codigoReal = null;
           for (let j = 0; j < fila.length; j++) {
             const celda = fila[j];
-            if (celda && celda.toUpperCase().includes('D.C.')) {
+            if (celda && celda.includes('/2025') && celda.length > 5) {
               codigoReal = limpiarTexto(celda);
               break;
             }
@@ -108,13 +108,9 @@ async function importar() {
           const nro = matchNro ? parseInt(matchNro[1]) : null;
           if (!nro || isNaN(nro)) continue;
 
-          // Buscamos fechas y textos
+          // Buscamos fechas en la fila
           let fechaIngreso = null;
           let fechaAprobacion = null;
-          let peticionario = '';
-          let asunto = '';
-
-          // Las fechas suelen estar en formato DD/MM/YYYY
           const fechasEncontradas = [];
           for (let j = 0; j < fila.length; j++) {
             const val = fila[j];
@@ -122,27 +118,26 @@ async function importar() {
               fechasEncontradas.push(parsearFecha(val));
             }
           }
-
           fechaIngreso = fechasEncontradas[0] || new Date();
           fechaAprobacion = fechasEncontradas[1] || null;
 
-          // El Asunto suele ser el texto más largo
+          // Buscamos asunto (el texto más largo de la fila)
+          let asunto = '';
           for (let j = 0; j < fila.length; j++) {
             if (fila[j] && fila[j].length > 20 && !fila[j].includes('/')) {
               asunto = limpiarTexto(fila[j]);
               break;
             }
           }
-
-          // El proyectista suele estar en la columna 3 o ser el texto corto antes del asunto
-          peticionario = limpiarTexto(fila[3] || fila[2] || 'Senador');
-
           if (!asunto) asunto = 'Sin asunto registrado';
+
+          // Peticionario (usualmente en la posición 3)
+          let peticionario = limpiarTexto(fila[3] || fila[2] || 'Senador');
 
           const existe = await DocumentoLegislativo.findOne({ tipo: 'declaracion-camaral', numero: nro });
           if (existe) continue;
 
-          const archivoData = buscarYAsociarPDF(codigoReal);
+          const archivoData = buscarYAsociarPDF(nro);
           if (archivoData) globalPDFs++;
 
           const nuevoDoc = new DocumentoLegislativo({
