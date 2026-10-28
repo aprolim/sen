@@ -52,7 +52,6 @@ function buscarYAsociarPDF(nro) {
   try {
     if (!fs.existsSync(PDFS_RAW_DIR)) return null;
     const archivos = fs.readdirSync(PDFS_RAW_DIR);
-    // Busca "N° 221", "N 221", o "221-" para asegurar la coincidencia
     const encontrados = archivos.filter(f => f.includes(numeroFormateado));
     if (encontrados.length === 0) return null;
     
@@ -106,6 +105,12 @@ async function importar() {
           const archivoData = buscarYAsociarPDF(nro);
           if (archivoData) globalPDFs++;
 
+          const fechaAprob = parsearFecha(fechaAprobacionStr);
+          
+          // 🔥 SOLUCIÓN: Si no hay fecha de aprobación, usamos la fecha actual.
+          // Y para la fecha de ingreso (que es obligatoria), usamos la de aprobación o la actual.
+          const fechaIngresoFinal = fechaAprob || new Date();
+
           // Extraer solo el número de ley de "1700\n20/11/2025"
           const matchLey = numeroLeyStr.match(/\d+/);
           const numLey = matchLey ? parseInt(matchLey[0]) : null;
@@ -115,7 +120,8 @@ async function importar() {
             numero: nro,
             codigo: codigoCompleto,
             asunto: asuntoStr,
-            fechaAprobacion: parsearFecha(fechaAprobacionStr),
+            fechaIngreso: fechaIngresoFinal, // <--- ¡Aquí está la corrección!
+            fechaAprobacion: fechaAprob,
             fechaRemisionDiputados: parsearFecha(fechaRemisionStr),
             numeroLey: numLey,
             observacion: observacionStr,
