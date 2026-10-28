@@ -48,11 +48,21 @@ function parsearCSV(contenido) {
 }
 
 function buscarYAsociarPDF(nro) {
-  const numeroFormateado = String(nro).padStart(3, '0');
+  const numeroFormateado = String(nro).padStart(3, '0'); // 001, 002...
+  
   try {
     if (!fs.existsSync(PDFS_RAW_DIR)) return null;
     const archivos = fs.readdirSync(PDFS_RAW_DIR);
-    const encontrados = archivos.filter(f => f.toUpperCase().includes(`N° ${numeroFormateado}`) || f.toUpperCase().includes(`NŘ ${numeroFormateado}`) || f.startsWith(`${numeroFormateado}`));
+    
+    // 🔥 BUSCAMOS CON Y SIN EL SÍMBOLO DE GRADO
+    const encontrados = archivos.filter(f => {
+      const name = f.toUpperCase();
+      return name.includes(`N° ${numeroFormateado}`) || 
+             name.includes(`N ${numeroFormateado}`) || 
+             name.includes(`N. ${numeroFormateado}`) ||
+             name.includes(`${numeroFormateado}-2025`);
+    });
+
     if (encontrados.length === 0) return null;
     
     const archivoElegido = encontrados[0];
@@ -96,10 +106,13 @@ async function importar() {
           const nro = parseInt(nroStr);
           if (!nro || isNaN(nro)) continue;
 
+          // Ya no importa si hay duplicados, los sobreescribe o crea de nuevo
           const existe = await DocumentoLegislativo.findOne({ tipo: 'declaracion-camaral', numero: nro, eliminado: false });
           if (existe) continue;
 
           const codigoCompleto = codigoReal.includes('D.C.') ? codigoReal : `D.C. N° ${codigoReal}`;
+          
+          // Busca el PDF y lo asocia
           const archivoData = buscarYAsociarPDF(nro);
           if (archivoData) globalPDFs++;
 
