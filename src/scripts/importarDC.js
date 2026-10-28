@@ -84,36 +84,63 @@ async function importar() {
 
       for (let i = 1; i < lineas.length; i++) {
         const fila = lineas[i];
-        // Si la fila no tiene suficientes columnas, la saltamos
-        if (fila.length < 5) continue;
+        if (fila.length < 4) continue;
 
         try {
-          // 🔥 LEEMOS POR POSICIÓN PARA EVITAR ERRORES DE TILDES ROTAS
-          const nroStr = fila[0]; 
-          const codigoNombre = limpiarTexto(fila[1]); // CÓDIGO O NOMBRE
-          const fechaIngresoStr = fila[2]; // FECHA DE INGRESO
-          const peticionarioStr = limpiarTexto(fila[3]); // PROYECTISTA
-          const asuntoStr = limpiarTexto(fila[4]); // ASUNTO
-          const fechaAprobacionStr = fila[5]; // FECHA DE APROBACIÓN
+          // 🔥 BUSCAMOS EL CÓDIGO REAL EN CUALQUIER COLUMNA
+          let codigoReal = null;
+          for (let j = 0; j < fila.length; j++) {
+            if (fila[j] && fila[j].includes('/2025-2026')) {
+              codigoReal = fila[j];
+              break;
+            }
+          }
 
-          const nro = parseInt(nroStr);
+          // Si la fila no tiene el código con /2025-2026, la saltamos
+          if (!codigoReal) continue;
+
+          // Extraemos el número puro del código (ej: "D.C. N° 001/2025-2026" -> 1)
+          const matchNro = codigoReal.match(/(\d+)/);
+          const nro = matchNro ? parseInt(matchNro[1]) : null;
           if (!nro || isNaN(nro)) continue;
+
+          // Buscamos las fechas y textos. Si las columnas se corrieron, esto las salva.
+          let fechaIngreso = new Date();
+          let fechaAprobacion = null;
+          let peticionario = '';
+          let asunto = '';
+
+          // Buscamos fechas en las columnas que tienen formato dd/mm/yyyy
+          for (let j = 0; j < fila.length; j++) {
+            const val = fila[j];
+            if (val && val.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+              if (!fechaIngreso || fechaIngreso === new Date()) fechaIngreso = parsearFecha(val);
+              else fechaAprobacion = parsearFecha(val);
+            }
+          }
+
+          // Asignamos peticionario y asunto usando los índices típicos (sabiendo que puede correrse)
+          // Por lo general, el proyectista es el texto antes de la fecha
+          peticionario = limpiarTexto(fila[3] || fila[2]);
+          asunto = limpiarTexto(fila[4] || fila[3]);
+
+          // Si el asunto quedó vacío, usamos un texto por defecto
+          if (!asunto) asunto = 'Sin asunto registrado';
 
           const existe = await DocumentoLegislativo.findOne({ tipo: 'declaracion-camaral', numero: nro });
           if (existe) continue;
 
-          const codigo = codigoNombre || `D.C. N° ${nro}`;
           const archivoData = buscarYAsociarPDF(nro);
           if (archivoData) globalPDFs++;
 
           const nuevoDoc = new DocumentoLegislativo({
             tipo: 'declaracion-camaral',
             numero: nro,
-            codigo: codigo,
-            fechaIngreso: parsearFecha(fechaIngresoStr) || new Date(),
-            peticionario: peticionarioStr ? [peticionarioStr] : [],
-            asunto: asuntoStr,
-            fechaAprobacion: parsearFecha(fechaAprobacionStr),
+            codigo: codigoReal,
+            fechaIngreso: fechaIngreso || new Date(),
+            peticionario: peticionario ? [peticionario] : [],
+            asunto: asunto,
+            fechaAprobacion: fechaAprobacion,
             archivo: archivoData || { url: null, filename: '', originalName: '', size: 0 },
             creadoPor: adminUser._id,
             actualizadoPor: adminUser._id
@@ -121,7 +148,7 @@ async function importar() {
 
           await nuevoDoc.save();
           globalInsertados++;
-          console.log(`   ✅ ${codigo} ${archivoData ? '📄 [CON PDF]' : '❌ [SIN PDF]'}`);
+          console.log(`   ✅ ${codigoReal} ${archivoData ? '📄 [CON PDF]' : '❌ [SIN PDF]'}`);
         } catch (err) { console.error(`   ❌ Error en fila:`, err.message); }
       }
     }

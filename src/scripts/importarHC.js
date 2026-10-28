@@ -84,35 +84,56 @@ async function importar() {
 
       for (let i = 1; i < lineas.length; i++) {
         const fila = lineas[i];
-        if (fila.length < 5) continue;
+        if (fila.length < 4) continue;
 
         try {
-          // 🔥 LEEMOS POR POSICIÓN PARA EVITAR ERRORES DE TILDES ROTAS
-          const nroStr = fila[0]; 
-          const codigoNombre = limpiarTexto(fila[1]); // CÓDIGO O NOMBRE
-          const fechaIngresoStr = fila[2]; // FECHA DE INGRESO
-          const peticionarioStr = limpiarTexto(fila[3]); // PROYECTISTA
-          const asuntoStr = limpiarTexto(fila[4]); // ASUNTO
-          const fechaAprobacionStr = fila[5]; // FECHA DE APROBACIÓN
+          // 🔥 BUSCAMOS EL CÓDIGO REAL EN CUALQUIER COLUMNA
+          let codigoReal = null;
+          for (let j = 0; j < fila.length; j++) {
+            if (fila[j] && fila[j].includes('/2025-2026')) {
+              codigoReal = fila[j];
+              break;
+            }
+          }
 
-          const nro = parseInt(nroStr);
+          if (!codigoReal) continue;
+
+          const matchNro = codigoReal.match(/(\d+)/);
+          const nro = matchNro ? parseInt(matchNro[1]) : null;
           if (!nro || isNaN(nro)) continue;
+
+          let fechaIngreso = new Date();
+          let fechaAprobacion = null;
+          let peticionario = '';
+          let asunto = '';
+
+          for (let j = 0; j < fila.length; j++) {
+            const val = fila[j];
+            if (val && val.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+              if (!fechaIngreso || fechaIngreso === new Date()) fechaIngreso = parsearFecha(val);
+              else fechaAprobacion = parsearFecha(val);
+            }
+          }
+
+          peticionario = limpiarTexto(fila[3] || fila[2]);
+          asunto = limpiarTexto(fila[4] || fila[3]);
+
+          if (!asunto) asunto = 'Sin asunto registrado';
 
           const existe = await DocumentoLegislativo.findOne({ tipo: 'homenaje-camaral', numero: nro });
           if (existe) continue;
 
-          const codigo = codigoNombre || `H.C. N° ${nro}`;
           const archivoData = buscarYAsociarPDF(nro);
           if (archivoData) globalPDFs++;
 
           const nuevoDoc = new DocumentoLegislativo({
             tipo: 'homenaje-camaral',
             numero: nro,
-            codigo: codigo,
-            fechaIngreso: parsearFecha(fechaIngresoStr) || new Date(),
-            peticionario: peticionarioStr ? [peticionarioStr] : [],
-            asunto: asuntoStr,
-            fechaAprobacion: parsearFecha(fechaAprobacionStr),
+            codigo: codigoReal,
+            fechaIngreso: fechaIngreso || new Date(),
+            peticionario: peticionario ? [peticionario] : [],
+            asunto: asunto,
+            fechaAprobacion: fechaAprobacion,
             archivo: archivoData || { url: null, filename: '', originalName: '', size: 0 },
             creadoPor: adminUser._id,
             actualizadoPor: adminUser._id
@@ -120,7 +141,7 @@ async function importar() {
 
           await nuevoDoc.save();
           globalInsertados++;
-          console.log(`   ✅ ${codigo} ${archivoData ? '📄 [CON PDF]' : '❌ [SIN PDF]'}`);
+          console.log(`   ✅ ${codigoReal} ${archivoData ? '📄 [CON PDF]' : '❌ [SIN PDF]'}`);
         } catch (err) { console.error(`   ❌ Error en fila:`, err.message); }
       }
     }
