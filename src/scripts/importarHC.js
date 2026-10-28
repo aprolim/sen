@@ -87,18 +87,17 @@ async function importar() {
         if (fila.length < 6) continue;
 
         try {
-          // 🔥 MAPEO POR POSICIÓN EXACTA SEGÚN TU CSV DE H.C.
-          const nroStr = fila[0];              // Nº
-          const codigoReal = limpiarTexto(fila[1]); // Nº H.C
-          const fechaIngresoStr = fila[2];     // FECHA DE INGRESO
-          const peticionarioStr = limpiarTexto(fila[3]); // PROYECTISTA
-          const asuntoStr = limpiarTexto(fila[4]); // TEMA Y/O RESUMEN
-          const fechaAprobacionStr = fila[5];  // FECHA DE APROBACION POR EL PLENO
+          const nroStr = fila[0];              
+          const codigoReal = limpiarTexto(fila[1]); 
+          const fechaIngresoStr = fila[2];     
+          const peticionarioStr = limpiarTexto(fila[3]); 
+          const asuntoStr = limpiarTexto(fila[4]); 
+          const fechaAprobacionStr = fila[5];  
 
           const nro = parseInt(nroStr);
           if (!nro || isNaN(nro)) continue;
 
-          const existe = await DocumentoLegislativo.findOne({ tipo: 'homenaje-camaral', numero: nro });
+          const existe = await DocumentoLegislativo.findOne({ tipo: 'homenaje-camaral', numero: nro, eliminado: false });
           if (existe) continue;
 
           const codigoCompleto = codigoReal.includes('H.C.') ? codigoReal : `H.C. N° ${codigoReal}`;

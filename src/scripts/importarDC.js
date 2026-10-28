@@ -87,17 +87,16 @@ async function importar() {
         if (fila.length < 5) continue;
 
         try {
-          // 🔥 MAPEO POR POSICIÓN EXACTA SEGÚN TU CSV DE D.C.
-          const nroStr = fila[0];              // Nº
-          const codigoReal = limpiarTexto(fila[1]); // Nº DE D.C
-          const fechaEmisionStr = fila[2];     // FECHA DE EMISIÓN
-          const peticionarioStr = limpiarTexto(fila[3]); // PROYECTISTA
-          const asuntoStr = limpiarTexto(fila[4]); // ASUNTO
+          const nroStr = fila[0];              
+          const codigoReal = limpiarTexto(fila[1]); 
+          const fechaEmisionStr = fila[2];     
+          const peticionarioStr = limpiarTexto(fila[3]); 
+          const asuntoStr = limpiarTexto(fila[4]); 
 
           const nro = parseInt(nroStr);
           if (!nro || isNaN(nro)) continue;
 
-          const existe = await DocumentoLegislativo.findOne({ tipo: 'declaracion-camaral', numero: nro });
+          const existe = await DocumentoLegislativo.findOne({ tipo: 'declaracion-camaral', numero: nro, eliminado: false });
           if (existe) continue;
 
           const codigoCompleto = codigoReal.includes('D.C.') ? codigoReal : `D.C. N° ${codigoReal}`;
@@ -111,7 +110,6 @@ async function importar() {
             fechaIngreso: parsearFecha(fechaEmisionStr) || new Date(),
             peticionario: peticionarioStr ? [peticionarioStr] : [],
             asunto: asuntoStr || 'Sin asunto registrado',
-            fechaAprobacion: null, // No hay fecha de aprobación en este CSV
             archivo: archivoData || { url: null, filename: '', originalName: '', size: 0 },
             creadoPor: adminUser._id,
             actualizadoPor: adminUser._id

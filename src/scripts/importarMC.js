@@ -7,27 +7,18 @@ dotenv.config();
 
 const DocumentoLegislativo = require('../models/DocumentoLegislativo');
 const User = require('../models/User');
-const TipoDestinatario = require('../models/TipoDestinatario');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const PDFS_FINAL_DIR = path.join(__dirname, '..', '..', 'uploads', 'documents');
 const BACKEND_URL = 'https://demoback.senado.gob.bo';
-
-// 🔥 RUTA EXACTA DE TU IMAGEN PARA MINUTAS
 const PDFS_RAW_DIR = "/var/www/sen/uploads/documents/publicado en la web/GESTIÓN 2025-2026/MINUTAS 2025-2026";
 
 function limpiarTexto(texto) {
   if (!texto) return '';
-  return texto
-    .replace(/[\u0080-\u00FF]/g, (char) => {
-      if (char === '\x95' || char === '\x95') return '-';
-      if (['\xE1', '\xE9', '\xED', '\xF3', '\xFA', '\xF1', '\xC1', '\xC9', '\xCD', '\xD3', '\xDA', '\xD1'].includes(char)) {
-        return char;
-      }
-      return '-';
-    })
-    .replace(/\s+/g, ' ')
-    .trim();
+  return texto.replace(/[\u0080-\u00FF]/g, (char) => {
+      if (char === '\x95') return '-';
+      return char;
+    }).replace(/\s+/g, ' ').trim();
 }
 
 function parsearFecha(fechaStr) {
@@ -42,140 +33,85 @@ function parsearCSV(contenido) {
   const primeraLinea = contenido.split('\n')[0];
   const separador = primeraLinea.includes(';') ? ';' : ',';
   const lineas = []; let lineaActual = []; let campoActual = ''; let dentroDeComillas = false;
-
   for (let i = 0; i < contenido.length; i++) {
     const char = contenido[i]; const nextChar = contenido[i + 1];
     if (char === '"') {
-      if (dentroDeComillas && nextChar === '"') { campoActual += '"'; i++; } 
-      else { dentroDeComillas = !dentroDeComillas; }
-    } else if (char === separador && !dentroDeComillas) { 
-      lineaActual.push(campoActual.trim()); campoActual = '';
+      if (dentroDeComillas && nextChar === '"') { campoActual += '"'; i++; } else { dentroDeComillas = !dentroDeComillas; }
+    } else if (char === separador && !dentroDeComillas) { lineaActual.push(campoActual.trim()); campoActual = '';
     } else if (char === '\n' && !dentroDeComillas) {
-      lineaActual.push(campoActual.trim()); 
-      if (lineaActual.length > 1 || lineaActual[0] !== '') lineas.push(lineaActual);
+      lineaActual.push(campoActual.trim()); if (lineaActual.length > 1 || lineaActual[0] !== '') lineas.push(lineaActual);
       lineaActual = []; campoActual = '';
-    } else if (char !== '\r' || dentroDeComillas) { 
-      campoActual += char; 
-    }
+    } else if (char !== '\r' || dentroDeComillas) { campoActual += char; }
   }
   if (campoActual !== '' || lineaActual.length > 0) { lineaActual.push(campoActual.trim()); lineas.push(lineaActual); }
-  
-  const headers = lineas[0].map(h => h.trim()); const resultados = [];
-  for (let i = 1; i < lineas.length; i++) {
-    const fila = lineas[i]; const obj = {};
-    for (let j = 0; j < headers.length; j++) obj[headers[j]] = fila[j] || '';
-    resultados.push(obj);
-  }
-  return resultados;
+  return lineas;
 }
 
 function buscarYAsociarPDF(nro) {
-  const numeroFormateado = String(nro).padStart(3, '0'); // Formato 001, 002...
-
+  const numeroFormateado = String(nro).padStart(3, '0');
   try {
     if (!fs.existsSync(PDFS_RAW_DIR)) return null;
     const archivos = fs.readdirSync(PDFS_RAW_DIR);
+    const encontrados = archivos.filter(f => f.toUpperCase().includes(`N° ${numeroFormateado}`) || f.toUpperCase().includes(`NŘ ${numeroFormateado}`) || f.startsWith(`${numeroFormateado}`));
+    if (encontrados.length === 0) return null;
     
-    // Buscamos "M.C. N° 001" o "M.C. Nř 001"
-    const archivosEncontrados = archivos.filter(f => 
-      f.includes(`N° ${numeroFormateado}-`) || 
-      f.includes(`Nř ${numeroFormateado}-`) || 
-      f.startsWith(`${numeroFormateado}-`)
-    );
-
-    if (archivosEncontrados.length === 0) return null;
-
-    let archivoElegido = archivosEncontrados[0];
+    const archivoElegido = encontrados[0];
     const origen = path.join(PDFS_RAW_DIR, archivoElegido);
-    
     const ext = path.extname(archivoElegido);
     const basename = path.basename(archivoElegido, ext).toLowerCase().replace(/[^a-z0-9]/g, '-').substring(0, 50);
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const nuevoNombre = `${basename}-${uniqueSuffix}${ext}`;
+    const nuevoNombre = `${basename}-${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
     const destino = path.join(PDFS_FINAL_DIR, nuevoNombre);
     
     fs.renameSync(origen, destino);
-    
-    return {
-      url: `${BACKEND_URL}/uploads/documents/${nuevoNombre}`,
-      filename: nuevoNombre,
-      originalName: archivoElegido,
-      size: fs.statSync(destino).size
-    };
-  } catch (err) {
-    return null;
-  }
+    return { url: `${BACKEND_URL}/uploads/documents/${nuevoNombre}`, filename: nuevoNombre, originalName: archivoElegido, size: fs.statSync(destino).size };
+  } catch (err) { return null; }
 }
 
 async function importar() {
-  console.log('\n' + '═'.repeat(70));
-  console.log('🚀 IMPORTACIÓN MINUTAS DE COMUNICACIÓN');
-  console.log('═'.repeat(70) + '\n');
-
+  console.log('\n🚀 IMPORTANDO MINUTAS DE COMUNICACIÓN\n');
   try {
     await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/senado_bolivia');
-    console.log('✅ Conectado a MongoDB\n');
-
     const archivosCSV = fs.readdirSync(DATA_DIR).filter(f => f.toLowerCase().startsWith('mc') && f.toLowerCase().endsWith('.csv'));
-    if (archivosCSV.length === 0) {
-      console.error(`❌ ERROR: No hay archivos CSV que empiecen con "mc" en data/`);
-      process.exit(1);
-    }
+    if (archivosCSV.length === 0) { console.error('❌ No hay CSV que empiecen con "mc"'); process.exit(1); }
 
     let adminUser = await User.findOne({ role: 'SUPER_ADMIN' }) || await User.findOne({ role: 'ADMIN' });
-    const tiposDB = await TipoDestinatario.find({ activo: true });
-    const tiposNombres = tiposDB.map(t => t.nombre);
-
     let globalInsertados = 0, globalPDFs = 0;
 
     for (const archivo of archivosCSV) {
       console.log(`📄 Procesando: ${archivo}`);
-      const csvPath = path.join(DATA_DIR, archivo);
-      const buffer = fs.readFileSync(csvPath);
-      const records = parsearCSV(buffer.toString('latin1'));
+      const buffer = fs.readFileSync(path.join(DATA_DIR, archivo));
+      const lineas = parsearCSV(buffer.toString('latin1'));
 
-      for (const row of records) {
+      for (let i = 1; i < lineas.length; i++) {
+        const fila = lineas[i];
+        if (fila.length < 5) continue;
+
         try {
-          // 🔥 MAPEO EXACTO SEGÚN TUS CABECERAS DE MINUTAS
-          const nroStr = row['N�'] || row['Nº'];
-          const nroMC = row['N� . DE MINUTA'] || row['Nº . DE MINUTA'] || row['Nº DE MINUTA'];
-          
-          const peticionarioStr = limpiarTexto(row['PROYECTISTA']);
-          const asuntoStr = limpiarTexto(row['ASUNTO']);
-          const destinatarioStr = limpiarTexto(row['DESTINATARIO']);
-          const tipoDestinatarioStr = limpiarTexto(row['TIPO DE DESTINATARIO']);
-          const observacionStr = limpiarTexto(row['OBS.'] || row['OBSERVACION']);
-
-          const fechaIngresoStr = row['FECHA DE INGRESO A  U.S.C.Ly R'] || row['FECHA DE INGRESO A U.S.C.Ly R'];
-          const fechaRemisionDestStr = row['FECHA DE REMISION AL DESTINATARIO'];
-          const fechaRespuestaStr = row['FECHA DE RESPUESTA USCLyR'];
-          const fechaRemisionPetStr = row['FECHA DE REMISION DE RESP.  AL PROYECTISTA'] || row['FECHA DE REMISION DE RESP. AL PROYECTISTA'];
+          const nroStr = fila[0];              
+          const codigoReal = limpiarTexto(fila[1]); 
+          const fechaIngresoStr = fila[2];     
+          const peticionarioStr = limpiarTexto(fila[3]); 
+          const asuntoStr = limpiarTexto(fila[4]); 
+          const destinatarioStr = limpiarTexto(fila[5] || ''); 
 
           const nro = parseInt(nroStr);
           if (!nro || isNaN(nro)) continue;
 
-          const existe = await DocumentoLegislativo.findOne({ tipo: 'minuta-comunicacion', numero: nro });
+          const existe = await DocumentoLegislativo.findOne({ tipo: 'minuta-comunicacion', numero: nro, eliminado: false });
           if (existe) continue;
 
-          const codigo = `M.C. N° ${nroMC || nro}`;
+          const codigoCompleto = codigoReal.includes('M.C.') ? codigoReal : `M.C. N° ${codigoReal}`;
           const archivoData = buscarYAsociarPDF(nro);
           if (archivoData) globalPDFs++;
 
           const nuevoDoc = new DocumentoLegislativo({
             tipo: 'minuta-comunicacion',
             numero: nro,
-            codigo: codigo,
+            codigo: codigoCompleto,
             fechaIngreso: parsearFecha(fechaIngresoStr) || new Date(),
             peticionario: peticionarioStr ? [peticionarioStr] : [],
-            asunto: asuntoStr,
+            asunto: asuntoStr || 'Sin asunto registrado',
             destinatario: destinatarioStr,
-            tipoDestinatario: tipoDestinatarioStr || null,
-            
-            fechaRemisionDestinatario: parsearFecha(fechaRemisionDestStr),
-            fechaRespuesta: parsearFecha(fechaRespuestaStr),
-            fechaRemisionPeticionario: parsearFecha(fechaRemisionPetStr),
-            
-            observacion: observacionStr,
             archivo: archivoData || { url: null, filename: '', originalName: '', size: 0 },
             creadoPor: adminUser._id,
             actualizadoPor: adminUser._id
@@ -183,7 +119,7 @@ async function importar() {
 
           await nuevoDoc.save();
           globalInsertados++;
-          console.log(`   ✅ ${codigo} ${archivoData ? '📄 [CON PDF]' : '❌ [SIN PDF]'}`);
+          console.log(`   ✅ ${codigoCompleto} ${archivoData ? '📄 [CON PDF]' : '❌ [SIN PDF]'}`);
         } catch (err) { console.error(`   ❌ Error en fila:`, err.message); }
       }
     }
