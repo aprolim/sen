@@ -22,7 +22,7 @@ function limpiarTexto(texto) {
 }
 
 function parsearFecha(fechaStr) {
-  if (!fechaStr || fechaStr.trim() === '') return null;
+  if (!fechaStr || fechaStr.trim() === '' || fechaStr.trim() === '-') return null;
   const partes = fechaStr.trim().split('/');
   if (partes.length !== 3) return null;
   const date = new Date(parseInt(partes[2]), parseInt(partes[1]) - 1, parseInt(partes[0]));
@@ -84,62 +84,35 @@ async function importar() {
 
       for (let i = 1; i < lineas.length; i++) {
         const fila = lineas[i];
-        if (fila.length < 3) continue;
+        if (fila.length < 6) continue;
 
         try {
-          // 🔥 ENCONTRAR EL CÓDIGO REAL (buscando el /2025)
-          let codigoReal = null;
-          for (let j = 0; j < fila.length; j++) {
-            const celda = fila[j];
-            if (celda && celda.includes('/2025') && celda.length > 5) {
-              codigoReal = limpiarTexto(celda);
-              break;
-            }
-          }
-          
-          if (!codigoReal) continue;
+          // 🔥 MAPEO POR POSICIÓN EXACTA SEGÚN TU CSV DE H.C.
+          const nroStr = fila[0];              // Nº
+          const codigoReal = limpiarTexto(fila[1]); // Nº H.C
+          const fechaIngresoStr = fila[2];     // FECHA DE INGRESO
+          const peticionarioStr = limpiarTexto(fila[3]); // PROYECTISTA
+          const asuntoStr = limpiarTexto(fila[4]); // TEMA Y/O RESUMEN
+          const fechaAprobacionStr = fila[5];  // FECHA DE APROBACION POR EL PLENO
 
-          const matchNro = codigoReal.match(/(\d+)/);
-          const nro = matchNro ? parseInt(matchNro[1]) : null;
+          const nro = parseInt(nroStr);
           if (!nro || isNaN(nro)) continue;
-
-          let fechaIngreso = null;
-          let fechaAprobacion = null;
-          const fechasEncontradas = [];
-          for (let j = 0; j < fila.length; j++) {
-            const val = fila[j];
-            if (val && val.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
-              fechasEncontradas.push(parsearFecha(val));
-            }
-          }
-          fechaIngreso = fechasEncontradas[0] || new Date();
-          fechaAprobacion = fechasEncontradas[1] || null;
-
-          let asunto = '';
-          for (let j = 0; j < fila.length; j++) {
-            if (fila[j] && fila[j].length > 20 && !fila[j].includes('/')) {
-              asunto = limpiarTexto(fila[j]);
-              break;
-            }
-          }
-          if (!asunto) asunto = 'Sin asunto registrado';
-
-          let peticionario = limpiarTexto(fila[3] || fila[2] || 'Senador');
 
           const existe = await DocumentoLegislativo.findOne({ tipo: 'homenaje-camaral', numero: nro });
           if (existe) continue;
 
+          const codigoCompleto = codigoReal.includes('H.C.') ? codigoReal : `H.C. N° ${codigoReal}`;
           const archivoData = buscarYAsociarPDF(nro);
           if (archivoData) globalPDFs++;
 
           const nuevoDoc = new DocumentoLegislativo({
             tipo: 'homenaje-camaral',
             numero: nro,
-            codigo: codigoReal,
-            fechaIngreso: fechaIngreso,
-            peticionario: peticionario ? [peticionario] : [],
-            asunto: asunto,
-            fechaAprobacion: fechaAprobacion,
+            codigo: codigoCompleto,
+            fechaIngreso: parsearFecha(fechaIngresoStr) || new Date(),
+            peticionario: peticionarioStr ? [peticionarioStr] : [],
+            asunto: asuntoStr || 'Sin asunto registrado',
+            fechaAprobacion: parsearFecha(fechaAprobacionStr),
             archivo: archivoData || { url: null, filename: '', originalName: '', size: 0 },
             creadoPor: adminUser._id,
             actualizadoPor: adminUser._id
@@ -147,7 +120,7 @@ async function importar() {
 
           await nuevoDoc.save();
           globalInsertados++;
-          console.log(`   ✅ ${codigoReal} ${archivoData ? '📄 [CON PDF]' : '❌ [SIN PDF]'}`);
+          console.log(`   ✅ ${codigoCompleto} ${archivoData ? '📄 [CON PDF]' : '❌ [SIN PDF]'}`);
         } catch (err) { console.error(`   ❌ Error en fila:`, err.message); }
       }
     }

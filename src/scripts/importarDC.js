@@ -22,7 +22,7 @@ function limpiarTexto(texto) {
 }
 
 function parsearFecha(fechaStr) {
-  if (!fechaStr || fechaStr.trim() === '') return null;
+  if (!fechaStr || fechaStr.trim() === '' || fechaStr.trim() === '-') return null;
   const partes = fechaStr.trim().split('/');
   if (partes.length !== 3) return null;
   const date = new Date(parseInt(partes[2]), parseInt(partes[1]) - 1, parseInt(partes[0]));
@@ -48,15 +48,11 @@ function parsearCSV(contenido) {
 }
 
 function buscarYAsociarPDF(nro) {
-  // Formateamos a 3 dígitos: 8 -> 008
   const numeroFormateado = String(nro).padStart(3, '0');
-  
   try {
     if (!fs.existsSync(PDFS_RAW_DIR)) return null;
     const archivos = fs.readdirSync(PDFS_RAW_DIR);
-    // Buscamos D.C. N° 008, D.C. Nř 008 o similares
     const encontrados = archivos.filter(f => f.toUpperCase().includes(`N° ${numeroFormateado}`) || f.toUpperCase().includes(`NŘ ${numeroFormateado}`) || f.startsWith(`${numeroFormateado}`));
-    
     if (encontrados.length === 0) return null;
     
     const archivoElegido = encontrados[0];
@@ -88,66 +84,34 @@ async function importar() {
 
       for (let i = 1; i < lineas.length; i++) {
         const fila = lineas[i];
-        if (fila.length < 3) continue;
+        if (fila.length < 5) continue;
 
         try {
-          // 🔥 ENCONTRAR EL CÓDIGO REAL: Buscamos la celda que tenga "/2025" y letras (ej: D.C. N° 01/2025-2026)
-          let codigoReal = null;
-          for (let j = 0; j < fila.length; j++) {
-            const celda = fila[j];
-            if (celda && celda.includes('/2025') && celda.length > 5) {
-              codigoReal = limpiarTexto(celda);
-              break;
-            }
-          }
-          
-          if (!codigoReal) continue;
+          // 🔥 MAPEO POR POSICIÓN EXACTA SEGÚN TU CSV DE D.C.
+          const nroStr = fila[0];              // Nº
+          const codigoReal = limpiarTexto(fila[1]); // Nº DE D.C
+          const fechaEmisionStr = fila[2];     // FECHA DE EMISIÓN
+          const peticionarioStr = limpiarTexto(fila[3]); // PROYECTISTA
+          const asuntoStr = limpiarTexto(fila[4]); // ASUNTO
 
-          // Extraemos el número puro del código (ej: "D.C. N° 01/2025-2026" -> 1)
-          const matchNro = codigoReal.match(/(\d+)/);
-          const nro = matchNro ? parseInt(matchNro[1]) : null;
+          const nro = parseInt(nroStr);
           if (!nro || isNaN(nro)) continue;
-
-          // Buscamos fechas en la fila
-          let fechaIngreso = null;
-          let fechaAprobacion = null;
-          const fechasEncontradas = [];
-          for (let j = 0; j < fila.length; j++) {
-            const val = fila[j];
-            if (val && val.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
-              fechasEncontradas.push(parsearFecha(val));
-            }
-          }
-          fechaIngreso = fechasEncontradas[0] || new Date();
-          fechaAprobacion = fechasEncontradas[1] || null;
-
-          // Buscamos asunto (el texto más largo de la fila)
-          let asunto = '';
-          for (let j = 0; j < fila.length; j++) {
-            if (fila[j] && fila[j].length > 20 && !fila[j].includes('/')) {
-              asunto = limpiarTexto(fila[j]);
-              break;
-            }
-          }
-          if (!asunto) asunto = 'Sin asunto registrado';
-
-          // Peticionario (usualmente en la posición 3)
-          let peticionario = limpiarTexto(fila[3] || fila[2] || 'Senador');
 
           const existe = await DocumentoLegislativo.findOne({ tipo: 'declaracion-camaral', numero: nro });
           if (existe) continue;
 
+          const codigoCompleto = codigoReal.includes('D.C.') ? codigoReal : `D.C. N° ${codigoReal}`;
           const archivoData = buscarYAsociarPDF(nro);
           if (archivoData) globalPDFs++;
 
           const nuevoDoc = new DocumentoLegislativo({
             tipo: 'declaracion-camaral',
             numero: nro,
-            codigo: codigoReal,
-            fechaIngreso: fechaIngreso,
-            peticionario: peticionario ? [peticionario] : [],
-            asunto: asunto,
-            fechaAprobacion: fechaAprobacion,
+            codigo: codigoCompleto,
+            fechaIngreso: parsearFecha(fechaEmisionStr) || new Date(),
+            peticionario: peticionarioStr ? [peticionarioStr] : [],
+            asunto: asuntoStr || 'Sin asunto registrado',
+            fechaAprobacion: null, // No hay fecha de aprobación en este CSV
             archivo: archivoData || { url: null, filename: '', originalName: '', size: 0 },
             creadoPor: adminUser._id,
             actualizadoPor: adminUser._id
@@ -155,7 +119,7 @@ async function importar() {
 
           await nuevoDoc.save();
           globalInsertados++;
-          console.log(`   ✅ ${codigoReal} ${archivoData ? '📄 [CON PDF]' : '❌ [SIN PDF]'}`);
+          console.log(`   ✅ ${codigoCompleto} ${archivoData ? '📄 [CON PDF]' : '❌ [SIN PDF]'}`);
         } catch (err) { console.error(`   ❌ Error en fila:`, err.message); }
       }
     }
