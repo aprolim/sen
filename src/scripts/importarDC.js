@@ -11,15 +11,13 @@ const User = require('../models/User');
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const PDFS_FINAL_DIR = path.join(__dirname, '..', '..', 'uploads', 'documents');
 const BACKEND_URL = 'https://demoback.senado.gob.bo';
-
 const PDFS_RAW_DIR = "/var/www/sen/uploads/documents/publicado en la web/GESTIÓN 2025-2026/DECLARACIONES CAMARALES 2025-2026";
 
 function limpiarTexto(texto) {
   if (!texto) return '';
   return texto.replace(/[\u0080-\u00FF]/g, (char) => {
       if (char === '\x95') return '-';
-      if (['\xE1', '\xE9', '\xED', '\xF3', '\xFA', '\xF1', '\xC1', '\xC9', '\xCD', '\xD3', '\xDA', '\xD1'].includes(char)) return char;
-      return '-';
+      return char;
     }).replace(/\s+/g, ' ').trim();
 }
 
@@ -46,13 +44,7 @@ function parsearCSV(contenido) {
     } else if (char !== '\r' || dentroDeComillas) { campoActual += char; }
   }
   if (campoActual !== '' || lineaActual.length > 0) { lineaActual.push(campoActual.trim()); lineas.push(lineaActual); }
-  const headers = lineas[0].map(h => h.trim()); const resultados = [];
-  for (let i = 1; i < lineas.length; i++) {
-    const fila = lineas[i]; const obj = {};
-    for (let j = 0; j < headers.length; j++) obj[headers[j]] = fila[j] || '';
-    resultados.push(obj);
-  }
-  return resultados;
+  return lineas;
 }
 
 function buscarYAsociarPDF(nro) {
@@ -88,20 +80,21 @@ async function importar() {
     for (const archivo of archivosCSV) {
       console.log(`📄 Procesando: ${archivo}`);
       const buffer = fs.readFileSync(path.join(DATA_DIR, archivo));
-      const records = parsearCSV(buffer.toString('latin1'));
+      const lineas = parsearCSV(buffer.toString('latin1'));
 
-      for (const row of records) {
+      for (let i = 1; i < lineas.length; i++) {
+        const fila = lineas[i];
+        // Si la fila no tiene suficientes columnas, la saltamos
+        if (fila.length < 5) continue;
+
         try {
-          // 🔥 MAPEO EXACTO SEGÚN TU CSV
-          const nroStr = row['N�'] || row['Nº'];
-          const codigoNombre = limpiarTexto(row['C�DIGO O NOMBRE'] || row['CÓDIGO O NOMBRE']);
-          
-          const peticionarioStr = limpiarTexto(row['PROYECTISTA']);
-          const asuntoStr = limpiarTexto(row['ASUNTO']);
-          const observacionStr = limpiarTexto(row['OBSERVACIONES']);
-          
-          const fechaIngresoStr = row['FECHA DE INGRESO'];
-          const fechaAprobacionStr = row['FECHA DE APROBACI�N'] || row['FECHA DE APROBACIÓN'];
+          // 🔥 LEEMOS POR POSICIÓN PARA EVITAR ERRORES DE TILDES ROTAS
+          const nroStr = fila[0]; 
+          const codigoNombre = limpiarTexto(fila[1]); // CÓDIGO O NOMBRE
+          const fechaIngresoStr = fila[2]; // FECHA DE INGRESO
+          const peticionarioStr = limpiarTexto(fila[3]); // PROYECTISTA
+          const asuntoStr = limpiarTexto(fila[4]); // ASUNTO
+          const fechaAprobacionStr = fila[5]; // FECHA DE APROBACIÓN
 
           const nro = parseInt(nroStr);
           if (!nro || isNaN(nro)) continue;
@@ -109,9 +102,7 @@ async function importar() {
           const existe = await DocumentoLegislativo.findOne({ tipo: 'declaracion-camaral', numero: nro });
           if (existe) continue;
 
-          // Usamos el código directamente si viene en el CSV
           const codigo = codigoNombre || `D.C. N° ${nro}`;
-          
           const archivoData = buscarYAsociarPDF(nro);
           if (archivoData) globalPDFs++;
 
@@ -123,7 +114,6 @@ async function importar() {
             peticionario: peticionarioStr ? [peticionarioStr] : [],
             asunto: asuntoStr,
             fechaAprobacion: parsearFecha(fechaAprobacionStr),
-            observacion: observacionStr,
             archivo: archivoData || { url: null, filename: '', originalName: '', size: 0 },
             creadoPor: adminUser._id,
             actualizadoPor: adminUser._id
