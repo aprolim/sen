@@ -100,7 +100,6 @@ async function crearAvisoDesdeComunicado(comunicado) {
 
 /**
  * 🔥 NUEVA: Valida las reglas de negocio para programación/activación
- * @returns {{ valido: boolean, mensaje?: string, estadoFinal: string, fechaActivacion: Date|null, fechaDesactivacion: Date|null }}
  */
 function validarReglasDeEstado(estado, fechaActivacion, fechaDesactivacion) {
   const ahora = new Date();
@@ -108,10 +107,14 @@ function validarReglasDeEstado(estado, fechaActivacion, fechaDesactivacion) {
   let fa = fechaActivacion ? new Date(fechaActivacion) : null;
   let fd = fechaDesactivacion ? new Date(fechaDesactivacion) : null;
 
-  // 1. No se permite crear inactivo → forzar a programado
+  // 1. Estado INACTIVO (Ajuste aplicado aquí para permitir guardar sin errores de fecha)
   if (estadoFinal === 'inactivo') {
-    estadoFinal = 'programado';
-    console.log('   ⚠️ No se permite crear "inactivo" → forzando a "programado"');
+    return { 
+      valido: true, 
+      estadoFinal, 
+      fechaActivacion: fa, 
+      fechaDesactivacion: fd 
+    };
   }
 
   // 2. Estado PROGRAMADO → requiere ambas fechas y fecha inicio futura
@@ -139,11 +142,9 @@ function validarReglasDeEstado(estado, fechaActivacion, fechaDesactivacion) {
 
   // 3. Estado ACTIVO → aparece ahora, fecha desactivación OPCIONAL
   if (estadoFinal === 'activo') {
-    // Si no hay fecha activación, se activa ahora
     if (!fa || fa > ahora) {
       fa = ahora;
     }
-    // Si hay fecha desactivación, validar que sea futura
     if (fd && fd <= ahora) {
       return {
         valido: false,
@@ -230,7 +231,7 @@ const getComunicadosExpirados = async (req, res) => {
 };
 
 // ============================================
-// 🔐 ADMIN - CRUD
+// 🔍 ADMIN - CRUD
 // ============================================
 
 const getComunicados = async (req, res) => {
@@ -316,20 +317,12 @@ const getComunicadoById = async (req, res) => {
   }
 };
 
-/**
- * 🔥 CREAR COMUNICADO - Con nuevas reglas
- * - No se permite crear como "inactivo" → forzar a "programado"
- * - Programado → requiere ambas fechas y fecha inicio futura
- * - Activo → aparece ahora, fecha fin opcional
- */
 const createComunicado = async (req, res) => {
   try {
     console.log('\n📢 [ADMIN] Creando comunicado...');
     console.log('   👤 Usuario:', req.user.email);
     console.log('   📝 Título:', req.body.titulo);
     console.log('   📊 Estado solicitado:', req.body.estado);
-    console.log('   📅 fechaActivacion:', req.body.fechaActivacion);
-    console.log('   📅 fechaDesactivacion:', req.body.fechaDesactivacion);
 
     const {
       titulo,
@@ -342,7 +335,6 @@ const createComunicado = async (req, res) => {
       prioridad
     } = req.body;
 
-    // Validar imagen
     if (!imagen || !imagen.url) {
       return res.status(400).json({
         success: false,
@@ -350,7 +342,6 @@ const createComunicado = async (req, res) => {
       });
     }
 
-    // 🔥 Aplicar reglas de negocio
     const validacion = validarReglasDeEstado(estado, fechaActivacion, fechaDesactivacion);
 
     if (!validacion.valido) {
@@ -378,14 +369,13 @@ const createComunicado = async (req, res) => {
 
     if (validacion.estadoFinal === 'activo') {
       comunicado.activadoEn = ahora;
+    } else if (validacion.estadoFinal === 'inactivo') {
+      comunicado.desactivadoEn = ahora;
     }
 
     await comunicado.save();
 
     console.log(`   ✅ Comunicado creado ID: ${comunicado._id}`);
-    console.log(`   📊 Estado final: ${comunicado.estado}`);
-    console.log(`   📅 Activación: ${comunicado.fechaActivacion}`);
-    console.log(`   📅 Desactivación: ${comunicado.fechaDesactivacion || 'Sin fecha fin'}`);
 
     res.status(201).json({
       success: true,
@@ -401,18 +391,11 @@ const createComunicado = async (req, res) => {
   }
 };
 
-/**
- * 🔥 ACTUALIZAR COMUNICADO - Aquí SÍ se permite inactivar
- * - Programado → requiere ambas fechas y fecha inicio futura (o igual a ahora)
- * - Activo → fecha fin opcional
- * - Inactivo → permitido (para desactivar manualmente)
- */
 const updateComunicado = async (req, res) => {
   try {
     const { id } = req.params;
 
     console.log(`\n📢 [ADMIN] Actualizando comunicado ID: ${id}`);
-    console.log('   👤 Usuario:', req.user.email);
 
     const comunicado = await Comunicado.findById(id);
 
@@ -434,14 +417,12 @@ const updateComunicado = async (req, res) => {
       prioridad
     } = req.body;
 
-    // Actualizar campos básicos
     if (titulo !== undefined) comunicado.titulo = titulo;
     if (contenido !== undefined) comunicado.contenido = contenido;
     if (imagen !== undefined) comunicado.imagen = imagen;
     if (pdf !== undefined) comunicado.pdf = pdf;
     if (prioridad !== undefined) comunicado.prioridad = prioridad;
 
-    // Si se está cambiando el estado, validar reglas
     if (estado !== undefined) {
       const validacion = validarReglasDeEstado(
         estado,
@@ -463,17 +444,15 @@ const updateComunicado = async (req, res) => {
       comunicado.fechaActivacion = validacion.fechaActivacion;
       comunicado.fechaDesactivacion = validacion.fechaDesactivacion;
 
-      // Registrar cambios de estado
       if (validacion.estadoFinal === 'activo' && estadoAnterior !== 'activo') {
         comunicado.activadoEn = ahora;
-        comunicado.desactivadoEn = null; // limpiar si se reactiva
+        comunicado.desactivadoEn = null;
       }
 
       if (validacion.estadoFinal === 'inactivo' && estadoAnterior === 'activo') {
         comunicado.desactivadoEn = ahora;
       }
     } else {
-      // No se cambió el estado, pero puede que se cambien las fechas
       if (fechaActivacion !== undefined) {
         comunicado.fechaActivacion = fechaActivacion ? new Date(fechaActivacion) : null;
       }
@@ -481,7 +460,6 @@ const updateComunicado = async (req, res) => {
         comunicado.fechaDesactivacion = fechaDesactivacion ? new Date(fechaDesactivacion) : null;
       }
 
-      // Validar que si quedó programado, tenga ambas fechas
       if (comunicado.estado === 'programado') {
         if (!comunicado.fechaActivacion || !comunicado.fechaDesactivacion) {
           return res.status(400).json({
@@ -502,9 +480,6 @@ const updateComunicado = async (req, res) => {
     await comunicado.save();
 
     console.log(`   ✅ Comunicado actualizado`);
-    console.log(`   📊 Estado: ${comunicado.estado}`);
-    console.log(`   📅 Activación: ${comunicado.fechaActivacion}`);
-    console.log(`   📅 Desactivación: ${comunicado.fechaDesactivacion || 'Sin fecha fin'}`);
 
     const comunicadoActualizado = await Comunicado.findById(id)
       .populate('creadoPor', 'email profile')
@@ -524,10 +499,6 @@ const updateComunicado = async (req, res) => {
   }
 };
 
-/**
- * PATCH /api/comunicados/:id/estado
- * Cambia solo el estado (activo/inactivo/programado)
- */
 const changeEstado = async (req, res) => {
   try {
     const { id } = req.params;
@@ -552,7 +523,6 @@ const changeEstado = async (req, res) => {
       });
     }
 
-    // Validar según el nuevo estado
     const validacion = validarReglasDeEstado(
       estado,
       comunicado.fechaActivacion,
@@ -708,8 +678,6 @@ const forceUpdateEstados = async (req, res) => {
 const uploadImage = async (req, res) => {
   try {
     console.log('\n📸 [ADMIN] Subiendo imagen de comunicado...');
-    console.log('   👤 Usuario:', req.user?.email);
-    console.log('   📦 Archivo:', req.file?.originalname);
 
     if (!req.file) {
       return res.status(400).json({
@@ -721,8 +689,6 @@ const uploadImage = async (req, res) => {
 
     const baseUrl = `${req.protocol}://${req.get('host')}`;
     const imageUrl = `${baseUrl}/uploads/images/${req.file.filename}`;
-
-    console.log(`   ✅ Imagen subida: ${imageUrl}`);
 
     res.json({
       success: true,
@@ -737,10 +703,8 @@ const uploadImage = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error en uploadImage:', error);
-
     res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-
     res.status(500).json({
       success: false,
       message: 'Error al subir la imagen',
@@ -752,9 +716,6 @@ const uploadImage = async (req, res) => {
 const uploadPDF = async (req, res) => {
   try {
     console.log('\n📄 [ADMIN] Subiendo PDF de comunicado...');
-    console.log('   👤 Usuario:', req.user?.email);
-    console.log('   📦 Archivo:', req.file?.originalname);
-    console.log('   📊 Tamaño:', req.file ? (req.file.size / 1024 / 1024).toFixed(2) + ' MB' : 'N/A');
 
     if (!req.file) {
       return res.status(400).json({
@@ -766,8 +727,6 @@ const uploadPDF = async (req, res) => {
 
     const baseUrl = `${req.protocol}://${req.get('host')}`;
     const pdfUrl = `${baseUrl}/uploads/documents/${req.file.filename}`;
-
-    console.log(`   ✅ PDF subido: ${pdfUrl}`);
 
     res.json({
       success: true,
@@ -783,10 +742,8 @@ const uploadPDF = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error en uploadPDF:', error);
-
     res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-
     res.status(500).json({
       success: false,
       message: 'Error al subir el PDF',
