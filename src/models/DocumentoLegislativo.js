@@ -29,7 +29,7 @@ const documentoLegislativoSchema = new mongoose.Schema(
       required: [true, 'La fecha de ingreso es requerida']
     },
     peticionario: {
-      type: [String], // 🔥 AHORA ES UN ARRAY
+      type: [String],
       required: [true, 'El peticionario/proyectista es requerido'],
       default: []
     },
@@ -48,8 +48,6 @@ const documentoLegislativoSchema = new mongoose.Schema(
       trim: true,
       maxlength: [300, 'El destinatario no puede exceder 300 caracteres']
     },
-    // 🔥 SIN enum: la validación se hace en el controller contra la BD
-    //    (catálogo TipoDestinatario editable desde el CMS)
     tipoDestinatario: {
       type: String,
       trim: true,
@@ -73,7 +71,7 @@ const documentoLegislativoSchema = new mongoose.Schema(
     fechaRealizacionFinal: { type: Date, default: null },
 
     // ============================================
-    // 📝 APROBACIÓN Y SESIÓN (Gestión)
+    // 📋 APROBACIÓN Y SESIÓN (Gestión)
     // ============================================
     fechaAprobacion: { type: Date, default: null },
     sesion: {
@@ -106,7 +104,7 @@ const documentoLegislativoSchema = new mongoose.Schema(
     numeroLey: { type: Number, default: null },
 
     // ============================================
-    // 📝 OBSERVACIONES Y ARCHIVOS
+    // 📎 OBSERVACIONES Y ARCHIVOS
     // ============================================
     observacion: {
       type: String,
@@ -151,6 +149,21 @@ documentoLegislativoSchema.index({ tipo: 1, eliminado: 1, numero: 1 });
 documentoLegislativoSchema.index({ tipo: 1, codigo: 1, eliminado: 1 });
 documentoLegislativoSchema.index({ tipo: 1, fechaIngreso: -1, eliminado: 1 });
 
+// 🔥 CAMBIO: Unicidad de `numero` por tipo, PERO exceptuando `proyecto-ley-rechazados`.
+// En rechazados el número puede repetirse (porque los rechazados pueden compartir
+// número con otros tipos, o incluso repetirse entre sí).
+documentoLegislativoSchema.index(
+  { tipo: 1, numero: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      tipo: { $ne: 'proyecto-ley-rechazados' }
+    },
+    name: 'tipo_numero_unique_excepto_rechazados'
+  }
+);
+
+// Unicidad de numeroLey (global, parcial: solo cuando es número)
 documentoLegislativoSchema.index(
   { numeroLey: 1 },
   {

@@ -11,6 +11,13 @@ const {
 } = require('../config/tiposDocumento');
 
 // ============================================
+// 🔥 TIPOS QUE PERMITEN NÚMERO REPETIDO
+// ============================================
+const TIPOS_NUMERO_NO_UNICO = ['proyecto-ley-rechazados'];
+
+const permiteNumeroRepetido = (tipo) => TIPOS_NUMERO_NO_UNICO.includes(tipo);
+
+// ============================================
 // 🛠️ HELPERS
 // ============================================
 
@@ -214,7 +221,6 @@ const validarTipoDestinatario = async (valor) => {
 
 // ============================================
 // 📡 PÚBLICO - Listar documentos
-// GET /api/legislativos/:tipo
 // ============================================
 const getDocumentosPublicos = async (req, res) => {
   try {
@@ -269,7 +275,6 @@ const getDocumentosPublicos = async (req, res) => {
 
 // ============================================
 // 🔍 ADMIN - Listar
-// GET /api/legislativos/:tipo/admin
 // ============================================
 const getDocumentosAdmin = async (req, res) => {
   try {
@@ -359,7 +364,6 @@ const getDocumentoById = async (req, res) => {
 
 // ============================================
 // 🔍 ADMIN - Crear
-// POST /api/legislativos/:tipo
 // ============================================
 const createDocumento = async (req, res) => {
   try {
@@ -385,12 +389,17 @@ const createDocumento = async (req, res) => {
       return res.status(400).json({ success: false, message: vDestinatario.mensaje });
     }
 
-    const yaExiste = await DocumentoLegislativo.findOne({ tipo, numero: bodyLimpio.numero });
-    if (yaExiste) {
-      return res.status(409).json({
-        success: false,
-        message: `Ya existe un documento con el número ${bodyLimpio.numero} en este tipo.`
-      });
+    // ============================================
+    // 🔥 CAMBIO: solo validar duplicado si el tipo lo exige
+    // ============================================
+    if (!permiteNumeroRepetido(tipo)) {
+      const yaExiste = await DocumentoLegislativo.findOne({ tipo, numero: bodyLimpio.numero });
+      if (yaExiste) {
+        return res.status(409).json({
+          success: false,
+          message: `Ya existe un documento con el número ${bodyLimpio.numero} en este tipo.`
+        });
+      }
     }
 
     const vNumeroLey = await validarNumeroLeyUnico(bodyLimpio.numeroLey);
@@ -438,7 +447,6 @@ const createDocumento = async (req, res) => {
 
 // ============================================
 // 🔍 ADMIN - Actualizar
-// PUT /api/legislativos/:tipo/:id
 // ============================================
 const updateDocumento = async (req, res) => {
   try {
@@ -462,7 +470,6 @@ const updateDocumento = async (req, res) => {
     const config = getConfigTipo(tipo);
     const bodyLimpio = sanitizarBody(req.body);
 
-    // 🔒 Campos bloqueados (numero, codigo)
     config.camposBloqueadosEnEdicion.forEach((campo) => delete bodyLimpio[campo]);
 
     // ============================================
@@ -497,9 +504,6 @@ const updateDocumento = async (req, res) => {
         estadoLey: estadoNuevo
       };
 
-      // ============================================
-      // 🔥 CAMBIO: ya NO se exige archivoAnexo
-      // ============================================
       const errores = validarObligatorios(combinado, tipoNuevo);
       if (errores.length > 0) {
         return res.status(400).json({
@@ -508,14 +512,6 @@ const updateDocumento = async (req, res) => {
           errores
         });
       }
-
-      // 🔥 CAMBIO: ELIMINADO el bloque que forzaba archivoAnexo:
-      // if (esTipoDestinoTransicion(tipoNuevo)) {
-      //   const anexos = combinado.archivoAnexo;
-      //   if (!Array.isArray(anexos) || anexos.length === 0) {
-      //     return res.status(400).json({ ... });
-      //   }
-      // }
 
       const vDestinatario = await validarTipoDestinatario(combinado.tipoDestinatario);
       if (!vDestinatario.ok) {
@@ -527,16 +523,21 @@ const updateDocumento = async (req, res) => {
         return res.status(409).json({ success: false, message: vNumeroLey.mensaje });
       }
 
-      const yaExiste = await DocumentoLegislativo.findOne({
-        _id: { $ne: doc._id },
-        tipo: tipoNuevo,
-        numero: combinado.numero
-      });
-      if (yaExiste) {
-        return res.status(409).json({
-          success: false,
-          message: `Ya existe un documento con el número ${combinado.numero} en "${tipoNuevo}".`
+      // ============================================
+      // 🔥 CAMBIO: solo validar duplicado en tipoNuevo si aplica
+      // ============================================
+      if (!permiteNumeroRepetido(tipoNuevo)) {
+        const yaExiste = await DocumentoLegislativo.findOne({
+          _id: { $ne: doc._id },
+          tipo: tipoNuevo,
+          numero: combinado.numero
         });
+        if (yaExiste) {
+          return res.status(409).json({
+            success: false,
+            message: `Ya existe un documento con el número ${combinado.numero} en "${tipoNuevo}".`
+          });
+        }
       }
 
       const datosNuevos = extraerCamposDelTipo(combinado, tipoNuevo, 'update');
@@ -571,14 +572,6 @@ const updateDocumento = async (req, res) => {
         return res.status(400).json({ success: false, message: vDestinatario.mensaje });
       }
     }
-
-    // 🔥 CAMBIO: ELIMINADO el bloque que forzaba archivoAnexo en edición:
-    // if (esTipoDestinoTransicion(tipo)) {
-    //   const anexos = datos.archivoAnexo !== undefined ? datos.archivoAnexo : doc.archivoAnexo;
-    //   if (!Array.isArray(anexos) || anexos.length === 0) {
-    //     return res.status(400).json({ ... });
-    //   }
-    // }
 
     if (datos.numeroLey !== undefined) {
       const vNumeroLey = await validarNumeroLeyUnico(datos.numeroLey, doc._id);
@@ -701,7 +694,6 @@ const restoreDocumento = async (req, res) => {
 
 // ============================================
 // 📤 Upload PDF
-// POST /api/legislativos/:tipo/upload-pdf
 // ============================================
 const uploadPDF = async (req, res) => {
   try {
@@ -757,7 +749,6 @@ const getStats = async (req, res) => {
 
 // ============================================
 // 📋 Config del tipo
-// GET /api/legislativos/:tipo/config
 // ============================================
 const getConfigDelTipo = async (req, res) => {
   try {
