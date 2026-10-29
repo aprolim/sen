@@ -148,6 +148,7 @@ const TIPOS_DOCUMENTO = {
   // ============================================
 
   // 🔵 APROBADOS
+  // 🔥 CAMBIO: numeroLey y archivoAnexo ya NO son obligatorios
   'proyecto-ley-aprobados': {
     label: 'Proyectos de Ley Aprobados',
     bloque: 'legislacion',
@@ -164,13 +165,14 @@ const TIPOS_DOCUMENTO = {
     ],
     camposObligatorios: [
       'numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario',
-      'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados',
-      'numeroLey', 'archivoAnexo'
+      'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados'
+      // 🔥 numeroLey y archivoAnexo removidos de obligatorios
     ],
     camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
   // 🟣 SANCIONADOS
+  // 🔥 CAMBIO: numeroLey y archivoAnexo ya NO son obligatorios
   'proyecto-ley-sancionados': {
     label: 'Proyectos de Ley Sancionados',
     bloque: 'legislacion',
@@ -186,13 +188,14 @@ const TIPOS_DOCUMENTO = {
     ],
     camposObligatorios: [
       'numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario',
-      'estadoLey', 'fechaSancion', 'fechaRemisionEjecutivo',
-      'numeroLey', 'archivoAnexo'
+      'estadoLey', 'fechaSancion', 'fechaRemisionEjecutivo'
+      // 🔥 numeroLey y archivoAnexo removidos de obligatorios
     ],
     camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
   // 🟡 APROBADOS CON MODIFICACIONES (DEVUELTOS A DIPUTADOS)
+  // 🔥 CAMBIO: numeroLey y archivoAnexo ya NO son obligatorios
   'proyecto-ley-modificaciones': {
     label: 'Proyectos de Ley con Modificaciones',
     bloque: 'legislacion',
@@ -208,13 +211,14 @@ const TIPOS_DOCUMENTO = {
     ],
     camposObligatorios: [
       'numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario',
-      'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados',
-      'numeroLey', 'archivoAnexo'
+      'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados'
+      // 🔥 numeroLey y archivoAnexo removidos de obligatorios
     ],
     camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
   // 🔴 RECHAZADOS (sin numeroLey)
+  // 🔥 CAMBIO: archivoAnexo ya NO es obligatorio
   'proyecto-ley-rechazados': {
     label: 'Proyectos de Ley Rechazados',
     bloque: 'legislacion',
@@ -230,8 +234,8 @@ const TIPOS_DOCUMENTO = {
     ],
     camposObligatorios: [
       'numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario',
-      'estadoLey', 'fechaRechazo', 'fechaRemisionDiputados',
-      'archivoAnexo'
+      'estadoLey', 'fechaRechazo', 'fechaRemisionDiputados'
+      // 🔥 archivoAnexo removido de obligatorios
     ],
     camposBloqueadosEnEdicion: ['numero', 'codigo']
   },

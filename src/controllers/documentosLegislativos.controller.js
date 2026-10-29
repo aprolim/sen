@@ -1,6 +1,6 @@
 // src/controllers/documentosLegislativos.controller.js
 const DocumentoLegislativo = require('../models/DocumentoLegislativo');
-const TipoDestinatario = require('../models/TipoDestinatario'); // 🔥 NUEVO
+const TipoDestinatario = require('../models/TipoDestinatario');
 const {
   esTipoValido,
   getConfigTipo,
@@ -185,14 +185,6 @@ const validarNumeroLeyUnico = async (numeroLey, excludeId = null) => {
   return { ok: true };
 };
 
-// ============================================
-// 🔥 VALIDACIÓN DE TIPO DE DESTINATARIO CONTRA LA BD
-// ============================================
-/**
- * Devuelve { ok: true } si el valor existe en el catálogo (y está activo).
- * Devuelve { ok: false, mensaje } con la lista de opciones válidas si no.
- * Devuelve { ok: true } si el valor viene vacío/null (no es obligatorio aquí).
- */
 const validarTipoDestinatario = async (valor) => {
   if (valor === undefined || valor === null || valor === '') {
     return { ok: true };
@@ -276,7 +268,7 @@ const getDocumentosPublicos = async (req, res) => {
 };
 
 // ============================================
-// 🔐 ADMIN - Listar
+// 🔍 ADMIN - Listar
 // GET /api/legislativos/:tipo/admin
 // ============================================
 const getDocumentosAdmin = async (req, res) => {
@@ -340,7 +332,7 @@ const getDocumentosAdmin = async (req, res) => {
 };
 
 // ============================================
-// 🔐 ADMIN - Obtener uno por ID
+// 🔍 ADMIN - Obtener uno por ID
 // ============================================
 const getDocumentoById = async (req, res) => {
   try {
@@ -366,7 +358,7 @@ const getDocumentoById = async (req, res) => {
 };
 
 // ============================================
-// 🔐 ADMIN - Crear
+// 🔍 ADMIN - Crear
 // POST /api/legislativos/:tipo
 // ============================================
 const createDocumento = async (req, res) => {
@@ -388,7 +380,6 @@ const createDocumento = async (req, res) => {
       return res.status(400).json({ success: false, message: errores.join('. '), errores });
     }
 
-    // 🔥 VALIDAR TIPO DE DESTINATARIO CONTRA LA BD
     const vDestinatario = await validarTipoDestinatario(bodyLimpio.tipoDestinatario);
     if (!vDestinatario.ok) {
       return res.status(400).json({ success: false, message: vDestinatario.mensaje });
@@ -446,7 +437,7 @@ const createDocumento = async (req, res) => {
 };
 
 // ============================================
-// 🔐 ADMIN - Actualizar
+// 🔍 ADMIN - Actualizar
 // PUT /api/legislativos/:tipo/:id
 // ============================================
 const updateDocumento = async (req, res) => {
@@ -506,32 +497,26 @@ const updateDocumento = async (req, res) => {
         estadoLey: estadoNuevo
       };
 
+      // ============================================
+      // 🔥 CAMBIO: ya NO se exige archivoAnexo
+      // ============================================
       const errores = validarObligatorios(combinado, tipoNuevo);
-
-      const erroresFiltrados = errores.filter(err => {
-        if (err.includes('archivoAnexo')) return true;
-        return false;
-      });
-
-      if (erroresFiltrados.length > 0) {
+      if (errores.length > 0) {
         return res.status(400).json({
           success: false,
-          message: `Faltan campos obligatorios: ${erroresFiltrados.join('. ')}`,
-          errores: erroresFiltrados
+          message: `Faltan campos obligatorios: ${errores.join('. ')}`,
+          errores
         });
       }
 
-      if (esTipoDestinoTransicion(tipoNuevo)) {
-        const anexos = combinado.archivoAnexo;
-        if (!Array.isArray(anexos) || anexos.length === 0) {
-          return res.status(400).json({
-            success: false,
-            message: `Debe adjuntar al menos un archivo anexo (informe de comisión) para cambiar al estado "${estadoNuevo}".`
-          });
-        }
-      }
+      // 🔥 CAMBIO: ELIMINADO el bloque que forzaba archivoAnexo:
+      // if (esTipoDestinoTransicion(tipoNuevo)) {
+      //   const anexos = combinado.archivoAnexo;
+      //   if (!Array.isArray(anexos) || anexos.length === 0) {
+      //     return res.status(400).json({ ... });
+      //   }
+      // }
 
-      // 🔥 VALIDAR TIPO DE DESTINATARIO CONTRA LA BD
       const vDestinatario = await validarTipoDestinatario(combinado.tipoDestinatario);
       if (!vDestinatario.ok) {
         return res.status(400).json({ success: false, message: vDestinatario.mensaje });
@@ -580,7 +565,6 @@ const updateDocumento = async (req, res) => {
     // ============================================
     const datos = extraerCamposDelTipo(bodyLimpio, tipo, 'update');
 
-    // 🔥 VALIDAR TIPO DE DESTINATARIO CONTRA LA BD
     if (datos.tipoDestinatario !== undefined) {
       const vDestinatario = await validarTipoDestinatario(datos.tipoDestinatario);
       if (!vDestinatario.ok) {
@@ -588,15 +572,13 @@ const updateDocumento = async (req, res) => {
       }
     }
 
-    if (esTipoDestinoTransicion(tipo)) {
-      const anexos = datos.archivoAnexo !== undefined ? datos.archivoAnexo : doc.archivoAnexo;
-      if (!Array.isArray(anexos) || anexos.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'El archivo anexo (informe de comisión) es obligatorio para este tipo de documento.'
-        });
-      }
-    }
+    // 🔥 CAMBIO: ELIMINADO el bloque que forzaba archivoAnexo en edición:
+    // if (esTipoDestinoTransicion(tipo)) {
+    //   const anexos = datos.archivoAnexo !== undefined ? datos.archivoAnexo : doc.archivoAnexo;
+    //   if (!Array.isArray(anexos) || anexos.length === 0) {
+    //     return res.status(400).json({ ... });
+    //   }
+    // }
 
     if (datos.numeroLey !== undefined) {
       const vNumeroLey = await validarNumeroLeyUnico(datos.numeroLey, doc._id);
@@ -687,7 +669,7 @@ const deleteDocumento = async (req, res) => {
 };
 
 // ============================================
-// 🔐 SUPER_ADMIN - Restaurar
+// 🔍 SUPER_ADMIN - Restaurar
 // ============================================
 const restoreDocumento = async (req, res) => {
   try {
@@ -776,7 +758,6 @@ const getStats = async (req, res) => {
 // ============================================
 // 📋 Config del tipo
 // GET /api/legislativos/:tipo/config
-// 🔥 Ahora devuelve los tiposDestinatario DESDE LA BD
 // ============================================
 const getConfigDelTipo = async (req, res) => {
   try {
@@ -787,7 +768,6 @@ const getConfigDelTipo = async (req, res) => {
 
     const config = getConfigTipo(tipo);
 
-    // 🔥 Traer tipos de destinatario desde la BD
     const tiposDestinatarioDB = await TipoDestinatario
       .find({ activo: true })
       .sort({ orden: 1 })
