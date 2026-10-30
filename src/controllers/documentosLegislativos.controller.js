@@ -220,6 +220,19 @@ const validarTipoDestinatario = async (valor) => {
 };
 
 // ============================================
+// 🔥 NORMALIZADOR PARA EL FRONTEND PÚBLICO
+//    Convierte archivoAnexo[0] → archivo
+//    y deja peticionario/destinatario/fechaRespuesta
+//    tal cual los esperan los .vue
+// ============================================
+const normalizarDocumento = (d) => ({
+  ...d,
+  archivo: Array.isArray(d.archivoAnexo) && d.archivoAnexo.length > 0
+    ? d.archivoAnexo[0]
+    : null
+});
+
+// ============================================
 // 📢 PÚBLICO - Listar documentos
 // ============================================
 const getDocumentosPublicos = async (req, res) => {
@@ -250,7 +263,6 @@ const getDocumentosPublicos = async (req, res) => {
 
     if (search && search.trim()) {
       const termino = search.trim();
-      // Si hay comillas, buscar frase exacta, sino buscar palabras
       if (termino.includes('"')) {
         filters.$text = { $search: termino };
       } else {
@@ -266,11 +278,18 @@ const getDocumentosPublicos = async (req, res) => {
     }
 
     const skip = (page - 1) * limit;
-    const [documentos, total] = await Promise.all([
-      // 🔥 Aplicando sortOrder dinámico
-      DocumentoLegislativo.find(filters).sort({ numero: sortOrder }).skip(skip).limit(limit).lean(),
+    const [docs, total] = await Promise.all([
+      // 🔥 ORDEN POR FECHA DE INGRESO + _id COMO DESEMPATE
+      DocumentoLegislativo.find(filters)
+        .sort({ fechaIngreso: sortOrder, _id: sortOrder })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
       DocumentoLegislativo.countDocuments(filters)
     ]);
+
+    // 🔥 Map archivoAnexo[0] → archivo para TODOS los tipos públicos
+    const documentos = docs.map(normalizarDocumento);
 
     res.json({
       success: true,
@@ -296,7 +315,6 @@ const getDocumentosAdmin = async (req, res) => {
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const { search, gestion, incluirInactivos, incluirEliminados, order } = req.query;
 
-    // 🔥 ORDENAMIENTO DINÁMICO
     const sortOrder = order === 'asc' ? 1 : -1;
 
     const filters = { tipo };
@@ -330,10 +348,9 @@ const getDocumentosAdmin = async (req, res) => {
     }
 
     const skip = (page - 1) * limit;
-    const [documentos, total] = await Promise.all([
-      // 🔥 Aplicando sortOrder dinámico
+    const [docs, total] = await Promise.all([
       DocumentoLegislativo.find(filters)
-        .sort({ numero: sortOrder })
+        .sort({ fechaIngreso: sortOrder, _id: sortOrder })
         .skip(skip)
         .limit(limit)
         .populate('creadoPor', 'email profile')
@@ -342,6 +359,8 @@ const getDocumentosAdmin = async (req, res) => {
         .lean(),
       DocumentoLegislativo.countDocuments(filters)
     ]);
+
+    const documentos = docs.map(normalizarDocumento);
 
     res.json({
       success: true,
