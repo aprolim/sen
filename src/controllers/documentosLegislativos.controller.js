@@ -220,7 +220,7 @@ const validarTipoDestinatario = async (valor) => {
 };
 
 // ============================================
-// 📡 PÚBLICO - Listar documentos
+// 📢 PÚBLICO - Listar documentos
 // ============================================
 const getDocumentosPublicos = async (req, res) => {
   try {
@@ -231,7 +231,10 @@ const getDocumentosPublicos = async (req, res) => {
 
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
-    const { search, gestion } = req.query;
+    const { search, gestion, order } = req.query;
+
+    // 🔥 ORDENAMIENTO DINÁMICO: desc por defecto, asc si se solicita
+    const sortOrder = order === 'asc' ? 1 : -1;
 
     const filters = { tipo, eliminado: false, activo: true };
 
@@ -247,19 +250,25 @@ const getDocumentosPublicos = async (req, res) => {
 
     if (search && search.trim()) {
       const termino = search.trim();
-      filters.$or = [
-        { codigo: { $regex: termino, $options: 'i' } },
-        { asunto: { $regex: termino, $options: 'i' } },
-        { peticionario: { $regex: termino, $options: 'i' } },
-        { destinatario: { $regex: termino, $options: 'i' } },
-        { comisionI: { $regex: termino, $options: 'i' } },
-        { comisionII: { $regex: termino, $options: 'i' } }
-      ];
+      // Si hay comillas, buscar frase exacta, sino buscar palabras
+      if (termino.includes('"')) {
+        filters.$text = { $search: termino };
+      } else {
+        filters.$or = [
+          { codigo: { $regex: termino, $options: 'i' } },
+          { asunto: { $regex: termino, $options: 'i' } },
+          { peticionario: { $regex: termino, $options: 'i' } },
+          { destinatario: { $regex: termino, $options: 'i' } },
+          { comisionI: { $regex: termino, $options: 'i' } },
+          { comisionII: { $regex: termino, $options: 'i' } }
+        ];
+      }
     }
 
     const skip = (page - 1) * limit;
     const [documentos, total] = await Promise.all([
-      DocumentoLegislativo.find(filters).sort({ numero: 1 }).skip(skip).limit(limit).lean(),
+      // 🔥 Aplicando sortOrder dinámico
+      DocumentoLegislativo.find(filters).sort({ numero: sortOrder }).skip(skip).limit(limit).lean(),
       DocumentoLegislativo.countDocuments(filters)
     ]);
 
@@ -285,7 +294,10 @@ const getDocumentosAdmin = async (req, res) => {
 
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
-    const { search, gestion, incluirInactivos, incluirEliminados } = req.query;
+    const { search, gestion, incluirInactivos, incluirEliminados, order } = req.query;
+
+    // 🔥 ORDENAMIENTO DINÁMICO
+    const sortOrder = order === 'asc' ? 1 : -1;
 
     const filters = { tipo };
     if (incluirEliminados !== 'true') filters.eliminado = false;
@@ -303,20 +315,25 @@ const getDocumentosAdmin = async (req, res) => {
 
     if (search && search.trim()) {
       const termino = search.trim();
-      filters.$or = [
-        { codigo: { $regex: termino, $options: 'i' } },
-        { asunto: { $regex: termino, $options: 'i' } },
-        { peticionario: { $regex: termino, $options: 'i' } },
-        { destinatario: { $regex: termino, $options: 'i' } },
-        { comisionI: { $regex: termino, $options: 'i' } },
-        { comisionII: { $regex: termino, $options: 'i' } }
-      ];
+      if (termino.includes('"')) {
+        filters.$text = { $search: termino };
+      } else {
+        filters.$or = [
+          { codigo: { $regex: termino, $options: 'i' } },
+          { asunto: { $regex: termino, $options: 'i' } },
+          { peticionario: { $regex: termino, $options: 'i' } },
+          { destinatario: { $regex: termino, $options: 'i' } },
+          { comisionI: { $regex: termino, $options: 'i' } },
+          { comisionII: { $regex: termino, $options: 'i' } }
+        ];
+      }
     }
 
     const skip = (page - 1) * limit;
     const [documentos, total] = await Promise.all([
+      // 🔥 Aplicando sortOrder dinámico
       DocumentoLegislativo.find(filters)
-        .sort({ numero: 1 })
+        .sort({ numero: sortOrder })
         .skip(skip)
         .limit(limit)
         .populate('creadoPor', 'email profile')
@@ -389,9 +406,6 @@ const createDocumento = async (req, res) => {
       return res.status(400).json({ success: false, message: vDestinatario.mensaje });
     }
 
-    // ============================================
-    // 🔥 CAMBIO: solo validar duplicado si el tipo lo exige
-    // ============================================
     if (!permiteNumeroRepetido(tipo)) {
       const yaExiste = await DocumentoLegislativo.findOne({ tipo, numero: bodyLimpio.numero });
       if (yaExiste) {
@@ -472,9 +486,6 @@ const updateDocumento = async (req, res) => {
 
     config.camposBloqueadosEnEdicion.forEach((campo) => delete bodyLimpio[campo]);
 
-    // ============================================
-    // 🔥 DETECTAR SI HAY CAMBIO DE ESTADO
-    // ============================================
     const estadoNuevo = bodyLimpio.estadoLey;
     const hayCambioEstado =
       estadoNuevo !== undefined &&
@@ -523,9 +534,6 @@ const updateDocumento = async (req, res) => {
         return res.status(409).json({ success: false, message: vNumeroLey.mensaje });
       }
 
-      // ============================================
-      // 🔥 CAMBIO: solo validar duplicado en tipoNuevo si aplica
-      // ============================================
       if (!permiteNumeroRepetido(tipoNuevo)) {
         const yaExiste = await DocumentoLegislativo.findOne({
           _id: { $ne: doc._id },
@@ -561,9 +569,6 @@ const updateDocumento = async (req, res) => {
       });
     }
 
-    // ============================================
-    // 🔧 EDICIÓN NORMAL (sin cambio de estado)
-    // ============================================
     const datos = extraerCamposDelTipo(bodyLimpio, tipo, 'update');
 
     if (datos.tipoDestinatario !== undefined) {
