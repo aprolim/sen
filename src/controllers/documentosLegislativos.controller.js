@@ -224,13 +224,28 @@ const validarTipoDestinatario = async (valor) => {
 //    Convierte archivoAnexo[0] → archivo
 //    y deja peticionario/destinatario/fechaRespuesta
 //    tal cual los esperan los .vue
+//
+//    ✅ FIX: Si el documento YA tiene archivo.url
+//    (PDF principal), se respeta y NO se sobrescribe.
+//    Solo se usa archivoAnexo[0] como fallback
+//    cuando archivo está vacío.
 // ============================================
-const normalizarDocumento = (d) => ({
-  ...d,
-  archivo: Array.isArray(d.archivoAnexo) && d.archivoAnexo.length > 0
-    ? d.archivoAnexo[0]
-    : null
-});
+const normalizarDocumento = (d) => {
+  // 1. Si ya tiene archivo principal válido (con url), NO lo tocamos
+  if (d.archivo && d.archivo.url) {
+    return d;
+  }
+
+  // 2. Fallback: si no hay archivo principal pero sí anexos,
+  //    usamos el primer anexo como "archivo" para compatibilidad
+  //    con frontends antiguos que esperan `archivo`
+  if (Array.isArray(d.archivoAnexo) && d.archivoAnexo.length > 0) {
+    return { ...d, archivo: d.archivoAnexo[0] };
+  }
+
+  // 3. Si no hay ni archivo ni anexos, dejamos archivo como null
+  return { ...d, archivo: null };
+};
 
 // ============================================
 // 🔥 HELPER: Construir el filtro de búsqueda
@@ -329,7 +344,7 @@ const getDocumentosPublicos = async (req, res) => {
     const fechaMinima = extremos.length > 0 ? extremos[0].fechaMinima : null;
     const fechaMaxima = extremos.length > 0 ? extremos[0].fechaMaxima : null;
 
-    // 🔥 Normalizar (archivoAnexo[0] → archivo)
+    // 🔥 Normalizar (archivoAnexo[0] → archivo SOLO como fallback)
     const documentos = docs.map(normalizarDocumento);
 
     res.json({
@@ -352,7 +367,7 @@ const getDocumentosPublicos = async (req, res) => {
 };
 
 // ============================================
-// 🔍 ADMIN - Listar
+// 🔒 ADMIN - Listar
 // ============================================
 const getDocumentosAdmin = async (req, res) => {
   try {
@@ -423,7 +438,7 @@ const getDocumentosAdmin = async (req, res) => {
 };
 
 // ============================================
-// 🔍 ADMIN - Obtener uno por ID
+// 🔒 ADMIN - Obtener uno por ID
 // ============================================
 const getDocumentoById = async (req, res) => {
   try {
@@ -449,7 +464,7 @@ const getDocumentoById = async (req, res) => {
 };
 
 // ============================================
-// 🔍 ADMIN - Crear
+// 🔒 ADMIN - Crear
 // ============================================
 const createDocumento = async (req, res) => {
   try {
@@ -529,7 +544,7 @@ const createDocumento = async (req, res) => {
 };
 
 // ============================================
-// 🔍 ADMIN - Actualizar
+// 🔒 ADMIN - Actualizar
 // ============================================
 const updateDocumento = async (req, res) => {
   try {
@@ -736,7 +751,7 @@ const deleteDocumento = async (req, res) => {
 };
 
 // ============================================
-// 🔍 SUPER_ADMIN - Restaurar
+// 🔒 SUPER_ADMIN - Restaurar
 // ============================================
 const restoreDocumento = async (req, res) => {
   try {
