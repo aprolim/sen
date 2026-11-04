@@ -1,9 +1,35 @@
 // src/controllers/legisladores.controller.js
 const Senador = require('../models/Senador');
 const Comision = require('../models/Comision');
+const DirectivaCamaral = require('../models/DirectivaCamaral');
 const legisladoresService = require('../services/legisladores.service');
 const { processImage } = require('../middleware/upload');
 const path = require('path');
+
+// ============================================
+// 🛠️ HELPER: Validar que los IDs sean senadores titulares
+// ============================================
+const validarSenadoresTitulares = async (ids) => {
+  const idsUnicos = [...new Set(ids)];
+  const titulares = await Senador.find({
+    id: { $in: idsUnicos },
+    tipo: 'titular'
+  })
+    .select('id name foto party partyShort department')
+    .lean();
+
+  const encontrados = titulares.map((t) => t.id);
+  const faltantes = idsUnicos.filter((id) => !encontrados.includes(id));
+
+  if (faltantes.length > 0) {
+    return {
+      ok: false,
+      mensaje: `Los siguientes IDs no son senadores titulares válidos: ${faltantes.join(', ')}`
+    };
+  }
+
+  return { ok: true, titulares };
+};
 
 /**
  * @swagger
@@ -58,7 +84,7 @@ class LegisladoresController {
   async createLegislador(req, res) {
     try {
       const legislador = await legisladoresService.createLegislador(req.body, req.user._id);
-      
+
       res.status(201).json({
         success: true,
         message: 'Legislador creado exitosamente',
@@ -119,12 +145,12 @@ class LegisladoresController {
    */
   async getLegisladores(req, res) {
     try {
-      const { 
-        page = 1, 
-        limit = 10, 
-        partidoPolitico, 
-        bancada, 
-        cargoActual, 
+      const {
+        page = 1,
+        limit = 10,
+        partidoPolitico,
+        bancada,
+        cargoActual,
         departamento,
         comision,
         search,
@@ -273,8 +299,8 @@ class LegisladoresController {
     try {
       const { id } = req.params;
       const legislador = await legisladoresService.updateLegislador(
-        id, 
-        req.body, 
+        id,
+        req.body,
         req.user._id
       );
 
@@ -430,7 +456,7 @@ class LegisladoresController {
   async searchLegisladores(req, res) {
     try {
       const { q, limit = 20 } = req.query;
-      
+
       if (!q) {
         return res.status(400).json({
           success: false,
@@ -632,50 +658,69 @@ class LegisladoresController {
     try {
       console.log('\n👥 [getDirectivaCamaral] Obteniendo directiva camaral');
 
-      const DIRECTIVA_IDS = {
-        presidente: 32,
-        primeraVice: 6,
-        segundaVice: 12,
-        primeraSecretaria: 33,
-        segundaSecretaria: 24,
-        terceraSecretaria: 13
-      };
+      // 1. Buscar la directiva activa en BD
+      const directivaDB = await DirectivaCamaral.findOne({ activa: true }).lean();
 
+      // 2. Definir los IDs (BD si existe, hardcoded como fallback)
+      let ids;
+      let gestion;
+      let fuente;
+
+      if (directivaDB) {
+        ids = {
+          presidente: directivaDB.presidenteId,
+          primeraVice: directivaDB.primeraViceId,
+          segundaVice: directivaDB.segundaViceId,
+          primeraSecretaria: directivaDB.primeraSecretariaId,
+          segundaSecretaria: directivaDB.segundaSecretariaId,
+          terceraSecretaria: directivaDB.terceraSecretariaId
+        };
+        gestion = directivaDB.gestion;
+        fuente = 'db';
+      } else {
+        // Fallback: valores hardcodeados (compatibilidad)
+        ids = {
+          presidente: 32,
+          primeraVice: 6,
+          segundaVice: 12,
+          primeraSecretaria: 33,
+          segundaSecretaria: 24,
+          terceraSecretaria: 13
+        };
+        gestion = '2025-2026';
+        fuente = 'hardcoded';
+      }
+
+      console.log(`   📊 Fuente: ${fuente} | Gestión: ${gestion}`);
+
+      // 3. Buscar los senadores en la BD
       const miembros = await Senador.find({
-        id: {
-          $in: [
-            DIRECTIVA_IDS.presidente,
-            DIRECTIVA_IDS.primeraVice,
-            DIRECTIVA_IDS.segundaVice,
-            DIRECTIVA_IDS.primeraSecretaria,
-            DIRECTIVA_IDS.segundaSecretaria,
-            DIRECTIVA_IDS.terceraSecretaria
-          ]
-        }
+        id: { $in: Object.values(ids) }
       }).lean();
 
-      console.log(`✅ Encontrados ${miembros.length} miembros de la directiva`);
+      console.log(`   ✅ Encontrados ${miembros.length} miembros`);
 
-      const findMember = (id) => miembros.find(m => m.id === id) || null;
+      // 4. Helper para buscar miembro por ID
+      const findMember = (id) => miembros.find((m) => m.id === id) || null;
 
+      // 5. Construir respuesta (MISMO FORMATO QUE ANTES)
       const resultado = {
-        presidente: findMember(DIRECTIVA_IDS.presidente),
+        presidente: findMember(ids.presidente),
         vicepresidencias: [
-          { ...findMember(DIRECTIVA_IDS.primeraVice), cargo: 'Primera Vicepresidencia' },
-          { ...findMember(DIRECTIVA_IDS.segundaVice), cargo: 'Segunda Vicepresidencia' }
-        ].filter(m => m && m.id),
+          { ...findMember(ids.primeraVice), cargo: 'Primera Vicepresidencia' },
+          { ...findMember(ids.segundaVice), cargo: 'Segunda Vicepresidencia' }
+        ].filter((m) => m && m.id),
         secretarias: [
-          { ...findMember(DIRECTIVA_IDS.primeraSecretaria), cargo: 'Primera Secretaria' },
-          { ...findMember(DIRECTIVA_IDS.segundaSecretaria), cargo: 'Segunda Secretaria' },
-          { ...findMember(DIRECTIVA_IDS.terceraSecretaria), cargo: 'Tercera Secretaria' }
-        ].filter(m => m && m.id)
+          { ...findMember(ids.primeraSecretaria), cargo: 'Primera Secretaria' },
+          { ...findMember(ids.segundaSecretaria), cargo: 'Segunda Secretaria' },
+          { ...findMember(ids.terceraSecretaria), cargo: 'Tercera Secretaria' }
+        ].filter((m) => m && m.id)
       };
 
       res.json({
         success: true,
         data: resultado
       });
-
     } catch (error) {
       console.error('❌ Error en getDirectivaCamaral:', error);
       res.status(500).json({
@@ -683,6 +728,304 @@ class LegisladoresController {
         message: 'Error al obtener la directiva camaral'
       });
     }
+  }
+
+  /**
+   * GET /api/legisladores/directiva/admin
+   *
+   * ADMIN — Devuelve la directiva actual con los IDs crudos
+   * para que el CMS pueda poblar el formulario de edición.
+   */
+  async getDirectivaAdmin(req, res) {
+    try {
+      console.log('\n🔒 [getDirectivaAdmin] Obteniendo directiva para CMS');
+
+      const directivaDB = await DirectivaCamaral.findOne({ activa: true })
+        .populate('creadoPor', 'email profile')
+        .populate('actualizadoPor', 'email profile')
+        .lean();
+
+      if (!directivaDB) {
+        console.log('   ⚠️ No hay directiva en BD, usando fallback');
+        return res.json({
+          success: true,
+          data: {
+            _id: null,
+            gestion: '2025-2026',
+            presidenteId: 32,
+            primeraViceId: 6,
+            segundaViceId: 12,
+            primeraSecretariaId: 33,
+            segundaSecretariaId: 24,
+            terceraSecretariaId: 13,
+            activa: true,
+            esHardcoded: true
+          }
+        });
+      }
+
+      console.log(`   ✅ Directiva encontrada (gestión ${directivaDB.gestion})`);
+
+      res.json({
+        success: true,
+        data: {
+          ...directivaDB,
+          esHardcoded: false
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error en getDirectivaAdmin:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener la directiva'
+      });
+    }
+  }
+
+  /**
+   * GET /api/legisladores/directiva/titulares
+   *
+   * ADMIN — Lista de senadores titulares disponibles para
+   * asignar a los cargos de la directiva.
+   */
+  async getTitularesDisponibles(req, res) {
+    try {
+      console.log('\n📋 [getTitularesDisponibles] Obteniendo senadores titulares');
+
+      const titulares = await Senador.find({ tipo: 'titular' })
+        .select('id name foto party partyShort partyColor department cargo seatNumber')
+        .sort({ name: 1 })
+        .lean();
+
+      console.log(`   ✅ ${titulares.length} titulares encontrados`);
+
+      res.json({
+        success: true,
+        data: titulares,
+        total: titulares.length
+      });
+    } catch (error) {
+      console.error('❌ Error en getTitularesDisponibles:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener los titulares'
+      });
+    }
+  }
+
+  /**
+   * PUT /api/legisladores/directiva
+   *
+   * ADMIN — Crea o actualiza la directiva activa.
+   */
+  async saveDirectiva(req, res) {
+    try {
+      console.log('\n💾 [saveDirectiva] Guardando directiva camaral');
+      console.log('   👤 Usuario:', req.user.email);
+      console.log('   📦 Body:', req.body);
+
+      const {
+        gestion,
+        presidenteId,
+        primeraViceId,
+        segundaViceId,
+        primeraSecretariaId,
+        segundaSecretariaId,
+        terceraSecretariaId
+      } = req.body;
+
+      // 1. Validar que todos los campos estén presentes
+      const faltantes = [];
+      if (!presidenteId) faltantes.push('presidenteId');
+      if (!primeraViceId) faltantes.push('primeraViceId');
+      if (!segundaViceId) faltantes.push('segundaViceId');
+      if (!primeraSecretariaId) faltantes.push('primeraSecretariaId');
+      if (!segundaSecretariaId) faltantes.push('segundaSecretariaId');
+      if (!terceraSecretariaId) faltantes.push('terceraSecretariaId');
+
+      if (faltantes.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Faltan campos obligatorios: ${faltantes.join(', ')}`
+        });
+      }
+
+      // 2. Convertir a números
+      const ids = {
+        presidenteId: Number(presidenteId),
+        primeraViceId: Number(primeraViceId),
+        segundaViceId: Number(segundaViceId),
+        primeraSecretariaId: Number(primeraSecretariaId),
+        segundaSecretariaId: Number(segundaSecretariaId),
+        terceraSecretariaId: Number(terceraSecretariaId)
+      };
+
+      // 3. Validar que no haya NaN
+      for (const [key, value] of Object.entries(ids)) {
+        if (isNaN(value)) {
+          return res.status(400).json({
+            success: false,
+            message: `El campo ${key} debe ser un número válido`
+          });
+        }
+      }
+
+      // 4. Validar duplicados
+      const valores = Object.values(ids);
+      const unicos = new Set(valores);
+      if (unicos.size !== valores.length) {
+        return res.status(400).json({
+          success: false,
+          message: 'Un senador no puede ocupar dos posiciones en la directiva. Cada cargo debe ser una persona distinta.'
+        });
+      }
+
+      // 5. Validar que todos sean senadores titulares
+      const validacion = await validarSenadoresTitulares(valores);
+      if (!validacion.ok) {
+        return res.status(400).json({
+          success: false,
+          message: validacion.mensaje
+        });
+      }
+
+      // 6. Upsert: buscar directiva activa existente
+      const gestionFinal = (gestion || '2025-2026').trim();
+      let directiva = await DirectivaCamaral.findOne({ activa: true });
+
+      if (directiva) {
+        console.log('   🔄 Actualizando directiva existente');
+        directiva.gestion = gestionFinal;
+        Object.assign(directiva, ids);
+        directiva.actualizadoPor = req.user._id;
+      } else {
+        console.log('   ➕ Creando nueva directiva');
+        directiva = new DirectivaCamaral({
+          gestion: gestionFinal,
+          ...ids,
+          activa: true,
+          creadoPor: req.user._id,
+          actualizadoPor: req.user._id
+        });
+      }
+
+      await directiva.save();
+
+      console.log(`   ✅ Directiva guardada (ID: ${directiva._id})`);
+
+      // 7. Devolver la directiva con los datos populados de los senadores
+      const poblada = await this._formatearDirectiva(directiva);
+
+      res.json({
+        success: true,
+        message: 'Directiva actualizada exitosamente',
+        data: poblada
+      });
+    } catch (error) {
+      console.error('❌ Error en saveDirectiva:', error);
+
+      if (error.name === 'ValidationError') {
+        const mensajes = Object.values(error.errors).map((e) => e.message);
+        return res.status(400).json({
+          success: false,
+          message: mensajes.join('. '),
+          errores: mensajes
+        });
+      }
+
+      if (error.code === 11000) {
+        return res.status(409).json({
+          success: false,
+          message: 'Ya existe una directiva para esa gestión'
+        });
+      }
+
+      res.status(500).json({
+        success: false,
+        message: 'Error al guardar la directiva'
+      });
+    }
+  }
+
+  /**
+   * POST /api/legisladores/directiva/seed
+   *
+   * SUPER_ADMIN — Inicializa la directiva en BD con los valores
+   * hardcodeados actuales (migración inicial).
+   */
+  async seedDirectiva(req, res) {
+    try {
+      console.log('\n🌱 [seedDirectiva] Inicializando directiva en BD');
+
+      const existe = await DirectivaCamaral.findOne({ activa: true });
+      if (existe) {
+        return res.status(400).json({
+          success: false,
+          message: 'Ya existe una directiva activa. Usa PUT para modificarla.'
+        });
+      }
+
+      const directiva = new DirectivaCamaral({
+        gestion: '2025-2026',
+        presidenteId: 32,
+        primeraViceId: 6,
+        segundaViceId: 12,
+        primeraSecretariaId: 33,
+        segundaSecretariaId: 24,
+        terceraSecretariaId: 13,
+        activa: true,
+        creadoPor: req.user._id,
+        actualizadoPor: req.user._id
+      });
+
+      await directiva.save();
+
+      console.log(`   ✅ Directiva inicial creada (ID: ${directiva._id})`);
+
+      res.status(201).json({
+        success: true,
+        message: 'Directiva inicial creada exitosamente',
+        data: directiva
+      });
+    } catch (error) {
+      console.error('❌ Error en seedDirectiva:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al inicializar la directiva'
+      });
+    }
+  }
+
+  /**
+   * Helper privado: formatea la directiva con los datos de los senadores
+   */
+  async _formatearDirectiva(directiva) {
+    const ids = [
+      directiva.presidenteId,
+      directiva.primeraViceId,
+      directiva.segundaViceId,
+      directiva.primeraSecretariaId,
+      directiva.segundaSecretariaId,
+      directiva.terceraSecretariaId
+    ];
+
+    const senadores = await Senador.find({ id: { $in: ids } }).lean();
+    const find = (id) => senadores.find((s) => s.id === id) || null;
+
+    return {
+      _id: directiva._id,
+      gestion: directiva.gestion,
+      presidente: find(directiva.presidenteId),
+      vicepresidencias: [
+        { ...find(directiva.primeraViceId), cargo: 'Primera Vicepresidencia' },
+        { ...find(directiva.segundaViceId), cargo: 'Segunda Vicepresidencia' }
+      ].filter((m) => m && m.id),
+      secretarias: [
+        { ...find(directiva.primeraSecretariaId), cargo: 'Primera Secretaria' },
+        { ...find(directiva.segundaSecretariaId), cargo: 'Segunda Secretaria' },
+        { ...find(directiva.terceraSecretariaId), cargo: 'Tercera Secretaria' }
+      ].filter((m) => m && m.id)
+    };
   }
 
   // ============================================
@@ -717,10 +1060,10 @@ class LegisladoresController {
       const getSenadorInfo = (id) => {
         const s = senadoresMap[id];
         if (!s) return null;
-        
+
         let suplenteNombre = null;
         let cargoSuplente = null;
-        
+
         if (s.suplente) {
           suplenteNombre = s.suplente;
           // Buscar el suplente para obtener su cargo (no su foto)
@@ -731,7 +1074,7 @@ class LegisladoresController {
             cargoSuplente = suplenteData.cargo || 'Senador Suplente';
           }
         }
-        
+
         return {
           nombre: s.name,
           nombreCompleto: s.name,
@@ -750,7 +1093,7 @@ class LegisladoresController {
       // Construir respuesta
       const resultado = comisiones.map(comision => {
         const presidente = getSenadorInfo(comision.presidenteId);
-        
+
         const comites = (comision.comites || []).map(comite => {
           const secretario = getSenadorInfo(comite.secretarioId);
           return {

@@ -10,14 +10,17 @@ console.log('✅ Cargando rutas de legisladores...');
 // ============================================
 // RUTAS PÚBLICAS (NO REQUIEREN AUTENTICACIÓN)
 // ============================================
-router.get('/', legisladoresController.getLegisladores);
+
+// 🔥 DIRECTIVA PÚBLICA (mismo formato de siempre)
 router.get('/directiva', legisladoresController.getDirectivaCamaral);
-router.get('/comisiones', legisladoresController.getComisiones);  // 🔥 NUEVA RUTA
+
+router.get('/', legisladoresController.getLegisladores);
+router.get('/comisiones', legisladoresController.getComisiones);
 router.get('/cargos', legisladoresController.getCargosDisponibles);
 router.get('/estados', legisladoresController.getEstadosDisponibles);
 router.get('/distribution/party', legisladoresController.getDistributionByParty);
 router.get('/distribution/department', legisladoresController.getByDepartamento);
-router.get('/comisiones', legisladoresController.getComisionesActivas);
+router.get('/comisiones/activas', legisladoresController.getComisionesActivas);
 router.get('/search', legisladoresController.searchLegisladores);
 router.get('/ci/:ci', legisladoresController.getLegisladorByCI);
 router.get('/:id', legisladoresController.getLegisladorById);
@@ -27,7 +30,40 @@ router.get('/:id', legisladoresController.getLegisladorById);
 // ============================================
 router.use(authenticate);
 
-// Rutas de administración (admin/editor)
+// ============================================
+// 🔥 DIRECTIVA - CRUD (CMS)
+// ⚠️ IMPORTANTE: Las rutas específicas de directiva
+//    van ANTES que /:id para evitar colisiones.
+//    Aunque ya están antes en el archivo público,
+//    las volvemos a declarar aquí con autorización.
+// ============================================
+router.get(
+  '/directiva/admin',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  legisladoresController.getDirectivaAdmin
+);
+
+router.get(
+  '/directiva/titulares',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  legisladoresController.getTitularesDisponibles
+);
+
+router.put(
+  '/directiva',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  legisladoresController.saveDirectiva
+);
+
+router.post(
+  '/directiva/seed',
+  authorize('SUPER_ADMIN', 'ADMIN'),
+  legisladoresController.seedDirectiva
+);
+
+// ============================================
+// CRUD GENERAL DE LEGISLADORES
+// ============================================
 router.post(
   '/',
   authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
@@ -40,7 +76,6 @@ router.put(
   legisladoresController.updateLegislador
 );
 
-// Rutas solo para super admin y admin
 router.delete(
   '/:id',
   authorize('SUPER_ADMIN', 'ADMIN'),
@@ -53,7 +88,6 @@ router.get(
   legisladoresController.getStats
 );
 
-// Rutas para subir archivos
 router.post(
   '/upload/foto',
   authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
