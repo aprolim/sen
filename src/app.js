@@ -47,9 +47,9 @@ const allowedOrigins = [
   'http://10.0.0.21:3002',
   'http://10.0.0.21:3003',
   'http://demopanel.senado.gob.bo',
-  'http://demoap.senado.gob.bo',
+  'http://https://senado.gob.bo/',
   'http://demoback.senado.gob.bo',
-  'https://demoap.senado.gob.bo',
+  'https://https://senado.gob.bo/',
   'https://demopanel.senado.gob.bo',
   'https://demoback.senado.gob.bo',
 ];
