@@ -233,7 +233,52 @@ const normalizarDocumento = (d) => ({
 });
 
 // ============================================
+// 🔥 HELPER: Construir el filtro de búsqueda
+//    Se usa tanto en el paginado como en la
+//    agregación de fechas extremas.
+// ============================================
+const construirFiltros = (tipo, queryParams) => {
+  const { search, gestion } = queryParams;
+
+  // Filtro base (SOLO el tipo, activo y no eliminado)
+  const filters = { tipo, eliminado: false, activo: true };
+
+  // Filtro por gestión (año)
+  if (gestion) {
+    const year = parseInt(gestion);
+    if (!isNaN(year)) {
+      filters.fechaIngreso = {
+        $gte: new Date(`${year}-01-01T00:00:00.000Z`),
+        $lte: new Date(`${year}-12-31T23:59:59.999Z`)
+      };
+    }
+  }
+
+  // Filtro por texto
+  if (search && search.trim()) {
+    const termino = search.trim();
+    if (termino.includes('"')) {
+      filters.$text = { $search: termino };
+    } else {
+      filters.$or = [
+        { codigo: { $regex: termino, $options: 'i' } },
+        { asunto: { $regex: termino, $options: 'i' } },
+        { peticionario: { $regex: termino, $options: 'i' } },
+        { destinatario: { $regex: termino, $options: 'i' } },
+        { comisionI: { $regex: termino, $options: 'i' } },
+        { comisionII: { $regex: termino, $options: 'i' } }
+      ];
+    }
+  }
+
+  return filters;
+};
+
+// ============================================
 // 📢 PÚBLICO - Listar documentos
+//    🔥 Incluye fechaMinima y fechaMaxima GLOBALES
+//       (de TODOS los documentos filtrados, no solo
+//        de los de la página actual)
 // ============================================
 const getDocumentosPublicos = async (req, res) => {
   try {
@@ -244,56 +289,61 @@ const getDocumentosPublicos = async (req, res) => {
 
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
-    const { search, gestion, order } = req.query;
+    const { order } = req.query;
 
     // 🔥 ORDENAMIENTO DINÁMICO: desc por defecto, asc si se solicita
     const sortOrder = order === 'asc' ? 1 : -1;
 
-    const filters = { tipo, eliminado: false, activo: true };
-
-    if (gestion) {
-      const year = parseInt(gestion);
-      if (!isNaN(year)) {
-        filters.fechaIngreso = {
-          $gte: new Date(`${year}-01-01T00:00:00.000Z`),
-          $lte: new Date(`${year}-12-31T23:59:59.999Z`)
-        };
-      }
-    }
-
-    if (search && search.trim()) {
-      const termino = search.trim();
-      if (termino.includes('"')) {
-        filters.$text = { $search: termino };
-      } else {
-        filters.$or = [
-          { codigo: { $regex: termino, $options: 'i' } },
-          { asunto: { $regex: termino, $options: 'i' } },
-          { peticionario: { $regex: termino, $options: 'i' } },
-          { destinatario: { $regex: termino, $options: 'i' } },
-          { comisionI: { $regex: termino, $options: 'i' } },
-          { comisionII: { $regex: termino, $options: 'i' } }
-        ];
-      }
-    }
+    // 🔥 Filtro reutilizable (SIN paginación)
+    const filters = construirFiltros(tipo, req.query);
 
     const skip = (page - 1) * limit;
-    const [docs, total] = await Promise.all([
-      // 🔥 ORDEN POR FECHA DE INGRESO + _id COMO DESEMPATE
+
+    // 🔥 3 consultas en paralelo:
+    //   1) documentos paginados
+    //   2) total de documentos
+    //   3) fecha mínima y máxima GLOBAL de todos los documentos filtrados
+    const [docs, total, extremos] = await Promise.all([
       DocumentoLegislativo.find(filters)
         .sort({ fechaIngreso: sortOrder, _id: sortOrder })
         .skip(skip)
         .limit(limit)
         .lean(),
-      DocumentoLegislativo.countDocuments(filters)
+
+      DocumentoLegislativo.countDocuments(filters),
+
+      // 🔥 Agregación para obtener las fechas extremas globales
+      DocumentoLegislativo.aggregate([
+        { $match: filters },
+        {
+          $group: {
+            _id: null,
+            fechaMinima: { $min: '$fechaIngreso' },
+            fechaMaxima: { $max: '$fechaIngreso' }
+          }
+        }
+      ])
     ]);
 
-    // 🔥 Map archivoAnexo[0] → archivo para TODOS los tipos públicos
+    // Extraer extremos (si no hay documentos, el array está vacío)
+    const fechaMinima = extremos.length > 0 ? extremos[0].fechaMinima : null;
+    const fechaMaxima = extremos.length > 0 ? extremos[0].fechaMaxima : null;
+
+    // 🔥 Normalizar (archivoAnexo[0] → archivo)
     const documentos = docs.map(normalizarDocumento);
 
     res.json({
       success: true,
-      data: { documentos, total, page, limit, pages: Math.ceil(total / limit) }
+      data: {
+        documentos,
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit),
+        // 🔥 NUEVOS CAMPOS GLOBALES
+        fechaMinima,
+        fechaMaxima
+      }
     });
   } catch (error) {
     console.error('❌ [getDocumentosPublicos]', error);
