@@ -896,7 +896,15 @@ class LegisladoresController {
       if (directiva) {
         console.log('   🔄 Actualizando directiva existente');
         directiva.gestion = gestionFinal;
-        Object.assign(directiva, ids);
+        
+        // 🔥 SOLUCIÓN: Asignar campo por campo para evitar errores de Mongoose
+        directiva.presidenteId = ids.presidenteId;
+        directiva.primeraViceId = ids.primeraViceId;
+        directiva.segundaViceId = ids.segundaViceId;
+        directiva.primeraSecretariaId = ids.primeraSecretariaId;
+        directiva.segundaSecretariaId = ids.segundaSecretariaId;
+        directiva.terceraSecretariaId = ids.terceraSecretariaId;
+        
         directiva.actualizadoPor = req.user._id;
       } else {
         console.log('   ➕ Creando nueva directiva');
@@ -940,9 +948,11 @@ class LegisladoresController {
         });
       }
 
+      // 🔥 SOLUCIÓN: Devolver el error real en caso de fallo interno
       res.status(500).json({
         success: false,
-        message: 'Error al guardar la directiva'
+        message: `Error al guardar la directiva: ${error.message}`,
+        error: error.message
       });
     }
   }
