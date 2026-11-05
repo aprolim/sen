@@ -11,13 +11,6 @@ const {
 } = require('../config/tiposDocumento');
 
 // ============================================
-// 🔥 TIPOS QUE PERMITEN NÚMERO REPETIDO
-// ============================================
-const TIPOS_NUMERO_NO_UNICO = ['proyecto-ley-rechazados'];
-
-const permiteNumeroRepetido = (tipo) => TIPOS_NUMERO_NO_UNICO.includes(tipo);
-
-// ============================================
 // 🛠️ HELPERS
 // ============================================
 
@@ -176,6 +169,7 @@ const validarEstadoVsTipo = (tipo, estadoLey) => {
   return { ok: true };
 };
 
+// 🔥 numeroLey SIGUE SIENDO ÚNICO
 const validarNumeroLeyUnico = async (numeroLey, excludeId = null) => {
   if (numeroLey === null || numeroLey === undefined) return { ok: true };
 
@@ -221,44 +215,27 @@ const validarTipoDestinatario = async (valor) => {
 
 // ============================================
 // 🔥 NORMALIZADOR PARA EL FRONTEND PÚBLICO
-//    Convierte archivoAnexo[0] → archivo
-//    y deja peticionario/destinatario/fechaRespuesta
-//    tal cual los esperan los .vue
-//
-//    ✅ FIX: Si el documento YA tiene archivo.url
-//    (PDF principal), se respeta y NO se sobrescribe.
-//    Solo se usa archivoAnexo[0] como fallback
-//    cuando archivo está vacío.
 // ============================================
 const normalizarDocumento = (d) => {
-  // 1. Si ya tiene archivo principal válido (con url), NO lo tocamos
   if (d.archivo && d.archivo.url) {
     return d;
   }
 
-  // 2. Fallback: si no hay archivo principal pero sí anexos,
-  //    usamos el primer anexo como "archivo" para compatibilidad
-  //    con frontends antiguos que esperan `archivo`
   if (Array.isArray(d.archivoAnexo) && d.archivoAnexo.length > 0) {
     return { ...d, archivo: d.archivoAnexo[0] };
   }
 
-  // 3. Si no hay ni archivo ni anexos, dejamos archivo como null
   return { ...d, archivo: null };
 };
 
 // ============================================
 // 🔥 HELPER: Construir el filtro de búsqueda
-//    Se usa tanto en el paginado como en la
-//    agregación de fechas extremas.
 // ============================================
 const construirFiltros = (tipo, queryParams) => {
   const { search, gestion } = queryParams;
 
-  // Filtro base (SOLO el tipo, activo y no eliminado)
   const filters = { tipo, eliminado: false, activo: true };
 
-  // Filtro por gestión (año)
   if (gestion) {
     const year = parseInt(gestion);
     if (!isNaN(year)) {
@@ -269,7 +246,6 @@ const construirFiltros = (tipo, queryParams) => {
     }
   }
 
-  // Filtro por texto
   if (search && search.trim()) {
     const termino = search.trim();
     if (termino.includes('"')) {
@@ -291,9 +267,6 @@ const construirFiltros = (tipo, queryParams) => {
 
 // ============================================
 // 📢 PÚBLICO - Listar documentos
-//    🔥 Incluye fechaMinima y fechaMaxima GLOBALES
-//       (de TODOS los documentos filtrados, no solo
-//        de los de la página actual)
 // ============================================
 const getDocumentosPublicos = async (req, res) => {
   try {
@@ -306,18 +279,12 @@ const getDocumentosPublicos = async (req, res) => {
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const { order } = req.query;
 
-    // 🔥 ORDENAMIENTO DINÁMICO: desc por defecto, asc si se solicita
     const sortOrder = order === 'asc' ? 1 : -1;
 
-    // 🔥 Filtro reutilizable (SIN paginación)
     const filters = construirFiltros(tipo, req.query);
 
     const skip = (page - 1) * limit;
 
-    // 🔥 3 consultas en paralelo:
-    //   1) documentos paginados
-    //   2) total de documentos
-    //   3) fecha mínima y máxima GLOBAL de todos los documentos filtrados
     const [docs, total, extremos] = await Promise.all([
       DocumentoLegislativo.find(filters)
         .sort({ fechaIngreso: sortOrder, _id: sortOrder })
@@ -327,7 +294,6 @@ const getDocumentosPublicos = async (req, res) => {
 
       DocumentoLegislativo.countDocuments(filters),
 
-      // 🔥 Agregación para obtener las fechas extremas globales
       DocumentoLegislativo.aggregate([
         { $match: filters },
         {
@@ -340,11 +306,9 @@ const getDocumentosPublicos = async (req, res) => {
       ])
     ]);
 
-    // Extraer extremos (si no hay documentos, el array está vacío)
     const fechaMinima = extremos.length > 0 ? extremos[0].fechaMinima : null;
     const fechaMaxima = extremos.length > 0 ? extremos[0].fechaMaxima : null;
 
-    // 🔥 Normalizar (archivoAnexo[0] → archivo SOLO como fallback)
     const documentos = docs.map(normalizarDocumento);
 
     res.json({
@@ -355,7 +319,6 @@ const getDocumentosPublicos = async (req, res) => {
         page,
         limit,
         pages: Math.ceil(total / limit),
-        // 🔥 NUEVOS CAMPOS GLOBALES
         fechaMinima,
         fechaMaxima
       }
@@ -490,15 +453,8 @@ const createDocumento = async (req, res) => {
       return res.status(400).json({ success: false, message: vDestinatario.mensaje });
     }
 
-    if (!permiteNumeroRepetido(tipo)) {
-      const yaExiste = await DocumentoLegislativo.findOne({ tipo, numero: bodyLimpio.numero });
-      if (yaExiste) {
-        return res.status(409).json({
-          success: false,
-          message: `Ya existe un documento con el número ${bodyLimpio.numero} en este tipo.`
-        });
-      }
-    }
+    // 🔥 YA NO se valida unicidad de `numero`: puede repetirse en cualquier tipo
+    // (la única restricción que queda es que sea un número >= 1, validado por el Schema)
 
     const vNumeroLey = await validarNumeroLeyUnico(bodyLimpio.numeroLey);
     if (!vNumeroLey.ok) {
@@ -528,9 +484,15 @@ const createDocumento = async (req, res) => {
 
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern || {})[0] || 'campo';
+      if (field === 'numeroLey') {
+        return res.status(409).json({
+          success: false,
+          message: `Ya existe un documento con numeroLey ${error.keyValue?.numeroLey}.`
+        });
+      }
       return res.status(409).json({
         success: false,
-        message: `Ya existe un registro con ese valor único (${field}).`
+        message: `Conflicto de datos únicos (${field}).`
       });
     }
 
@@ -618,19 +580,7 @@ const updateDocumento = async (req, res) => {
         return res.status(409).json({ success: false, message: vNumeroLey.mensaje });
       }
 
-      if (!permiteNumeroRepetido(tipoNuevo)) {
-        const yaExiste = await DocumentoLegislativo.findOne({
-          _id: { $ne: doc._id },
-          tipo: tipoNuevo,
-          numero: combinado.numero
-        });
-        if (yaExiste) {
-          return res.status(409).json({
-            success: false,
-            message: `Ya existe un documento con el número ${combinado.numero} en "${tipoNuevo}".`
-          });
-        }
-      }
+      // 🔥 YA NO se valida unicidad de `numero` al cambiar de tipo
 
       const datosNuevos = extraerCamposDelTipo(combinado, tipoNuevo, 'update');
 
@@ -688,9 +638,15 @@ const updateDocumento = async (req, res) => {
 
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern || {})[0] || 'campo';
+      if (field === 'numeroLey') {
+        return res.status(409).json({
+          success: false,
+          message: `Ya existe un documento con numeroLey ${error.keyValue?.numeroLey}.`
+        });
+      }
       return res.status(409).json({
         success: false,
-        message: `Ya existe un registro con ese valor único (${field}).`
+        message: `Conflicto de datos únicos (${field}).`
       });
     }
 

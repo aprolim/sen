@@ -146,14 +146,7 @@ const documentoLegislativoSchema = new mongoose.Schema(
 // ÍNDICES
 // ============================================
 
-// Índices existentes
-documentoLegislativoSchema.index({ tipo: 1, eliminado: 1, numero: 1 });
-documentoLegislativoSchema.index({ tipo: 1, codigo: 1, eliminado: 1 });
-documentoLegislativoSchema.index({ tipo: 1, fechaIngreso: -1, eliminado: 1 });
-
-// 🔥 NUEVO: Índice compuesto para acelerar
-//   - El listado paginado ordenado por fecha
-//   - La agregación $min/$max de fechaIngreso
+// Índice compuesto para acelerar el listado paginado ordenado por fecha
 documentoLegislativoSchema.index({
   tipo: 1,
   activo: 1,
@@ -161,21 +154,14 @@ documentoLegislativoSchema.index({
   fechaIngreso: 1
 }, { name: 'tipo_activo_eliminado_fechaIngreso' });
 
-// 🔥 CAMBIO: Unicidad de `numero` por tipo, PERO exceptuando `proyecto-ley-rechazados`.
-// En rechazados el número puede repetirse (porque los rechazados pueden compartir
-// número con otros tipos, o incluso repetirse entre sí).
+// 🔥 NUEVO: índice NO único sobre {tipo, numero} SOLO para búsquedas rápidas.
+// El `numero` YA NO es único: puede repetirse en cualquier tipo.
 documentoLegislativoSchema.index(
   { tipo: 1, numero: 1 },
-  {
-    unique: true,
-    partialFilterExpression: {
-      tipo: { $ne: 'proyecto-ley-rechazados' }
-    },
-    name: 'tipo_numero_unique_excepto_rechazados'
-  }
+  { unique: false, name: 'tipo_numero_lookup' }
 );
 
-// Unicidad de numeroLey (global, parcial: solo cuando es número)
+// 🔒 numeroLey SÍ sigue siendo único (una ley promulgada no debería duplicarse)
 documentoLegislativoSchema.index(
   { numeroLey: 1 },
   {
