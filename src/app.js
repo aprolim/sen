@@ -143,7 +143,7 @@ const authLimiter = rateLimit({
   validate: { trustProxy: true }
 });
 
-app.use(generalLimiter);
+// app.use(generalLimiter);
 
 // ============================================
 // PROTECCIÓN CONTRA INYECCIONES
