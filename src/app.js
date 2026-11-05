@@ -119,7 +119,7 @@ app.use((req, res, next) => {
 // RATE LIMITING
 // ============================================
 const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 2 * 60 * 1000,
   max: 40000,
   message: {
     success: false,
