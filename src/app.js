@@ -120,7 +120,7 @@ app.use((req, res, next) => {
 // ============================================
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 900,
+  max: 40000,
   message: {
     success: false,
     message: 'Demasiadas peticiones desde esta IP. Intenta más tarde.'
