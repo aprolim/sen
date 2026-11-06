@@ -91,6 +91,7 @@ class SesionesController {
       
       console.log(`📹 [PUT /api/sesiones/${position}]`);
       console.log(`   Título: ${title}`);
+      console.log(`   URL original: ${url}`);
       console.log(`   isLive: ${isLive}`);
       
       let video = await SesionesVideo.findOne({ position: parseInt(position) });
@@ -98,25 +99,29 @@ class SesionesController {
       if (video) {
         video.title = title;
         video.url = url;
-        if (youtubeId) video.youtubeId = youtubeId;
+        
+        // 🔥 Forzamos la extracción del ID con la nueva regex que acepta /live/
+        video.youtubeId = this.extractYoutubeId(url) || youtubeId;
+        
         if (isActive !== undefined) video.isActive = isActive;
         if (isLive !== undefined) video.isLive = isLive;
         video.lastUpdatedBy = req.user?._id;
+        
         await video.save();
-        console.log(`✅ Video ${position} actualizado`);
+        console.log(`✅ Video ${position} actualizado. YouTube ID guardado: ${video.youtubeId}`);
       } else {
         video = new SesionesVideo({
           position: parseInt(position),
           title,
           url,
-          youtubeId: youtubeId || this.extractYoutubeId(url),
+          youtubeId: this.extractYoutubeId(url) || youtubeId,
           isActive: isActive !== undefined ? isActive : true,
           isLive: isLive || false,
           createdBy: req.user?._id,
           lastUpdatedBy: req.user?._id
         });
         await video.save();
-        console.log(`✅ Video ${position} creado`);
+        console.log(`✅ Video ${position} creado. YouTube ID guardado: ${video.youtubeId}`);
       }
       
       res.json({ success: true, data: video });
@@ -155,9 +160,20 @@ class SesionesController {
     }
   }
 
+  // ============================================
+  // 🔥 EXTRACTOR DE ID ACTUALIZADO
+  // ============================================
   extractYoutubeId(url) {
     if (!url) return '';
-    const regex = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&?#]+)/;
+    
+    // Expresión regular que soporta:
+    // - youtube.com/watch?v=ID
+    // - youtu.be/ID
+    // - youtube.com/live/ID
+    // - youtube.com/embed/ID
+    // - youtube.com/shorts/ID
+    const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|live|shorts)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+    
     const match = url.match(regex);
     return match ? match[1] : '';
   }

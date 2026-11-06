@@ -20,7 +20,16 @@ const sesionesVideoSchema = new mongoose.Schema({
   },
   youtubeId: {
     type: String,
-    required: true
+    required: true,
+    // Validación de seguridad: 
+    // Si la expresión regular falla por alguna razón, esto impedirá
+    // que se guarde un string vacío en la base de datos.
+    validate: {
+      validator: function(v) {
+        return v && v.length >= 10; 
+      },
+      message: 'El formato de la URL de YouTube no es válido o no se pudo extraer el ID.'
+    }
   },
   isActive: {
     type: Boolean,
