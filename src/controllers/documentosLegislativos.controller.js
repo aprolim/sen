@@ -7,7 +7,8 @@ const {
   TIPOS_DOCUMENTO,
   esTipoOrigenTransicion,
   esTipoDestinoTransicion,
-  validarTransicion
+  validarTransicion,
+  MARCO_NORMATIVO_CONFIG
 } = require('../config/tiposDocumento');
 
 // ============================================
@@ -21,39 +22,19 @@ const parsearFecha = (valor) => {
 };
 
 const CAMPOS_FECHA = [
-  'fechaIngreso',
-  'fechaRemisionDestinatario',
-  'fechaRespuesta',
-  'fechaRemisionPeticionario',
-  'fechaRealizacion',
-  'fechaReprogramacion',
-  'fechaRealizacionFinal',
-  'fechaAprobacion',
-  'fechaRemisionDiputados',
-  'fechaSancion',
-  'fechaRemisionEjecutivo',
-  'fechaRechazo',
-  'fechaRemisionComisionI',
-  'fechaRemisionComisionII'
+  'fechaIngreso', 'fechaRemisionDestinatario', 'fechaRespuesta',
+  'fechaRemisionPeticionario', 'fechaRealizacion', 'fechaReprogramacion',
+  'fechaRealizacionFinal', 'fechaAprobacion', 'fechaRemisionDiputados',
+  'fechaSancion', 'fechaRemisionEjecutivo', 'fechaRechazo',
+  'fechaRemisionComisionI', 'fechaRemisionComisionII'
 ];
 
 const CAMPOS_TEXTO = [
-  'codigo',
-  'asunto',
-  'destinatario',
-  'tipoDestinatario',
-  'conminatoria',
-  'observacion',
-  'esNuevoOReReposicion',
-  'plAnterior',
-  'estadoLey'
+  'codigo', 'asunto', 'destinatario', 'tipoDestinatario', 'conminatoria',
+  'observacion', 'esNuevoOReReposicion', 'plAnterior', 'estadoLey', 'imagen'
 ];
 
-const CAMPOS_ARRAY_TEXTO = [
-  'peticionario',
-  'comisionI',
-  'comisionII'
-];
+const CAMPOS_ARRAY_TEXTO = ['peticionario', 'comisionI', 'comisionII'];
 
 const sanitizarBody = (body) => {
   const limpio = { ...body };
@@ -111,6 +92,9 @@ const extraerCamposDelTipo = (body, tipo, modo = 'create') => {
 
   const permitidos = [...config.campos];
   if (modo === 'create') permitidos.push('numero');
+  
+  // 🔥 Aseguramos que 'orden' siempre sea un campo permitido
+  if (!permitidos.includes('orden')) permitidos.push('orden');
 
   const resultado = {};
   permitidos.forEach((campo) => {
@@ -169,7 +153,6 @@ const validarEstadoVsTipo = (tipo, estadoLey) => {
   return { ok: true };
 };
 
-// 🔥 numeroLey SIGUE SIENDO ÚNICO
 const validarNumeroLeyUnico = async (numeroLey, excludeId = null) => {
   if (numeroLey === null || numeroLey === undefined) return { ok: true };
 
@@ -213,9 +196,6 @@ const validarTipoDestinatario = async (valor) => {
   };
 };
 
-// ============================================
-// 🔥 NORMALIZADOR PARA EL FRONTEND PÚBLICO
-// ============================================
 const normalizarDocumento = (d) => {
   if (d.archivo && d.archivo.url) {
     return d;
@@ -229,10 +209,10 @@ const normalizarDocumento = (d) => {
 };
 
 // ============================================
-// 🔥 HELPER: Construir el filtro de búsqueda
+// 🔥 CONSTRUIR FILTROS (CON SOPORTE PARA `peticionario`)
 // ============================================
 const construirFiltros = (tipo, queryParams) => {
-  const { search, gestion } = queryParams;
+  const { search, gestion, peticionario } = queryParams;
 
   const filters = { tipo, eliminado: false, activo: true };
 
@@ -262,6 +242,18 @@ const construirFiltros = (tipo, queryParams) => {
     }
   }
 
+  // 🔥 Filtro específico por peticionante
+  // Se usa $and para no pisar el $or de `search` si ambos vienen.
+  // Como `peticionario` es un array de strings, el $regex directo
+  // matchea si ALGÚN elemento del array contiene la subcadena.
+  if (peticionario && String(peticionario).trim()) {
+    const terminoPet = String(peticionario).trim();
+    filters.$and = filters.$and || [];
+    filters.$and.push({
+      peticionario: { $regex: terminoPet, $options: 'i' }
+    });
+  }
+
   return filters;
 };
 
@@ -282,12 +274,12 @@ const getDocumentosPublicos = async (req, res) => {
     const sortOrder = order === 'asc' ? 1 : -1;
 
     const filters = construirFiltros(tipo, req.query);
-
     const skip = (page - 1) * limit;
 
     const [docs, total, extremos] = await Promise.all([
+      // 🔥 ORDENAR PRIMERO POR `orden`, LUEGO POR FECHA
       DocumentoLegislativo.find(filters)
-        .sort({ fechaIngreso: sortOrder, _id: sortOrder })
+        .sort({ orden: 1, fechaIngreso: sortOrder, _id: sortOrder })
         .skip(skip)
         .limit(limit)
         .lean(),
@@ -326,6 +318,142 @@ const getDocumentosPublicos = async (req, res) => {
   } catch (error) {
     console.error('❌ [getDocumentosPublicos]', error);
     res.status(500).json({ success: false, message: 'Error al obtener los documentos' });
+  }
+};
+
+// ============================================
+// 🆕 PÚBLICO - Peticionarios únicos POR TIPO (para datalist)
+// GET /api/legislativos/:tipo/peticionarios
+// ============================================
+const getPeticionariosPorTipo = async (req, res) => {
+  try {
+    const { tipo } = req.params;
+
+    if (!esTipoValido(tipo)) {
+      return res.status(400).json({ success: false, message: `Tipo inválido: ${tipo}` });
+    }
+
+    const { q } = req.query;
+
+    const match = {
+      tipo,
+      eliminado: false,
+      activo: true
+    };
+
+    if (q && String(q).trim()) {
+      match.peticionario = { $regex: String(q).trim(), $options: 'i' };
+    }
+
+    // distinct devuelve los valores únicos del campo (incluye elementos de arrays)
+    const lista = await DocumentoLegislativo.distinct('peticionario', match);
+
+    const data = lista
+      .filter(Boolean)
+      .map(String)
+      .filter((v) => v.trim().length > 0)
+      // limpia prefijo "Sen." si existiera en registros viejos
+      .map((v) => v.replace(/^Sen\.?\s*/i, '').trim())
+      // dedup por si quedaron duplicados tras limpiar
+      .filter((v, i, arr) => arr.indexOf(v) === i)
+      .sort((a, b) => a.localeCompare(b, 'es'));
+
+    console.log(`📋 [getPeticionariosPorTipo] ${tipo}: ${data.length} únicos`);
+
+    res.json({ success: true, data, total: data.length });
+  } catch (error) {
+    console.error('❌ [getPeticionariosPorTipo]', error);
+    res.status(500).json({ success: false, message: 'Error al obtener peticionarios' });
+  }
+};
+
+// ============================================
+// 🆕 PÚBLICO - Marco Normativo (destacados + categorías)
+// ============================================
+const getMarcoNormativo = async (req, res) => {
+  try {
+    console.log('\n📚 [getMarcoNormativo] Construyendo vista de Marco Normativo...');
+
+    const tiposDestacados = MARCO_NORMATIVO_CONFIG.destacados;
+    const categoriasConfig = MARCO_NORMATIVO_CONFIG.categorias;
+
+    // 1. DESTACADOS: 🔥 ORDENADOS POR EL CAMPO `orden` y luego por fecha
+    const destacadosRaw = await DocumentoLegislativo.find({
+      tipo: { $in: tiposDestacados },
+      imagen: { $ne: null, $nin: ['', null] },
+      activo: true,
+      eliminado: false
+    })
+      .sort({ orden: 1, fechaIngreso: -1, _id: -1 })
+      .limit(6)
+      .lean();
+
+    const destacados = destacadosRaw.map((d) => ({
+      id: d._id,
+      _id: d._id,
+      nombre: d.asunto || d.codigo,
+      gestion: d.fechaIngreso ? new Date(d.fechaIngreso).getFullYear().toString() : '',
+      imagen: d.imagen,
+      archivo: d.archivo && d.archivo.url
+        ? { url: d.archivo.url, filename: d.archivo.filename, originalName: d.archivo.originalName, size: d.archivo.size }
+        : null,
+      codigo: d.codigo,
+      tipo: d.tipo,
+      orden: d.orden
+    }));
+
+    console.log(`   ✅ Destacados: ${destacados.length}`);
+
+    // 2. CATEGORÍAS: 🔥 ORDENADAS POR EL CAMPO `orden`
+    const categorias = [];
+
+    for (const cat of categoriasConfig) {
+      const docsRaw = await DocumentoLegislativo.find({
+        tipo: { $in: cat.tipos },
+        activo: true,
+        eliminado: false
+      })
+        .sort({ orden: 1, fechaIngreso: -1, _id: -1 })
+        .lean();
+
+      if (docsRaw.length === 0) continue;
+
+      const documentos = docsRaw.map((d) => ({
+        id: d._id,
+        _id: d._id,
+        nombre: d.asunto || d.codigo,
+        codigo: d.codigo,
+        tipo: d.tipo,
+        gestion: d.fechaIngreso ? new Date(d.fechaIngreso).getFullYear().toString() : '',
+        fechaIngreso: d.fechaIngreso,
+        imagen: d.imagen || null,
+        orden: d.orden,
+        archivo: d.archivo && d.archivo.url
+          ? { url: d.archivo.url, filename: d.archivo.filename, originalName: d.archivo.originalName, size: d.archivo.size }
+          : null
+      }));
+
+      categorias.push({
+        nombre: cat.nombre,
+        documentos
+      });
+    }
+
+    console.log(`   ✅ Categorías: ${categorias.length}`);
+
+    res.json({
+      success: true,
+      data: {
+        destacados,
+        categorias
+      }
+    });
+  } catch (error) {
+    console.error('❌ [getMarcoNormativo]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener el marco normativo'
+    });
   }
 };
 
@@ -377,8 +505,9 @@ const getDocumentosAdmin = async (req, res) => {
 
     const skip = (page - 1) * limit;
     const [docs, total] = await Promise.all([
+      // 🔥 ORDENAR PARA EL CMS TAMBIÉN
       DocumentoLegislativo.find(filters)
-        .sort({ fechaIngreso: sortOrder, _id: sortOrder })
+        .sort({ orden: 1, fechaIngreso: sortOrder, _id: sortOrder })
         .skip(skip)
         .limit(limit)
         .populate('creadoPor', 'email profile')
@@ -452,9 +581,6 @@ const createDocumento = async (req, res) => {
     if (!vDestinatario.ok) {
       return res.status(400).json({ success: false, message: vDestinatario.mensaje });
     }
-
-    // 🔥 YA NO se valida unicidad de `numero`: puede repetirse en cualquier tipo
-    // (la única restricción que queda es que sea un número >= 1, validado por el Schema)
 
     const vNumeroLey = await validarNumeroLeyUnico(bodyLimpio.numeroLey);
     if (!vNumeroLey.ok) {
@@ -579,8 +705,6 @@ const updateDocumento = async (req, res) => {
       if (!vNumeroLey.ok) {
         return res.status(409).json({ success: false, message: vNumeroLey.mensaje });
       }
-
-      // 🔥 YA NO se valida unicidad de `numero` al cambiar de tipo
 
       const datosNuevos = extraerCamposDelTipo(combinado, tipoNuevo, 'update');
 
@@ -769,6 +893,37 @@ const uploadPDF = async (req, res) => {
 };
 
 // ============================================
+// 🆕 Upload Imagen de portada
+// ============================================
+const uploadImagen = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No se subió ninguna imagen' });
+    }
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const imagenUrl = `${baseUrl}/uploads/images/${req.file.filename}`;
+
+    console.log(`🖼️ [uploadImagen] ${req.file.originalname} → ${imagenUrl}`);
+
+    res.json({
+      success: true,
+      message: 'Imagen subida exitosamente',
+      data: {
+        url: imagenUrl,
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        mimetype: req.file.mimetype
+      }
+    });
+  } catch (error) {
+    console.error('❌ [uploadImagen]', error);
+    res.status(500).json({ success: false, message: 'Error al subir la imagen' });
+  }
+};
+
+// ============================================
 // 📊 Stats
 // ============================================
 const getStats = async (req, res) => {
@@ -849,6 +1004,8 @@ const getTiposDisponibles = async (req, res) => {
 // ============================================
 module.exports = {
   getDocumentosPublicos,
+  getPeticionariosPorTipo,    // 🔥 GENERALIZADO (antes getPeticionariosPIE)
+  getMarcoNormativo,
   getDocumentosAdmin,
   getDocumentoById,
   createDocumento,
@@ -856,6 +1013,7 @@ module.exports = {
   deleteDocumento,
   restoreDocumento,
   uploadPDF,
+  uploadImagen,
   getStats,
   getConfigDelTipo,
   getTiposDisponibles

@@ -3,16 +3,26 @@ const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/documentosLegislativos.controller');
 const { authenticate, authorize } = require('../middleware/auth');
-const { uploadPDF: uploadPDFMiddleware } = require('../middleware/upload');
+const { uploadPDF: uploadPDFMiddleware, uploadImage: uploadImageMiddleware } = require('../middleware/upload');
 
 console.log('✅ Cargando rutas de documentos legislativos...');
 
 // ============================================
-// 📡 RUTAS PÚBLICAS (sin autenticación)
+// 📢 RUTAS PÚBLICAS (sin autenticación)
 // ============================================
 
 // GET /api/legislativos/tipos → lista de tipos disponibles
 router.get('/tipos', controller.getTiposDisponibles);
+
+// GET /api/legislativos/marco-normativo → destacados + categorías para el visor
+router.get('/marco-normativo', controller.getMarcoNormativo);
+
+// 🔥 GET /api/legislativos/:tipo/peticionarios
+// Sugerencias de peticionarios únicos POR TIPO (para datalist del frontend).
+// Sirve para peticion-informe-escrito, peticion-informe-oral,
+// minuta-comunicacion, homenaje-camaral, etc.
+// Debe ir ANTES de '/:tipo' por claridad (aunque no colisiona).
+router.get('/:tipo/peticionarios', controller.getPeticionariosPorTipo);
 
 // GET /api/legislativos/:tipo → lista pública paginada
 router.get('/:tipo', controller.getDocumentosPublicos);
@@ -24,7 +34,7 @@ router.get('/:tipo/stats', controller.getStats);
 router.get('/:tipo/config', controller.getConfigDelTipo);
 
 // ============================================
-// 🔐 RUTAS PROTEGIDAS (a partir de aquí)
+// 🔒 RUTAS PROTEGIDAS (a partir de aquí)
 // ============================================
 router.use(authenticate);
 router.use(
@@ -37,6 +47,14 @@ router.post(
   '/:tipo/upload-pdf',
   uploadPDFMiddleware.single('pdf'),
   controller.uploadPDF
+);
+
+// -------- Upload Imagen de portada --------
+// POST /api/legislativos/:tipo/upload-imagen
+router.post(
+  '/:tipo/upload-imagen',
+  uploadImageMiddleware.single('imagen'),
+  controller.uploadImagen
 );
 
 // -------- Listado admin --------

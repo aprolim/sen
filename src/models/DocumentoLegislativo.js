@@ -41,6 +41,19 @@ const documentoLegislativoSchema = new mongoose.Schema(
     },
 
     // ============================================
+    // 🖼️ IMAGEN DE PORTADA Y ORDEN
+    // ============================================
+    imagen: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    orden: {
+      type: Number,
+      default: 0
+    },
+
+    // ============================================
     // 📤 DESTINATARIO Y FECHAS (Fiscalización / Minutas)
     // ============================================
     destinatario: {
@@ -85,21 +98,14 @@ const documentoLegislativoSchema = new mongoose.Schema(
     // ============================================
     esNuevoOReReposicion: { type: String, trim: true },
     plAnterior: { type: String, trim: true },
-    comisionI: {
-      type: [String],
-      default: []
-    },
+    comisionI: { type: [String], default: [] },
     fechaRemisionComisionI: { type: Date, default: null },
-    comisionII: {
-      type: [String],
-      default: []
-    },
+    comisionII: { type: [String], default: [] },
     fechaRemisionComisionII: { type: Date, default: null },
     estadoLey: { type: String, trim: true },
     fechaRemisionDiputados: { type: Date, default: null },
     fechaSancion: { type: Date, default: null },
     fechaRemisionEjecutivo: { type: Date, default: null },
-
     fechaRechazo: { type: Date, default: null },
     numeroLey: { type: Number, default: null },
 
@@ -145,23 +151,18 @@ const documentoLegislativoSchema = new mongoose.Schema(
 // ============================================
 // ÍNDICES
 // ============================================
-
-// Índice compuesto para acelerar el listado paginado ordenado por fecha
 documentoLegislativoSchema.index({
   tipo: 1,
   activo: 1,
   eliminado: 1,
-  fechaIngreso: 1
-}, { name: 'tipo_activo_eliminado_fechaIngreso' });
+  orden: 1 // 🔥 Índice para acelerar el ordenamiento
+}, { name: 'tipo_activo_eliminado_orden' });
 
-// 🔥 NUEVO: índice NO único sobre {tipo, numero} SOLO para búsquedas rápidas.
-// El `numero` YA NO es único: puede repetirse en cualquier tipo.
 documentoLegislativoSchema.index(
   { tipo: 1, numero: 1 },
   { unique: false, name: 'tipo_numero_lookup' }
 );
 
-// 🔒 numeroLey SÍ sigue siendo único (una ley promulgada no debería duplicarse)
 documentoLegislativoSchema.index(
   { numeroLey: 1 },
   {

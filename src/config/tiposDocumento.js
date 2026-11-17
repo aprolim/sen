@@ -38,7 +38,8 @@ const TIPOS_DOCUMENTO = {
     campos: [
       'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'destinatario',
       'tipoDestinatario', 'fechaRemisionDestinatario', 'fechaRespuesta',
-      'fechaRemisionPeticionario', 'conminatoria', 'observacion', 'archivo'
+      'fechaRemisionPeticionario', 'conminatoria', 'observacion', 'archivo',
+      'imagen', 'orden'
     ],
     camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'destinatario', 'tipoDestinatario'],
     camposBloqueadosEnEdicion: ['numero']
@@ -51,7 +52,8 @@ const TIPOS_DOCUMENTO = {
     campos: [
       'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'destinatario',
       'tipoDestinatario', 'fechaRemisionDestinatario', 'fechaRealizacion',
-      'fechaReprogramacion', 'fechaRealizacionFinal', 'observacion', 'archivo'
+      'fechaReprogramacion', 'fechaRealizacionFinal', 'observacion', 'archivo',
+      'imagen', 'orden'
     ],
     camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'destinatario', 'tipoDestinatario'],
     camposBloqueadosEnEdicion: ['numero']
@@ -67,7 +69,7 @@ const TIPOS_DOCUMENTO = {
     campos: [
       'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'destinatario',
       'fechaRemisionDestinatario', 'tipoDestinatario', 'fechaRespuesta',
-      'fechaRemisionPeticionario', 'observacion', 'archivo'
+      'fechaRemisionPeticionario', 'observacion', 'archivo', 'imagen', 'orden'
     ],
     camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'destinatario', 'tipoDestinatario'],
     camposBloqueadosEnEdicion: ['numero']
@@ -79,7 +81,7 @@ const TIPOS_DOCUMENTO = {
     prefijoCodigo: 'R.C.',
     campos: [
       'codigo', 'fechaIngreso', 'peticionario', 'asunto',
-      'fechaAprobacion', 'sesion', 'observacion', 'archivo'
+      'fechaAprobacion', 'sesion', 'observacion', 'archivo', 'imagen', 'orden'
     ],
     camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto'],
     camposBloqueadosEnEdicion: ['numero', 'peticionario']
@@ -91,7 +93,7 @@ const TIPOS_DOCUMENTO = {
     prefijoCodigo: 'D.C.',
     campos: [
       'codigo', 'fechaIngreso', 'peticionario', 'asunto',
-      'fechaAprobacion', 'observacion', 'archivo'
+      'fechaAprobacion', 'observacion', 'archivo', 'imagen', 'orden'
     ],
     camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto'],
     camposBloqueadosEnEdicion: ['numero']
@@ -103,7 +105,7 @@ const TIPOS_DOCUMENTO = {
     prefijoCodigo: 'H.C.',
     campos: [
       'codigo', 'fechaIngreso', 'peticionario', 'asunto',
-      'fechaAprobacion', 'observacion', 'archivo'
+      'fechaAprobacion', 'observacion', 'archivo', 'imagen', 'orden'
     ],
     camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'peticionario', 'asunto'],
     camposBloqueadosEnEdicion: ['numero']
@@ -122,7 +124,7 @@ const TIPOS_DOCUMENTO = {
       'comisionI', 'fechaRemisionComisionI',
       'comisionII', 'fechaRemisionComisionII',
       'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados',
-      'observacion', 'archivo'
+      'observacion', 'archivo', 'imagen', 'orden'
     ],
     camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario', 'estadoLey'],
     camposBloqueadosEnEdicion: ['numero', 'codigo']
@@ -137,18 +139,15 @@ const TIPOS_DOCUMENTO = {
       'comisionI', 'fechaRemisionComisionI',
       'comisionII', 'fechaRemisionComisionII',
       'estadoLey', 'fechaSancion', 'fechaRemisionEjecutivo',
-      'observacion', 'archivo'
+      'observacion', 'archivo', 'imagen', 'orden'
     ],
     camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario', 'estadoLey'],
     camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
   // ============================================
-  // ⚖️ LEGISLACIÓN - DESTINOS (los 4 nuevos)
+  // ⚖️ LEGISLACIÓN - DESTINOS
   // ============================================
-
-  // 🔵 APROBADOS
-  // 🔥 CAMBIO: numeroLey y archivoAnexo ya NO son obligatorios
   'proyecto-ley-aprobados': {
     label: 'Proyectos de Ley Aprobados',
     bloque: 'legislacion',
@@ -161,18 +160,15 @@ const TIPOS_DOCUMENTO = {
       'comisionII', 'fechaRemisionComisionII',
       'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados',
       'observacion', 'numeroLey',
-      'archivo', 'archivoAnexo'
+      'archivo', 'archivoAnexo', 'imagen', 'orden'
     ],
     camposObligatorios: [
       'numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario',
       'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados'
-      // 🔥 numeroLey y archivoAnexo removidos de obligatorios
     ],
     camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
-  // 🟣 SANCIONADOS
-  // 🔥 CAMBIO: numeroLey y archivoAnexo ya NO son obligatorios
   'proyecto-ley-sancionados': {
     label: 'Proyectos de Ley Sancionados',
     bloque: 'legislacion',
@@ -184,18 +180,15 @@ const TIPOS_DOCUMENTO = {
       'comisionII', 'fechaRemisionComisionII',
       'estadoLey', 'fechaSancion', 'fechaRemisionEjecutivo',
       'observacion', 'numeroLey',
-      'archivo', 'archivoAnexo'
+      'archivo', 'archivoAnexo', 'imagen', 'orden'
     ],
     camposObligatorios: [
       'numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario',
       'estadoLey', 'fechaSancion', 'fechaRemisionEjecutivo'
-      // 🔥 numeroLey y archivoAnexo removidos de obligatorios
     ],
     camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
-  // 🟡 APROBADOS CON MODIFICACIONES (DEVUELTOS A DIPUTADOS)
-  // 🔥 CAMBIO: numeroLey y archivoAnexo ya NO son obligatorios
   'proyecto-ley-modificaciones': {
     label: 'Proyectos de Ley con Modificaciones',
     bloque: 'legislacion',
@@ -207,18 +200,15 @@ const TIPOS_DOCUMENTO = {
       'comisionII', 'fechaRemisionComisionII',
       'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados',
       'observacion', 'numeroLey',
-      'archivo', 'archivoAnexo'
+      'archivo', 'archivoAnexo', 'imagen', 'orden'
     ],
     camposObligatorios: [
       'numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario',
       'estadoLey', 'fechaAprobacion', 'fechaRemisionDiputados'
-      // 🔥 numeroLey y archivoAnexo removidos de obligatorios
     ],
     camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
-  // 🔴 RECHAZADOS (sin numeroLey)
-  // 🔥 CAMBIO: archivoAnexo ya NO es obligatorio
   'proyecto-ley-rechazados': {
     label: 'Proyectos de Ley Rechazados',
     bloque: 'legislacion',
@@ -230,29 +220,58 @@ const TIPOS_DOCUMENTO = {
       'comisionII', 'fechaRemisionComisionII',
       'estadoLey', 'fechaRechazo', 'fechaRemisionDiputados',
       'observacion',
-      'archivo', 'archivoAnexo'
+      'archivo', 'archivoAnexo', 'imagen', 'orden'
     ],
     camposObligatorios: [
       'numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario',
       'estadoLey', 'fechaRechazo', 'fechaRemisionDiputados'
-      // 🔥 archivoAnexo removido de obligatorios
     ],
     camposBloqueadosEnEdicion: ['numero', 'codigo']
   },
 
   // ============================================
-  // ⚖️ LEGISLACIÓN - LEY PROMULGADA (existente)
+  // ⚖️ LEGISLACIÓN - LEY PROMULGADA
   // ============================================
   'ley-promulgada': {
     label: 'Leyes Promulgadas',
     bloque: 'legislacion',
     prefijoCodigo: '',
     campos: [
-      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'archivo'
+      'codigo', 'fechaIngreso', 'peticionario', 'asunto', 'archivo', 'imagen', 'orden'
     ],
     camposObligatorios: ['numero', 'codigo', 'fechaIngreso', 'asunto', 'peticionario'],
     camposBloqueadosEnEdicion: ['numero']
   }
+};
+
+// ============================================
+// 🆕 AGRUPACIÓN PARA "MARCO NORMATIVO"
+// ============================================
+const MARCO_NORMATIVO_CONFIG = {
+  // Tipos que se usarán para las 6 tarjetas superiores (destacados)
+  destacados: [
+    'proyecto-ley-aprobados'
+  ],
+  // Categorías agrupadas en el acordeón
+  categorias: [
+    {
+      nombre: 'Normativa Administrativa',
+      tipos: [
+        'proyecto-ley-tratamiento-senado',
+        'proyecto-ley-revision-diputados',
+        'proyecto-ley-aprobados',
+        'proyecto-ley-sancionados',
+        'proyecto-ley-modificaciones',
+        'proyecto-ley-rechazados',
+        'peticion-informe-escrito',
+        'peticion-informe-oral',
+        'minuta-comunicacion',
+        'resolucion-camaral',
+        'declaracion-camaral',
+        'homenaje-camaral'
+      ]
+    }
+  ]
 };
 
 // ============================================
@@ -283,30 +302,12 @@ const ESTADOS_LEY_VALIDOS = [
 const esTipoValido = (tipo) => Object.keys(TIPOS_DOCUMENTO).includes(tipo);
 const getConfigTipo = (tipo) => TIPOS_DOCUMENTO[tipo] || null;
 
-/**
- * Devuelve el `tipo` destino según el `estadoLey`. Null si el estado no mapea.
- */
 const getTipoPorEstado = (estadoLey) => ESTADO_A_TIPO[estadoLey] || null;
-
-/**
- * Devuelve el `estadoLey` esperado para un `tipo` destino. Null si no aplica.
- */
 const getEstadoPorTipo = (tipo) => TIPO_A_ESTADO[tipo] || null;
 
-/**
- * ¿Es un tipo al que se puede llegar por transición de estado?
- */
 const esTipoDestinoTransicion = (tipo) => TIPOS_DESTINO_TRANSICION.includes(tipo);
-
-/**
- * ¿Es un tipo origen del que se puede salir por transición?
- */
 const esTipoOrigenTransicion = (tipo) => TIPOS_ORIGEN_TRANSICION.includes(tipo);
 
-/**
- * Valida si una transición de estado está permitida.
- * @returns { ok: boolean, tipoNuevo?: string, mensaje?: string }
- */
 const validarTransicion = (tipoActual, estadoNuevo) => {
   if (!esTipoOrigenTransicion(tipoActual)) {
     return {
@@ -335,6 +336,7 @@ module.exports = {
   TIPO_A_ESTADO,
   TIPOS_ORIGEN_TRANSICION,
   TIPOS_DESTINO_TRANSICION,
+  MARCO_NORMATIVO_CONFIG,
   esTipoValido,
   getConfigTipo,
   getTipoPorEstado,

@@ -61,8 +61,13 @@ const corsOptions = {
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
+      // IMPORTANTE: NO lanzar error en preflight (OPTIONS).
+      // Si se rechaza el preflight, el navegador cancela la petición con
+      // "blocked by CORS policy" + net::ERR_FAILED y nunca se ve la causa real.
+      // Respondiendo sin cabeceras CORS, el navegador solo bloquea el origen
+      // ajeno y el backend queda protegido igual.
       console.log('❌ Origen bloqueado por CORS:', origin);
-      callback(new Error('Origen no permitido por CORS'));
+      callback(null, false);
     }
   },
   credentials: true,
