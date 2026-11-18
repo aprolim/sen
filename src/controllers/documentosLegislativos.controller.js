@@ -212,7 +212,7 @@ const normalizarDocumento = (d) => {
 // 🔥 CONSTRUIR FILTROS (CON SOPORTE PARA `peticionario`)
 // ============================================
 const construirFiltros = (tipo, queryParams) => {
-  const { search, gestion, peticionario } = queryParams;
+  const { search, gestion, peticionario, creadoDesde, creadoHasta } = queryParams;
 
   const filters = { tipo, eliminado: false, activo: true };
 
@@ -223,6 +223,25 @@ const construirFiltros = (tipo, queryParams) => {
         $gte: new Date(`${year}-01-01T00:00:00.000Z`),
         $lte: new Date(`${year}-12-31T23:59:59.999Z`)
       };
+    }
+  }
+
+  // 🔥 Filtro por GESTIÓN LEGISLATIVA (fecha de CARGA del documento).
+  // Se usa `createdAt` y no `fechaIngreso` porque las gestiones del sitio
+  // público se definen por cuándo se dio de alta el documento en el sistema.
+  // `creadoHasta` es EXCLUSIVO.
+  if (creadoDesde || creadoHasta) {
+    const rango = {};
+    if (creadoDesde) {
+      const desde = parsearFecha(creadoDesde);
+      if (desde) rango.$gte = desde;
+    }
+    if (creadoHasta) {
+      const hasta = parsearFecha(creadoHasta);
+      if (hasta) rango.$lt = hasta;
+    }
+    if (Object.keys(rango).length > 0) {
+      filters.createdAt = rango;
     }
   }
 
@@ -934,6 +953,24 @@ const getStats = async (req, res) => {
     }
 
     const baseFilter = { tipo, eliminado: false };
+
+    // 🔥 Soporte de gestión por fecha de carga (createdAt) en los contadores
+    const { creadoDesde, creadoHasta } = req.query;
+    if (creadoDesde || creadoHasta) {
+      const rango = {};
+      if (creadoDesde) {
+        const desde = parsearFecha(creadoDesde);
+        if (desde) rango.$gte = desde;
+      }
+      if (creadoHasta) {
+        const hasta = parsearFecha(creadoHasta);
+        if (hasta) rango.$lt = hasta;
+      }
+      if (Object.keys(rango).length > 0) {
+        baseFilter.createdAt = rango;
+      }
+    }
+
     const [total, activos, eliminados] = await Promise.all([
       DocumentoLegislativo.countDocuments(baseFilter),
       DocumentoLegislativo.countDocuments({ ...baseFilter, activo: true }),
