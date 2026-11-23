@@ -306,6 +306,7 @@ const documentosLegislativosRoutes = require('./routes/documentosLegislativos.ro
 const legislativosCatalogosRoutes = require('./routes/legislativosCatalogos.routes');
 const catalogosRoutes = require('./routes/catalogos.routes');
 const tiposDestinatarioRoutes = require('./routes/tiposDestinatario.routes'); // 🔥 NUEVO
+const marcoNormativoRoutes = require('./routes/marcoNormativo.routes'); // 🔥 NUEVO
 
 // Rate limiting específico
 app.use('/api/auth/login', authLimiter);
@@ -329,6 +330,7 @@ app.use('/api/legislativos', documentosLegislativosRoutes);
 
 app.use('/api/catalogos', catalogosRoutes);
 app.use('/api/tipos-destinatario', tiposDestinatarioRoutes); // 🔥 NUEVO
+app.use('/api/marco-normativo', marcoNormativoRoutes); // 🔥 NUEVO
 
 // ============================================
 // RUTAS DEL SISTEMA
@@ -516,6 +518,7 @@ const startServer = async () => {
       console.log('   • /api/legislativos/catalogos');
       console.log('   • /api/catalogos');
       console.log('   • /api/tipos-destinatario        🔥 NUEVO');
+      console.log('   • /api/marco-normativo           🔥 NUEVO');
       console.log('═'.repeat(60) + '\n');
     });
 
