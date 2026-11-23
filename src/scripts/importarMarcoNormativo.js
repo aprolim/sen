@@ -163,10 +163,13 @@ function resolverImagen(nombre) {
 }
 
 async function insertar({ item, categoria, destacado, etiqueta }) {
-  const existente = await MarcoNormativo.findOne({ codigo: item.codigo });
-  if (existente) {
-    console.log(`   ⏭️  Saltando: ${item.codigo} (ya existe)`);
-    return { insertado: false, saltado: true };
+  // En dry-run no hay conexión a Mongo: no se puede comprobar duplicados.
+  if (!DRY_RUN) {
+    const existente = await MarcoNormativo.findOne({ codigo: item.codigo });
+    if (existente) {
+      console.log(`   ⏭️  Saltando: ${item.codigo} (ya existe)`);
+      return { insertado: false, saltado: true };
+    }
   }
 
   const archivo = resolverPDF(item.archivo);
