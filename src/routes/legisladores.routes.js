@@ -62,6 +62,40 @@ router.post(
 );
 
 // ============================================
+// 📋 COMISIONES Y COMITÉS - CRUD (CMS)
+// ⚠️ Van ANTES de '/:id' para no colisionar con el parámetro.
+// ============================================
+router.get(
+  '/comisiones/admin',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  legisladoresController.getComisionesAdmin
+);
+
+router.get(
+  '/comisiones/:id',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  legisladoresController.getComisionById
+);
+
+router.post(
+  '/comisiones',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  legisladoresController.createComision
+);
+
+router.put(
+  '/comisiones/:id',
+  authorize('SUPER_ADMIN', 'ADMIN', 'EDITOR'),
+  legisladoresController.updateComision
+);
+
+router.delete(
+  '/comisiones/:id',
+  authorize('SUPER_ADMIN', 'ADMIN'),
+  legisladoresController.deleteComision
+);
+
+// ============================================
 // CRUD GENERAL DE LEGISLADORES
 // ============================================
 router.post(

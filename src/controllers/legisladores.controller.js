@@ -1132,6 +1132,319 @@ class LegisladoresController {
       });
     }
   }
+
+  // ============================================
+  // 📋 COMISIONES Y COMITÉS — CRUD (CMS)
+  // ============================================
+
+  /**
+   * @swagger
+   * /api/legisladores/comisiones/admin:
+   *   get:
+   *     summary: Lista de comisiones con IDs crudos (para editar en el CMS)
+   *     tags: [Legisladores]
+   */
+  async getComisionesAdmin(req, res) {
+    try {
+      console.log('\n🔒 [getComisionesAdmin] Obteniendo comisiones para el CMS');
+
+      const comisiones = await Comision.find()
+        .sort({ createdAt: 1, _id: 1 })
+        .lean();
+
+      res.json({
+        success: true,
+        data: comisiones.map((c) => ({
+          _id: String(c._id),
+          id: String(c._id),
+          nombre: c.nombre,
+          presidenteId: c.presidenteId,
+          comites: (c.comites || []).map((co) => ({
+            _id: co._id ? String(co._id) : null,
+            nombre: co.nombre,
+            secretarioId: co.secretarioId
+          })),
+          createdAt: c.createdAt,
+          updatedAt: c.updatedAt
+        })),
+        total: comisiones.length
+      });
+    } catch (error) {
+      console.error('❌ [getComisionesAdmin]', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener las comisiones'
+      });
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/legisladores/comisiones/{id}:
+   *   get:
+   *     summary: Obtener una comisión por ID
+   *     tags: [Legisladores]
+   */
+  async getComisionById(req, res) {
+    try {
+      const comision = await Comision.findById(req.params.id).lean();
+
+      if (!comision) {
+        return res.status(404).json({
+          success: false,
+          message: 'Comisión no encontrada'
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          _id: String(comision._id),
+          id: String(comision._id),
+          nombre: comision.nombre,
+          presidenteId: comision.presidenteId,
+          comites: (comision.comites || []).map((co) => ({
+            _id: co._id ? String(co._id) : null,
+            nombre: co.nombre,
+            secretarioId: co.secretarioId
+          })),
+          createdAt: comision.createdAt,
+          updatedAt: comision.updatedAt
+        }
+      });
+    } catch (error) {
+      console.error('❌ [getComisionById]', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener la comisión'
+      });
+    }
+  }
+
+  /**
+   * POST /api/legisladores/comisiones
+   * Body: { nombre, presidenteId, comites: [{ nombre, secretarioId }] }
+   */
+  async createComision(req, res) {
+    try {
+      console.log('\n➕ [createComision] Creando comisión');
+
+      const payload = this._parseComision(req.body);
+      const error = this._validarPayloadComision(payload);
+      if (error) {
+        return res.status(400).json({ success: false, message: error });
+      }
+
+      // El nombre no puede repetirse
+      const existe = await Comision.findOne({ nombre: payload.nombre });
+      if (existe) {
+        return res.status(400).json({
+          success: false,
+          message: 'Ya existe una comisión con ese nombre'
+        });
+      }
+
+      // Validar que los IDs sean senadores titulares válidos
+      const ids = [
+        payload.presidenteId,
+        ...payload.comites.map((c) => c.secretarioId)
+      ];
+      const validacion = await validarSenadoresTitulares(ids);
+      if (!validacion.ok) {
+        return res.status(400).json({ success: false, message: validacion.mensaje });
+      }
+
+      const comision = await Comision.create(payload);
+
+      console.log(`   ✅ Comisión creada: ${comision.nombre} (${comision._id})`);
+
+      res.status(201).json({
+        success: true,
+        message: 'Comisión creada exitosamente',
+        data: {
+          _id: String(comision._id),
+          id: String(comision._id),
+          nombre: comision.nombre,
+          presidenteId: comision.presidenteId,
+          comites: comision.comites.map((co) => ({
+            _id: co._id ? String(co._id) : null,
+            nombre: co.nombre,
+            secretarioId: co.secretarioId
+          }))
+        }
+      });
+    } catch (error) {
+      console.error('❌ [createComision]', error);
+      res.status(500).json({
+        success: false,
+        message: `Error al crear la comisión: ${error.message}`
+      });
+    }
+  }
+
+  /**
+   * PUT /api/legisladores/comisiones/:id
+   * Body: { nombre, presidenteId, comites: [{ nombre, secretarioId }] }
+   */
+  async updateComision(req, res) {
+    try {
+      console.log(`\n✏️  [updateComision] Actualizando ${req.params.id}`);
+
+      const comision = await Comision.findById(req.params.id);
+      if (!comision) {
+        return res.status(404).json({
+          success: false,
+          message: 'Comisión no encontrada'
+        });
+      }
+
+      const payload = this._parseComision(req.body);
+      const error = this._validarPayloadComision(payload);
+      if (error) {
+        return res.status(400).json({ success: false, message: error });
+      }
+
+      // Nombre único (excluyendo esta misma comisión)
+      const existe = await Comision.findOne({
+        nombre: payload.nombre,
+        _id: { $ne: comision._id }
+      });
+      if (existe) {
+        return res.status(400).json({
+          success: false,
+          message: 'Ya existe otra comisión con ese nombre'
+        });
+      }
+
+      const ids = [
+        payload.presidenteId,
+        ...payload.comites.map((c) => c.secretarioId)
+      ];
+      const validacion = await validarSenadoresTitulares(ids);
+      if (!validacion.ok) {
+        return res.status(400).json({ success: false, message: validacion.mensaje });
+      }
+
+      comision.nombre = payload.nombre;
+      comision.presidenteId = payload.presidenteId;
+      comision.comites = payload.comites;
+      await comision.save();
+
+      console.log(`   ✅ Comisión actualizada: ${comision.nombre}`);
+
+      res.json({
+        success: true,
+        message: 'Comisión actualizada exitosamente',
+        data: {
+          _id: String(comision._id),
+          id: String(comision._id),
+          nombre: comision.nombre,
+          presidenteId: comision.presidenteId,
+          comites: comision.comites.map((co) => ({
+            _id: co._id ? String(co._id) : null,
+            nombre: co.nombre,
+            secretarioId: co.secretarioId
+          }))
+        }
+      });
+    } catch (error) {
+      console.error('❌ [updateComision]', error);
+      res.status(500).json({
+        success: false,
+        message: `Error al actualizar la comisión: ${error.message}`
+      });
+    }
+  }
+
+  /**
+   * DELETE /api/legisladores/comisiones/:id
+   */
+  async deleteComision(req, res) {
+    try {
+      console.log(`\n🗑️  [deleteComision] Eliminando ${req.params.id}`);
+
+      const comision = await Comision.findByIdAndDelete(req.params.id);
+      if (!comision) {
+        return res.status(404).json({
+          success: false,
+          message: 'Comisión no encontrada'
+        });
+      }
+
+      console.log(`   ✅ Comisión eliminada: ${comision.nombre}`);
+
+      res.json({
+        success: true,
+        message: 'Comisión eliminada exitosamente'
+      });
+    } catch (error) {
+      console.error('❌ [deleteComision]', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al eliminar la comisión'
+      });
+    }
+  }
+
+  /**
+   * Helper: normaliza el body de una comisión.
+   * Acepta comites con o sin _id (el _id se descarta; se regenera).
+   */
+  _parseComision(body = {}) {
+    const nombre = String(body.nombre || '').trim();
+
+    // ⚠️ Number('') === 0 y Number(null) === 0, así que hay que excluirlos
+    // explícitamente antes de convertir. Un ID válido es un entero >= 1.
+    const aIdValido = (v) => {
+      if (v === '' || v === null || v === undefined) return null;
+      const n = Number(v);
+      return Number.isInteger(n) && n > 0 ? n : null;
+    };
+
+    const comitesRaw = Array.isArray(body.comites) ? body.comites : [];
+    const comites = comitesRaw
+      .map((c) => ({
+        nombre: String(c?.nombre || '').trim(),
+        secretarioId: aIdValido(c?.secretarioId)
+      }))
+      // Ignorar filas completamente vacías que el formulario pueda enviar
+      .filter((c) => c.nombre || c.secretarioId !== null);
+
+    return { nombre, presidenteId: aIdValido(body.presidenteId), comites };
+  }
+
+  /**
+   * Helper: valida el payload ya normalizado.
+   * Devuelve un mensaje de error o null si todo está bien.
+   */
+  _validarPayloadComision({ nombre, presidenteId, comites }) {
+    if (!nombre) return 'El nombre de la comisión es obligatorio';
+
+    if (presidenteId === null) {
+      return 'El presidente de la comisión es obligatorio';
+    }
+
+    if (!comites || comites.length === 0) {
+      return 'La comisión debe tener al menos un comité';
+    }
+
+    for (let i = 0; i < comites.length; i++) {
+      if (!comites[i].nombre) {
+        return `El comité #${i + 1} necesita un nombre`;
+      }
+      if (comites[i].secretarioId === null) {
+        return `El comité "${comites[i].nombre}" necesita un secretario`;
+      }
+    }
+
+    // Un senador no puede ocupar dos cargos en la misma comisión
+    const ids = [presidenteId, ...comites.map((c) => c.secretarioId)];
+    if (new Set(ids).size !== ids.length) {
+      return 'Un senador no puede ocupar dos cargos en la misma comisión';
+    }
+
+    return null;
+  }
 }
 
 module.exports = new LegisladoresController();
