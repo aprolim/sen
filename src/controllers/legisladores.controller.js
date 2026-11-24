@@ -3,7 +3,7 @@ const Senador = require('../models/Senador');
 const Comision = require('../models/Comision');
 const DirectivaCamaral = require('../models/DirectivaCamaral');
 const legisladoresService = require('../services/legisladores.service');
-const { processImage } = require('../middleware/upload');
+const plenoCamaralController = require('./plenoCamaral.controller');
 const path = require('path');
 
 // ============================================
@@ -631,52 +631,13 @@ class LegisladoresController {
    *         description: Foto subida exitosamente
    */
   async uploadFotoPerfil(req, res) {
-    try {
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          message: 'No se subió ninguna imagen',
-        });
-      }
-
-      const imagePath = path.join(req.file.destination, req.file.filename);
-      const processedFilename = await processImage(imagePath, {
-        width: 400,
-        height: 400,
-        quality: 90,
-        format: 'webp',
-      });
-
-      const imageUrl = `/uploads/legisladores/${processedFilename}`;
-
-      if (req.body.legisladorId) {
-        const legislador = await legisladoresService.getLegisladorById(req.body.legisladorId);
-        legislador.fotoPerfil = {
-          url: imageUrl,
-          alt: `${legislador.nombreCompleto} - Foto de perfil`,
-        };
-        await legislador.save();
-      }
-
-      res.json({
-        success: true,
-        message: 'Foto subida exitosamente',
-        data: {
-          url: imageUrl,
-          filename: processedFilename,
-          originalName: req.file.originalname,
-          size: req.file.size,
-          mimetype: req.file.mimetype,
-        },
-      });
-    } catch (error) {
-      console.error('Error subiendo foto:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Error al subir la foto',
-      });
-    }
+    // El endpoint antiguo guardaba en `fotoPerfil`, un campo que el modelo
+    // Senador NO tiene, y llamaba a un `processImage` inexistente.
+    // Se delega en el módulo Pleno Camaral, que escribe en `foto`/`fotoSuplente`
+    // y guarda en /public/senadores (la ruta que ya usan el resto de módulos).
+    return plenoCamaralController.uploadFoto(req, res);
   }
+
 
   /**
    * @swagger
