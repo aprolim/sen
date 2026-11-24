@@ -31,6 +31,108 @@ const validarSenadoresTitulares = async (ids) => {
   return { ok: true, titulares };
 };
 
+// ============================================
+// 🛠️ HELPERS DE COMISIONES (ámbito de módulo)
+//
+// ⚠️ IMPORTANTE: estas funciones NO son métodos de la clase.
+// Express invoca los handlers como callbacks sueltos
+// (router.put('/x', controller.updateComision)), así que dentro de ellos
+// `this` es undefined. Por eso los helpers viven aquí fuera.
+// ============================================
+
+/** Convierte un valor a ID de senador válido (entero >= 1) o null. */
+const aIdValido = (v) => {
+  if (v === '' || v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
+/**
+ * Normaliza el body de una comisión.
+ * Acepta comites con o sin _id (el _id se descarta; se regenera).
+ */
+const parseComisionBody = (body = {}) => {
+  const nombre = String(body.nombre || '').trim();
+
+  const comitesRaw = Array.isArray(body.comites) ? body.comites : [];
+  const comites = comitesRaw
+    .map((c) => ({
+      nombre: String(c?.nombre || '').trim(),
+      secretarioId: aIdValido(c?.secretarioId)
+    }))
+    // Ignorar filas completamente vacías que el formulario pueda enviar
+    .filter((c) => c.nombre || c.secretarioId !== null);
+
+  return { nombre, presidenteId: aIdValido(body.presidenteId), comites };
+};
+
+/**
+ * Valida el payload ya normalizado.
+ * Devuelve un mensaje de error o null si todo está bien.
+ */
+const validarPayloadComision = ({ nombre, presidenteId, comites }) => {
+  if (!nombre) return 'El nombre de la comisión es obligatorio';
+
+  if (presidenteId === null) {
+    return 'El presidente de la comisión es obligatorio';
+  }
+
+  if (!comites || comites.length === 0) {
+    return 'La comisión debe tener al menos un comité';
+  }
+
+  for (let i = 0; i < comites.length; i++) {
+    if (!comites[i].nombre) {
+      return `El comité #${i + 1} necesita un nombre`;
+    }
+    if (comites[i].secretarioId === null) {
+      return `El comité "${comites[i].nombre}" necesita un secretario`;
+    }
+  }
+
+  // Un senador no puede ocupar dos cargos en la misma comisión
+  const ids = [presidenteId, ...comites.map((c) => c.secretarioId)];
+  if (new Set(ids).size !== ids.length) {
+    return 'Un senador no puede ocupar dos cargos en la misma comisión';
+  }
+
+  return null;
+};
+
+/**
+ * Formatea la directiva con los datos completos de los senadores.
+ * Está fuera de la clase para poder invocarse desde los handlers de Express
+ * (donde `this` no apunta a la instancia).
+ */
+const formatearDirectiva = async (directiva) => {
+  const ids = [
+    directiva.presidenteId,
+    directiva.primeraViceId,
+    directiva.segundaViceId,
+    directiva.primeraSecretariaId,
+    directiva.segundaSecretariaId,
+    directiva.terceraSecretariaId
+  ];
+
+  const senadores = await Senador.find({ id: { $in: ids } }).lean();
+  const find = (id) => senadores.find((s) => s.id === id) || null;
+
+  return {
+    _id: directiva._id,
+    gestion: directiva.gestion,
+    presidente: find(directiva.presidenteId),
+    vicepresidencias: [
+      { ...find(directiva.primeraViceId), cargo: 'Primera Vicepresidencia' },
+      { ...find(directiva.segundaViceId), cargo: 'Segunda Vicepresidencia' }
+    ].filter((m) => m && m.id),
+    secretarias: [
+      { ...find(directiva.primeraSecretariaId), cargo: 'Primera Secretaria' },
+      { ...find(directiva.segundaSecretariaId), cargo: 'Segunda Secretaria' },
+      { ...find(directiva.terceraSecretariaId), cargo: 'Tercera Secretaria' }
+    ].filter((m) => m && m.id)
+  };
+};
+
 /**
  * @swagger
  * tags:
@@ -922,7 +1024,7 @@ class LegisladoresController {
       console.log(`   ✅ Directiva guardada (ID: ${directiva._id})`);
 
       // 7. Devolver la directiva con los datos populados de los senadores
-      const poblada = await this._formatearDirectiva(directiva);
+      const poblada = await formatearDirectiva(directiva);
 
       res.json({
         success: true,
@@ -1007,35 +1109,11 @@ class LegisladoresController {
   }
 
   /**
-   * Helper privado: formatea la directiva con los datos de los senadores
+   * Helper privado: formatea la directiva con los datos de los senadores.
+   * Delega en la función de módulo para no depender de `this`.
    */
   async _formatearDirectiva(directiva) {
-    const ids = [
-      directiva.presidenteId,
-      directiva.primeraViceId,
-      directiva.segundaViceId,
-      directiva.primeraSecretariaId,
-      directiva.segundaSecretariaId,
-      directiva.terceraSecretariaId
-    ];
-
-    const senadores = await Senador.find({ id: { $in: ids } }).lean();
-    const find = (id) => senadores.find((s) => s.id === id) || null;
-
-    return {
-      _id: directiva._id,
-      gestion: directiva.gestion,
-      presidente: find(directiva.presidenteId),
-      vicepresidencias: [
-        { ...find(directiva.primeraViceId), cargo: 'Primera Vicepresidencia' },
-        { ...find(directiva.segundaViceId), cargo: 'Segunda Vicepresidencia' }
-      ].filter((m) => m && m.id),
-      secretarias: [
-        { ...find(directiva.primeraSecretariaId), cargo: 'Primera Secretaria' },
-        { ...find(directiva.segundaSecretariaId), cargo: 'Segunda Secretaria' },
-        { ...find(directiva.terceraSecretariaId), cargo: 'Tercera Secretaria' }
-      ].filter((m) => m && m.id)
-    };
+    return formatearDirectiva(directiva);
   }
 
   // ============================================
@@ -1229,8 +1307,8 @@ class LegisladoresController {
     try {
       console.log('\n➕ [createComision] Creando comisión');
 
-      const payload = this._parseComision(req.body);
-      const error = this._validarPayloadComision(payload);
+      const payload = parseComisionBody(req.body);
+      const error = validarPayloadComision(payload);
       if (error) {
         return res.status(400).json({ success: false, message: error });
       }
@@ -1298,8 +1376,8 @@ class LegisladoresController {
         });
       }
 
-      const payload = this._parseComision(req.body);
-      const error = this._validarPayloadComision(payload);
+      const payload = parseComisionBody(req.body);
+      const error = validarPayloadComision(payload);
       if (error) {
         return res.status(400).json({ success: false, message: error });
       }
@@ -1384,66 +1462,6 @@ class LegisladoresController {
         message: 'Error al eliminar la comisión'
       });
     }
-  }
-
-  /**
-   * Helper: normaliza el body de una comisión.
-   * Acepta comites con o sin _id (el _id se descarta; se regenera).
-   */
-  _parseComision(body = {}) {
-    const nombre = String(body.nombre || '').trim();
-
-    // ⚠️ Number('') === 0 y Number(null) === 0, así que hay que excluirlos
-    // explícitamente antes de convertir. Un ID válido es un entero >= 1.
-    const aIdValido = (v) => {
-      if (v === '' || v === null || v === undefined) return null;
-      const n = Number(v);
-      return Number.isInteger(n) && n > 0 ? n : null;
-    };
-
-    const comitesRaw = Array.isArray(body.comites) ? body.comites : [];
-    const comites = comitesRaw
-      .map((c) => ({
-        nombre: String(c?.nombre || '').trim(),
-        secretarioId: aIdValido(c?.secretarioId)
-      }))
-      // Ignorar filas completamente vacías que el formulario pueda enviar
-      .filter((c) => c.nombre || c.secretarioId !== null);
-
-    return { nombre, presidenteId: aIdValido(body.presidenteId), comites };
-  }
-
-  /**
-   * Helper: valida el payload ya normalizado.
-   * Devuelve un mensaje de error o null si todo está bien.
-   */
-  _validarPayloadComision({ nombre, presidenteId, comites }) {
-    if (!nombre) return 'El nombre de la comisión es obligatorio';
-
-    if (presidenteId === null) {
-      return 'El presidente de la comisión es obligatorio';
-    }
-
-    if (!comites || comites.length === 0) {
-      return 'La comisión debe tener al menos un comité';
-    }
-
-    for (let i = 0; i < comites.length; i++) {
-      if (!comites[i].nombre) {
-        return `El comité #${i + 1} necesita un nombre`;
-      }
-      if (comites[i].secretarioId === null) {
-        return `El comité "${comites[i].nombre}" necesita un secretario`;
-      }
-    }
-
-    // Un senador no puede ocupar dos cargos en la misma comisión
-    const ids = [presidenteId, ...comites.map((c) => c.secretarioId)];
-    if (new Set(ids).size !== ids.length) {
-      return 'Un senador no puede ocupar dos cargos en la misma comisión';
-    }
-
-    return null;
   }
 }
 
