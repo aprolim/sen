@@ -180,7 +180,25 @@ const senadorSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+
+  // 📜 Proyectos de ley destacados del SUPLENTE
+  proyectosLeySuplente: {
+    cantidad: { type: Number, default: 0 },
+    lista: { type: [String], default: [] }
+  },
   
+  // ============================================
+  // 📜 PROYECTOS DE LEY DESTACADOS
+  //
+  // Se muestran en el perfil público del senador (/senador/:slug).
+  // - `cantidad`: total de proyectos presentados (número informativo)
+  // - `lista`: los títulos que se listan en el perfil
+  // ============================================
+  proyectosLey: {
+    cantidad: { type: Number, default: 0 },
+    lista: { type: [String], default: [] }
+  },
+
   // ============================================
   // ESTADO
   // ============================================

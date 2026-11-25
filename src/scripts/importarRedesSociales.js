@@ -278,6 +278,26 @@ async function run() {
       }
     }
 
+    // ---------- 📜 PROYECTOS DE LEY del TITULAR ----------
+    // Formato: { cantidad: Number, lista: [String] }
+    if (est.proyectosLey) {
+      const listaNueva = Array.isArray(est.proyectosLey.lista)
+        ? est.proyectosLey.lista.map((t) => String(t).trim()).filter(Boolean)
+        : [];
+      const cantidadNueva = Number(est.proyectosLey.cantidad) || 0;
+
+      const yaTiene =
+        (titular.proyectosLey?.lista?.length || 0) > 0 ||
+        (titular.proyectosLey?.cantidad || 0) > 0;
+
+      if (SOBRESCRIBIR || !yaTiene) {
+        if (listaNueva.length > 0 || cantidadNueva > 0) {
+          cambios.proyectosLey = { cantidad: cantidadNueva, lista: listaNueva };
+          camposTitular++;
+        }
+      }
+    }
+
     // ---------- Redes del SUPLENTE ----------
     // El suplente estático se localiza por titularId
     const supEst = suplentesEst.find((s) => s.titularId === titular.id);
@@ -313,6 +333,25 @@ async function run() {
       if (estaVacio(titular.suplente) && supEst.name) {
         cambios.suplente = supEst.name;
         if (!titular.slugSuplente) cambios.slugSuplente = generarSlug(supEst.name);
+      }
+
+      // ---------- 📜 PROYECTOS DE LEY del SUPLENTE ----------
+      if (supEst.proyectosLey) {
+        const listaSup = Array.isArray(supEst.proyectosLey.lista)
+          ? supEst.proyectosLey.lista.map((t) => String(t).trim()).filter(Boolean)
+          : [];
+        const cantSup = Number(supEst.proyectosLey.cantidad) || 0;
+
+        const yaTieneSup =
+          (titular.proyectosLeySuplente?.lista?.length || 0) > 0 ||
+          (titular.proyectosLeySuplente?.cantidad || 0) > 0;
+
+        if (SOBRESCRIBIR || !yaTieneSup) {
+          if (listaSup.length > 0 || cantSup > 0) {
+            cambios.proyectosLeySuplente = { cantidad: cantSup, lista: listaSup };
+            camposSuplente++;
+          }
+        }
       }
     }
 

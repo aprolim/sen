@@ -173,7 +173,9 @@ const CAMPOS_EDITABLES = [
   'twitter',
   'instagram',
   'youtube',
-  'tiktok'
+  'tiktok',
+  // 📜 Proyectos de ley destacados (objeto { cantidad, lista })
+  'proyectosLey'
 ];
 
 /**
@@ -218,6 +220,16 @@ const updateSenador = async (req, res) => {
           cambios[campo] = Array.isArray(req.body[campo])
             ? req.body[campo].map((d) => String(d).trim()).filter(Boolean)
             : [];
+        } else if (campo === 'proyectosLey') {
+          // Objeto { cantidad, lista }: se normaliza y se ignoran tipos raros
+          const pl = req.body[campo] || {};
+          const cantidad = Number(pl.cantidad);
+          cambios[campo] = {
+            cantidad: Number.isFinite(cantidad) && cantidad >= 0 ? Math.trunc(cantidad) : 0,
+            lista: Array.isArray(pl.lista)
+              ? pl.lista.map((t) => String(t).trim()).filter(Boolean)
+              : []
+          };
         } else {
           cambios[campo] = parsear(req.body[campo]);
         }
@@ -539,6 +551,12 @@ const getPlenoPublico = async (req, res) => {
         tiktok: s.tiktok || null,
         estado: s.estado || 'activo',
 
+        // 📜 Proyectos de ley destacados (se muestran en /senador/:slug)
+        proyectosLey: {
+          cantidad: s.proyectosLey?.cantidad || 0,
+          lista: Array.isArray(s.proyectosLey?.lista) ? s.proyectosLey.lista : []
+        },
+
         // Datos del suplente embebido
         suplente: s.suplente || null,
         slugSuplente: s.slugSuplente || null,
@@ -582,6 +600,14 @@ const getPlenoPublico = async (req, res) => {
           youtube: s.youtubeSuplente || null,
           tiktok: s.tiktokSuplente || null,
           estado: 'activo',
+
+          // 📜 Proyectos de ley del suplente (si los tiene)
+          proyectosLey: {
+            cantidad: s.proyectosLeySuplente?.cantidad || 0,
+            lista: Array.isArray(s.proyectosLeySuplente?.lista)
+              ? s.proyectosLeySuplente.lista
+              : []
+          },
 
           // Vínculo con su titular
           titularId: s.id,
