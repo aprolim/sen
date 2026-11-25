@@ -177,14 +177,41 @@ const CAMPOS_EDITABLES = [
 ];
 
 /**
+ * Campos del SUPLENTE embebido en el registro del titular.
+ * Se editan con el mismo PUT, pero en el body con el sufijo `Suplente`.
+ * El nombre del suplente va en `suplente` y su slug en `slugSuplente`.
+ */
+const CAMPOS_EDITABLES_SUPLENTE = [
+  'suplente',
+  'slugSuplente',
+  'comiteSuplente',
+  'cargoSuplente',
+  // Información personal
+  'fechaNacimientoSuplente',
+  'nacidoEnSuplente',
+  'ocupacionSuplente',
+  // Redes
+  'facebookSuplente',
+  'twitterSuplente',
+  'instagramSuplente',
+  'youtubeSuplente',
+  'tiktokSuplente'
+];
+
+/**
  * PUT /api/pleno-camaral/:id
- * Body: cualquiera de los CAMPOS_EDITABLES
+ * Body: cualquiera de CAMPOS_EDITABLES (titular) o
+ *       CAMPOS_EDITABLES_SUPLENTE (suplente embebido).
  */
 const updateSenador = async (req, res) => {
   try {
     const { id } = req.params;
     const cambios = {};
 
+    const parsear = (valor) =>
+      valor === null ? '' : String(valor).trim();
+
+    // --- Campos del titular ---
     for (const campo of CAMPOS_EDITABLES) {
       if (req.body[campo] !== undefined) {
         if (campo === 'distritos') {
@@ -192,9 +219,24 @@ const updateSenador = async (req, res) => {
             ? req.body[campo].map((d) => String(d).trim()).filter(Boolean)
             : [];
         } else {
-          cambios[campo] = req.body[campo] === null ? '' : String(req.body[campo]).trim();
+          cambios[campo] = parsear(req.body[campo]);
         }
       }
+    }
+
+    // --- Campos del suplente embebido ---
+    for (const campo of CAMPOS_EDITABLES_SUPLENTE) {
+      if (req.body[campo] !== undefined) {
+        cambios[campo] = parsear(req.body[campo]);
+      }
+    }
+
+    // El nombre es obligatorio
+    if (cambios.name !== undefined && !cambios.name) {
+      return res.status(400).json({
+        success: false,
+        message: 'El nombre del senador no puede quedar vacío'
+      });
     }
 
     if (Object.keys(cambios).length === 0) {
@@ -212,10 +254,33 @@ const updateSenador = async (req, res) => {
       });
     }
 
+    // Si se renombra al suplente y no se envía slug, se regenera
+    if (
+      cambios.suplente !== undefined &&
+      !cambios.slugSuplente &&
+      cambios.suplente
+    ) {
+      cambios.slugSuplente = cambios.suplente
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .trim()
+        .replace(/\s+/g, '-');
+    }
+
     Object.assign(senador, cambios);
     await senador.save();
 
-    console.log(`✅ [plenoCamaral] Actualizado: ${senador.name}`);
+    const titulares = Object.keys(cambios).filter((c) => CAMPOS_EDITABLES.includes(c));
+    const suplentes = Object.keys(cambios).filter((c) =>
+      CAMPOS_EDITABLES_SUPLENTE.includes(c)
+    );
+
+    console.log(
+      `✅ [plenoCamaral] Actualizado ${senador.name} | titular: ${titulares.length} campo(s)` +
+        (suplentes.length ? ` | suplente: ${suplentes.length} campo(s)` : '')
+    );
 
     res.json({
       success: true,
