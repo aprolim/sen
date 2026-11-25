@@ -5,3 +5,7 @@ node_modules/
 public/
 data/
 uploads/
+
+# Excepción: datos de importación que SÍ deben versionarse para producción
+!src/scripts/data/
+!src/scripts/data/**

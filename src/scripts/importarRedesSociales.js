@@ -43,12 +43,17 @@ const SOBRESCRIBIR = process.argv.includes('--sobrescribir');
 
 // ============================================
 // RUTA DEL JSON ESTÁTICO
+//
+// Se busca en este orden:
+//   1. La ruta indicada en SENADORES_JSON (si existe)
+//   2. src/scripts/data/senadores.js  ← copiado aquí para que viaje por git
+//   3. El proyecto del frontend público (entorno de desarrollo)
 // ============================================
 const RUTAS_CANDIDATAS = [
   process.env.SENADORES_JSON,
+  path.join(__dirname, 'data', 'senadores.js'),
   path.join(__dirname, '..', '..', '..', 'frontend-publico-oficial2', 'data', 'senadores.js'),
-  '/var/www/frontend-publico-oficial2/data/senadores.js',
-  '/var/www/public/data/senadores.js'
+  '/var/www/frontend-publico-oficial2/data/senadores.js'
 ].filter(Boolean);
 
 const encontrarJson = () => {
