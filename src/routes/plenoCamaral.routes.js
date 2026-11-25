@@ -65,7 +65,18 @@ const handleUpload = (req, res, next) => {
 };
 
 // ============================================
-// 🔒 TODAS LAS RUTAS REQUIEREN AUTENTICACIÓN
+// 📢 PÚBLICO
+//
+// Devuelve el pleno completo en el MISMO formato que el antiguo
+// data/senadores.js del frontend (titulares id 1..36 + suplentes id 37..71),
+// para que hemiciclo y brigadas puedan consumirlo sin cambios de estructura.
+//
+// Va ANTES del router.use(authenticate).
+// ============================================
+router.get('/publico', controller.getPlenoPublico);
+
+// ============================================
+// 🔒 TODAS LAS DEMÁS RUTAS REQUIEREN AUTENTICACIÓN
 // ============================================
 router.use(authenticate);
 

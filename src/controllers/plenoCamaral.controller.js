@@ -10,6 +10,7 @@
 const path = require('path');
 const fs = require('fs');
 const Senador = require('../models/Senador');
+const DirectivaCamaral = require('../models/DirectivaCamaral');
 
 // ============================================
 // CONFIGURACIÓN DE ALMACENAMIENTO
@@ -382,18 +383,23 @@ const eliminarFoto = async (req, res) => {
  */
 const getResumen = async (req, res) => {
   try {
-    const [titulares, suplentes] = await Promise.all([
-      Senador.countDocuments({ tipo: 'titular' }),
-      Senador.countDocuments({ tipo: 'suplente' })
-    ]);
+    // ⚠️ Los suplentes NO son registros con tipo 'suplente':
+    //    están embebidos en el titular (campo `suplente` + `fotoSuplente`).
+    const titulares = await Senador.countDocuments({ tipo: { $ne: 'suplente' } });
+
+    const suplentes = await Senador.countDocuments({
+      tipo: { $ne: 'suplente' },
+      suplente: { $nin: ['', null] }
+    });
 
     const sinFotoTitular = await Senador.countDocuments({
-      tipo: 'titular',
+      tipo: { $ne: 'suplente' },
       $or: [{ foto: '' }, { foto: null }, { foto: { $exists: false } }]
     });
 
     const sinFotoSuplente = await Senador.countDocuments({
-      tipo: 'titular',
+      tipo: { $ne: 'suplente' },
+      suplente: { $nin: ['', null] },
       $or: [{ fotoSuplente: '' }, { fotoSuplente: null }, { fotoSuplente: { $exists: false } }]
     });
 
@@ -416,11 +422,152 @@ const getResumen = async (req, res) => {
   }
 };
 
+// ============================================
+// 📢 PÚBLICO — Formato compatible con el frontend
+// ============================================
+
+/**
+ * Convierte los registros de MongoDB al formato que ya usaba el frontend
+ * en `data/senadores.js`:
+ *
+ *   - Titulares: id 1..36 (el id numérico del senador)
+ *   - Suplentes: id 37..71 (los del titular + 36), tipo 'suplente',
+ *                con titularId apuntando al id del titular.
+ *
+ * Así el hemiciclo y las brigadas funcionan sin reescribir su lógica.
+ */
+const getPlenoPublico = async (req, res) => {
+  try {
+    const titularesDB = await Senador.find({ tipo: { $ne: 'suplente' } })
+      .sort({ seatNumber: 1 })
+      .lean();
+
+    const titulares = [];
+    const suplentes = [];
+
+    // Offset para los ids de suplente (36 titulares → el primero es 37)
+    const OFFSET = 36;
+
+    for (const s of titularesDB) {
+      titulares.push({
+        id: s.id,
+        tipo: 'titular',
+        seatNumber: s.seatNumber,
+        name: s.name,
+        slug: s.slug,
+        party: s.party,
+        partyShort: s.partyShort,
+        partyColor: s.partyColor,
+        department: s.department,
+        comision: s.comision || null,
+        comite: s.comite || null,
+        cargo: s.cargo || null,
+        foto: s.foto || '',
+        fechaNacimiento: s.fechaNacimiento || null,
+        nacidoEn: s.nacidoEn || null,
+        ocupacion: s.ocupacion || null,
+        distritos: s.distritos || [],
+        facebook: s.facebook || null,
+        twitter: s.twitter || null,
+        instagram: s.instagram || null,
+        youtube: s.youtube || null,
+        tiktok: s.tiktok || null,
+        estado: s.estado || 'activo',
+
+        // Datos del suplente embebido
+        suplente: s.suplente || null,
+        slugSuplente: s.slugSuplente || null,
+        fotoSuplente: s.fotoSuplente || null,
+        comiteSuplente: s.comiteSuplente || null,
+        cargoSuplente: s.cargoSuplente || null
+      });
+
+      // Suplente como registro independiente (solo si existe)
+      const nombreSuplente = (s.suplente || '').trim();
+      if (nombreSuplente) {
+        suplentes.push({
+          id: s.id + OFFSET,
+          tipo: 'suplente',
+          seatNumber: s.seatNumber,
+          name: nombreSuplente,
+          slug:
+            s.slugSuplente ||
+            nombreSuplente
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .toLowerCase()
+              .replace(/[^a-z0-9\s-]/g, '')
+              .trim()
+              .replace(/\s+/g, '-'),
+          party: s.party,
+          partyShort: s.partyShort,
+          partyColor: s.partyColor,
+          department: s.department,
+          comision: null,
+          comite: s.comiteSuplente || null,
+          cargo: s.cargoSuplente || null,
+          // La foto del suplente se sirve desde su propia ruta
+          foto: s.fotoSuplente || '',
+          fechaNacimiento: s.fechaNacimientoSuplente || null,
+          nacidoEn: s.nacidoEnSuplente || null,
+          ocupacion: s.ocupacionSuplente || null,
+          facebook: s.facebookSuplente || null,
+          twitter: s.twitterSuplente || null,
+          instagram: s.instagramSuplente || null,
+          youtube: s.youtubeSuplente || null,
+          tiktok: s.tiktokSuplente || null,
+          estado: 'activo',
+
+          // Vínculo con su titular
+          titularId: s.id,
+          titular: s.name,
+          suplenteDe: s.name
+        });
+      }
+    }
+
+    const data = [...titulares, ...suplentes];
+
+    // La directiva, tal como la consume el hemiciclo
+    const directivaDB = await DirectivaCamaral.findOne({ activa: true }).lean();
+    let directivaIds = [6, 12, 13, 24, 32, 33]; // fallback histórico
+    if (directivaDB) {
+      const ids = [
+        directivaDB.presidenteId,
+        directivaDB.primeraViceId,
+        directivaDB.segundaViceId,
+        directivaDB.primeraSecretariaId,
+        directivaDB.segundaSecretariaId,
+        directivaDB.terceraSecretariaId
+      ].filter((x) => x != null);
+      if (ids.length > 0) directivaIds = ids;
+    }
+
+    res.json({
+      success: true,
+      data,
+      directiva: directivaIds,
+      total: {
+        titulares: titulares.length,
+        suplentes: suplentes.length,
+        todos: data.length
+      }
+    });
+  } catch (error) {
+    console.error('❌ [plenoCamaral.getPlenoPublico]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener el pleno camaral'
+    });
+  }
+};
+
 module.exports = {
   getSenadores,
   getSenadorById,
   updateSenador,
   uploadFoto,
   eliminarFoto,
-  getResumen
+  getResumen,
+  getPlenoPublico
 };
