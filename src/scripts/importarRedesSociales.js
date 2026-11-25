@@ -173,6 +173,22 @@ const normalizarUrl = (url) => {
   return v;
 };
 
+/**
+ * Normaliza un nombre para comparar: sin tildes, minúsculas,
+ * ñ → n, sin signos y con espacios simples.
+ *   "María Isabel"  → "maria isabel"
+ *   "MARIA  ISABEL" → "maria isabel"
+ */
+const normalizarNombre = (nombre) =>
+  String(nombre || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // quita tildes
+    .toLowerCase()
+    .replace(/ñ/g, 'n')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 // ============================================
 // MAIN
 // ============================================
@@ -227,9 +243,9 @@ async function run() {
 
     // ⚠️ Protección: si el nombre no coincide, NO se copian datos.
     // Evita asignar redes de una persona a otra si los ids se desalinean.
-    const mismoNombre =
-      String(est.name || '').trim().toLowerCase() ===
-      String(titular.name || '').trim().toLowerCase();
+    // La comparación ignora tildes, mayúsculas, ñ y espacios múltiples,
+    // porque el JSON y la base pueden diferir en esos detalles ("María" vs "Maria").
+    const mismoNombre = normalizarNombre(est.name) === normalizarNombre(titular.name);
 
     if (!mismoNombre) {
       nombresDistintos.push({
