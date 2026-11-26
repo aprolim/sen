@@ -353,28 +353,29 @@ const uploadFoto = async (req, res) => {
 
     fs.mkdirSync(carpeta, { recursive: true });
 
-    // Nombre definitivo: NOMBRE SENADOR + extensión original
+    // Nombre definitivo: NOMBRE SENADOR + sufijo único + extensión.
+    //
+    // ⚠️ El sufijo (timestamp) es imprescindible: si se guardara siempre con el
+    // mismo nombre, la URL no cambiaría y el navegador seguiría mostrando la
+    // foto antigua desde la caché, tanto en el CMS como en el sitio público.
     const nombreBase = destino === 'suplente'
       ? slugArchivo(senador.suplente || `${senador.name} SUPLENTE`)
       : slugArchivo(senador.name);
     const ext = (path.extname(req.file.originalname) || '.png').toLowerCase();
-    const nombreArchivo = `${nombreBase}${ext}`;
+    const sufijo = Date.now();
+    const nombreArchivo = `${nombreBase}-${sufijo}${ext}`;
     const destinoAbsoluto = path.join(carpeta, nombreArchivo);
 
-    // Si ya existe un archivo con ese nombre (misma persona, misma extensión),
-    // se sobrescribe de forma explícita en lugar de dejar que rename falle.
-    if (fs.existsSync(destinoAbsoluto)) {
-      fs.copyFileSync(archivoTemporal, destinoAbsoluto);
-      fs.unlinkSync(archivoTemporal);
-    } else {
-      fs.renameSync(archivoTemporal, destinoAbsoluto);
-    }
+    fs.renameSync(archivoTemporal, destinoAbsoluto);
 
-    // Ruta pública: /senadores/titulares/g1/NOMBRE.png
+    // Ruta pública: /senadores/titulares/g1/NOMBRE-1723456789012.png
     const rutaRelativa = `/${path
       .relative(PUBLIC_DIR, destinoAbsoluto)
       .split(path.sep)
       .join('/')}`;
+
+    // Guardar la ruta anterior para borrar el archivo viejo
+    const rutaAnterior = destino === 'suplente' ? senador.fotoSuplente : senador.foto;
 
     if (destino === 'suplente') {
       senador.fotoSuplente = rutaRelativa;
@@ -383,6 +384,33 @@ const uploadFoto = async (req, res) => {
     }
 
     await senador.save();
+
+    // Borrar el archivo anterior de forma segura: solo si está dentro de
+    // public/senadores y ya no lo referencia nadie.
+    if (rutaAnterior && rutaAnterior !== rutaRelativa) {
+      try {
+        const anteriorAbsoluta = path.join(
+          PUBLIC_DIR,
+          rutaAnterior.replace(/^\/+/, '')
+        );
+        const dentroDeSenadores = anteriorAbsoluta
+          .replace(/\\/g, '/')
+          .includes('/public/senadores/');
+
+        if (dentroDeSenadores && fs.existsSync(anteriorAbsoluta)) {
+          const enUso = await Senador.countDocuments({
+            $or: [{ foto: rutaAnterior }, { fotoSuplente: rutaAnterior }]
+          });
+          if (enUso === 0) {
+            fs.unlinkSync(anteriorAbsoluta);
+            console.log(`🗑️  Archivo anterior eliminado: ${rutaAnterior}`);
+          }
+        }
+      } catch (e) {
+        // Nunca debe impedir que la subida se confirme
+        console.warn('⚠️  No se pudo borrar la foto anterior:', e.message);
+      }
+    }
 
     console.log(
       `🖼️  [plenoCamaral] Foto actualizada (${destino}): ${rutaRelativa}`
